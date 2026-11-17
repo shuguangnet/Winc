@@ -889,6 +889,16 @@ pub enum MenuTarget {
     Folder,
 }
 
+impl MenuTarget {
+    /// 这个菜单要在窗口里画出来、并且可以键入文字筛选。
+    ///
+    /// 日志的「作者」「路径」下拉可能长到几十上百项，找一项得靠键入几位文字；系统菜单（macOS
+    /// 有窗口时）收不到按键，因此这两种菜单不用系统菜单。
+    pub(crate) fn typed(&self) -> bool {
+        matches!(self, MenuTarget::LogAuthor | MenuTarget::LogPath)
+    }
+}
+
 /// 菜单中的一行：一条命令（带是否可用），分隔线，或悬停时展开的子菜单。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuEntry {

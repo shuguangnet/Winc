@@ -194,6 +194,8 @@ pub enum LogTarget {
     FindFiles,
     /// 详情里「查找文件」的搜索框：键入文字按路径筛选改动的文件。
     FileFilter,
+    /// 详情里筛选后一个文件也不剩时的那一行：点击清掉键入的文字。
+    ClearFileFilter,
     /// 标题栏最左边的按钮：显示、隐藏分支面板。
     BranchesToggle,
     /// 分支面板顶部的搜索框：键入文字筛选面板里的分支。
@@ -1045,6 +1047,7 @@ impl App {
             LogTarget::BranchFilter => self.press_log_branch_filter(),
             LogTarget::FindFiles => self.toggle_log_find_files(),
             LogTarget::FileFilter => self.press_log_file_filter(),
+            LogTarget::ClearFileFilter => self.clear_log_file_filter(),
             // 拖动由 `mouse.rs` 开始处理。
             LogTarget::AuthorEdge => {}
             LogTarget::Columns => {

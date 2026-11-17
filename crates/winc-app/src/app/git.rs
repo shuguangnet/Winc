@@ -808,6 +808,8 @@ impl App {
         self.git.blame.clear();
         // 提交图是旧仓库的：清掉，否则读出新仓库的图之前点一行会打开旧仓库的提交号。
         self.git.graph = graph::GraphPart::default();
+        // 详情里的「查找文件」是旧仓库文件的筛选：清掉，免得上一个仓库的文字藏起新仓库的文件。
+        self.reset_log_find_files();
         // 旧仓库中进行的分支操作与提交属于旧仓库：此处不再显示「正在拉取…」，不阻止新仓库的操作，
         // 也不沿用「修改上一次提交」。操作完成时只显示提示（见 `poll_branch_ops`、`poll_commit`）。
         self.git.branch.running = None;

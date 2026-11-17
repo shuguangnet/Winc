@@ -147,6 +147,10 @@ pub(in crate::view) fn draw_log(app: &mut App, frame: &mut Frame<'_>, index: usi
             )
         });
     }
+    // 打开「查找文件」时详情底部是搜索框，不是提示行（见 `files::draw_file_filter`）。
+    if app.git.log.find_files {
+        draw_file_filter(app, frame, &parts, &mut hits);
+    }
     // 详情一栏的最大滚动位置：内容下方留 16 逻辑像素，使底部的提示行（高 30 逻辑像素）不遮挡
     // 最后一行内容。
     let details = parts.details;

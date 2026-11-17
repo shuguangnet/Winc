@@ -766,6 +766,8 @@ git-log-files-changed = { $count ->
     [one] { $count } file changed
    *[other] { $count } files changed
 }
+git-log-files-changed-of = { $shown } of { $total } files
+git-log-find-file = Find file
 git-log-file-binary = Binary
 
 ## Blame

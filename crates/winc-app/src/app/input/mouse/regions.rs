@@ -416,6 +416,12 @@ impl App {
             self.log_active() && self.log_branches_shown() >= 1.0,
             &self.git.log.branch_filter,
         ));
+        // 详情里的「查找文件」只在点开放大镜时绘制（见 `view::git::log::files`）。
+        let log_files = Some((
+            Focus::LogFileFilter,
+            self.log_active() && self.git.log.find_files,
+            &self.git.log.file_filter,
+        ));
 
         visible
             .into_iter()
@@ -424,6 +430,7 @@ impl App {
             .chain(terminal_find)
             .chain(panel)
             .chain(log_branch)
+            .chain(log_files)
             .find(|(_, shown, f)| *shown && f.view.area.contains(x, y))
             .map(|(focus, ..)| focus)
     }

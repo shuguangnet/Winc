@@ -1051,6 +1051,16 @@ pub(in crate::view) fn tooltip(app: &App) -> Option<(Rect, String)> {
             };
             Some((rect, label))
         }
+        // 提交图标题行的三个按钮和对比控件：图标上没有文字，要做的事写在这里。
+        Hover::Commit(
+            target @ (CommitTarget::GraphFetch
+            | CommitTarget::GraphPull
+            | CommitTarget::GraphPush
+            | CommitTarget::GraphCompare),
+        ) => {
+            let rect = app.hits.commit.iter().find(|(_, t)| *t == target)?.0;
+            Some((rect, app.graph_tip(target)))
+        }
         Hover::MarkdownToc(target @ crate::app::preview::markdown::TocTarget::Pin) => {
             let rect = app.hits.markdown_toc.iter().find(|(_, t)| *t == target)?.0;
             let label = match app.state.markdown_toc_pinned {

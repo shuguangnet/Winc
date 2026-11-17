@@ -579,6 +579,7 @@ impl App {
                 search_result_menu(m.is_none(), self.panels.global.replace_open)
             }
             MenuTarget::CommitMore => self.commit_more_menu(),
+            MenuTarget::GraphCompare => self.compare_menu(),
             MenuTarget::StashRow(i) => {
                 crate::app::git::branch::stash_ops(*i, self.git.branch.running.is_some())
             }
@@ -724,6 +725,7 @@ impl App {
             MenuTarget::BranchOps(_) | MenuTarget::CommitMore => {
                 (self.git.branches.clone(), self.git.stashes.clone())
             }
+            MenuTarget::GraphCompare => (self.git.branches.clone(), Vec::new()),
             MenuTarget::StashRow(_) | MenuTarget::StashList => {
                 (Vec::new(), self.git.stashes.clone())
             }
@@ -942,6 +944,9 @@ impl App {
             },
             MenuCommand::FormBase(i) => {
                 MenuLabel::plain(self.git.branches.get(i - 1).map_or("", |b| b.name.as_str()))
+            }
+            MenuCommand::GraphCompareBase(_) | MenuCommand::GraphCompareAuto => {
+                self.compare_menu_label(command)
             }
             MenuCommand::FormRemote(i) => {
                 MenuLabel::plain(self.git.remotes.get(i).map_or("", String::as_str))
@@ -1211,6 +1216,12 @@ impl App {
             .map(|v| &v.query);
         if let MenuCommand::FormBase(i) = command {
             return self.form_base_chosen(i);
+        }
+        if matches!(
+            command,
+            MenuCommand::GraphCompareAuto | MenuCommand::GraphCompareBase(_)
+        ) {
+            return self.compare_menu_checked(command);
         }
         if let MenuCommand::FormRemote(i) = command {
             return self.form_remote_chosen(i);

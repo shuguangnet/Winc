@@ -606,6 +606,10 @@ impl Hover {
                         | CommitTarget::Check(_)
                         | CommitTarget::StageFile(..)
                         | CommitTarget::GroupStage(_)
+                        | CommitTarget::GraphFetch
+                        | CommitTarget::GraphPull
+                        | CommitTarget::GraphPush
+                        | CommitTarget::GraphCompare
                 )
                 | Hover::Diff(
                     DiffTarget::Previous

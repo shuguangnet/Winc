@@ -4,7 +4,7 @@
 //! 交互逻辑位于 `crate::app::git::log`。列表每个提交占一行，行高等于编辑区的行高（逻辑像素），
 //! 滚动使用文档的通用逻辑；详情一栏单独滚动。
 
-mod badges;
+pub(in crate::view::git) mod badges;
 mod branches;
 mod details;
 mod files;
@@ -60,13 +60,13 @@ const DATE_W: f32 = 104.0;
 /// 单个引用徽章的最大宽度（逻辑像素）；更长的名字从末尾截短，详情中显示全名。
 const BADGE_MAX: f32 = 140.0;
 /// 截短后徽章的最小宽度（逻辑像素）；更窄时无法辨认引用名，改为计入「+N」。
-const BADGE_MIN: f32 = 64.0;
+pub(in crate::view::git) const BADGE_MIN: f32 = 64.0;
 /// 一行中引用徽章占说明区宽度的最大比例（0 到 1）。
 ///
 /// 多个分支、远程分支、标签指向同一提交时，说明仍保留足够的宽度；放不下的徽章合并为「+N」。
 const BADGE_SHARE: f32 = 0.45;
 /// 相邻两个徽章之间、徽章与说明之间的间隔（逻辑像素）。
-const BADGE_GAP: f32 = 6.0;
+pub(in crate::view::git) const BADGE_GAP: f32 = 6.0;
 /// 提交图各颜色序号对应的调色板下标。
 ///
 /// 相邻序号的色相相差较大（蓝、绿、红、紫等），并排的车道不会使用红、橙、黄等相近色；

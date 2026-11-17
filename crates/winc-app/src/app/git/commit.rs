@@ -51,6 +51,7 @@ use winit::event::KeyEvent;
 use winit::keyboard::{Key, NamedKey};
 
 use super::branch::branch_menu;
+use super::graph::GRAPH_HEADER;
 use super::unusable;
 use crate::app::input::context_menu::{MenuButton, MenuCommand, MenuTarget, menu_below};
 use crate::app::{AlertButton, App, Focus, GitAnchor, UserEvent};
@@ -555,6 +556,14 @@ pub enum CommitTarget {
     ///
     /// 见 [`crate::app::git::graph`]。
     GraphRow(usize),
+    /// 提交图标题行右端的「获取」：获取远程更新。
+    GraphFetch,
+    /// 提交图标题行右端的「拉取」：从上游拉取。
+    GraphPull,
+    /// 提交图标题行右端的「推送」：推送到上游（`HEAD` 已游离时先问推到哪）。
+    GraphPush,
+    /// 提交图标题行的对比控件：弹出换基准的菜单。
+    GraphCompare,
     /// 固定在列表顶部的组或目录：列表先滚到它真正那一行停在固定的位置（画面不动），再收起或
     /// 展开。
     ///

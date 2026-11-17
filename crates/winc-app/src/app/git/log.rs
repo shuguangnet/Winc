@@ -33,7 +33,7 @@ use winc_editor::diff_view::{DiffSide, DiffView};
 use winc_editor::encoding::decode_unknown;
 use winc_editor::format::Cancel;
 use winc_editor::git::log::{Arrival, Compare, Details};
-use winc_editor::git::{Commit, CommitFile, Git, LogQuery, LogStream, Ref};
+use winc_editor::git::{Commit, CommitFile, Divergence, Git, LogQuery, LogStream, Ref};
 use winc_editor::{DocumentId, LARGE_FILE, looks_binary};
 use winc_i18n::t;
 use winc_render::Rect;
@@ -319,6 +319,14 @@ pub(super) enum Loaded {
         /// 发出请求时提交图的版本号；不一致时结果已过时。
         generation: u64,
         result: Result<Vec<Commit>, String>,
+    },
+    /// 提交图与基准的对比（[`super::graph`]）。
+    GraphCompare {
+        /// 发出请求时的对比版本号；不一致时结果已过时。
+        generation: u64,
+        /// 对比的基准（分支、远程分支或标签）。
+        base: String,
+        result: Result<Divergence, String>,
     },
     /// 一个文件在某个版本里与工作区里的并排差异，打开为新标签。
     LocalDiff {

@@ -30,6 +30,11 @@ impl App {
             match target {
                 CommitTarget::File(i) => self.browse_commit_file(i),
                 CommitTarget::Group(_) | CommitTarget::Dir(_) | CommitTarget::Sticky(..) => {}
+                // 提交图标题行上的按钮和对比只看仓库，不碰工作区，浏览历史时照样能用。
+                CommitTarget::GraphFetch
+                | CommitTarget::GraphPull
+                | CommitTarget::GraphPush
+                | CommitTarget::GraphCompare => {}
                 _ => return,
             }
             if matches!(target, CommitTarget::File(_)) {
@@ -106,6 +111,18 @@ impl App {
                     MenuTarget::CommitMore,
                     menu_below(rect),
                 );
+            }
+            // 与「⋯」菜单、命令面板里的同名命令走同一条路：确认、进度、出错提示都一样。
+            CommitTarget::GraphFetch => self.run_branch_command(MenuCommand::GitFetch),
+            CommitTarget::GraphPull => self.run_branch_command(MenuCommand::GitPull),
+            CommitTarget::GraphPush => self.run_branch_command(MenuCommand::GitPush),
+            CommitTarget::GraphCompare => {
+                let Some(graph) = self.commit_parts().graph else {
+                    return;
+                };
+                // 菜单从对比控件的右端弹出，和标题行右端的工具按钮一样。
+                let at = (graph.right() - 8.0, graph.y + GRAPH_HEADER);
+                self.open_button_menu(MenuButton::GraphCompare, MenuTarget::GraphCompare, at);
             }
             CommitTarget::Location => self.open_worktree_picker(),
             CommitTarget::Branch => self.open_branch_picker(GitAnchor::Branch),

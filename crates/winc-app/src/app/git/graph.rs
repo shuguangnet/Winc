@@ -5,13 +5,21 @@
 //! 读取（见 [`App::reload_graph`]）；读取期间旧内容留着，避免图闪一下。
 //!
 //! 一屏放不下时上下滚动：滚轮、拖动右边细条（[`graph_rows`] 的右端），或者按住一行直接拖。
+//!
+//! 标题行还写着与一个基准（默认是当前分支的上游）的对比：领先、落后多少个提交，以及哪些行
+//! 是基准没有的（见 [`GraphCompare`]）。基准可以从标题行的对比控件换成任意本地分支或远程分支
+//! （见 [`App::graph_compare_base`]）。
+
+use std::collections::HashSet;
 
 use winc_core::graph::{Graph, GraphRow};
-use winc_editor::git::{Commit, LogQuery};
+use winc_editor::git::{Commit, Divergence, LogQuery};
+use winc_i18n::t;
 
 use super::log::Loaded;
 use super::unusable;
-use crate::app::{App, Drag, Rect, UserEvent};
+use crate::app::input::context_menu::{MenuCommand, MenuEntry, MenuLabel};
+use crate::app::{App, CommitTarget, Drag, Rect, UserEvent};
 
 /// 提交视图里的提交图取多少个提交（个）。
 ///
@@ -31,8 +39,40 @@ pub(crate) struct GraphPart {
     pub loading: bool,
     /// 读取失败的原因。
     pub error: Option<String>,
+    /// 手动选的对比基准（分支、远程分支或标签名）；`None` 时用当前分支的上游自动对比。
+    pub base: Option<String>,
+    /// 与基准的对比结果；没有上游、也没手动选基准时为 `None`。
+    pub compare: Option<GraphCompare>,
     /// 当前这批的版本号：发出请求与返回不一致时丢弃结果。
     generation: u64,
+    /// 对比的版本号：同上。
+    compare_generation: u64,
+}
+
+/// 提交图与基准的对比：`HEAD` 与基准各自多出的提交。
+///
+/// 图里把 `HEAD` 独有的行标成领先（还没推送），把基准独有的行标成落后（还没拉到本地）；标题行
+/// 的对比控件写着基准的名字和两边的个数。
+#[derive(Debug, Clone, Default)]
+pub(crate) struct GraphCompare {
+    /// 基准的名字：`origin/dev` 这样的远程分支、本地分支或标签。
+    pub base: String,
+    /// 基准缺少的提交号（`HEAD` 独有）。
+    pub ahead: HashSet<String>,
+    /// `HEAD` 缺少的提交号（基准独有）。
+    pub behind: HashSet<String>,
+    /// 领先、落后多少个提交（不受 [`winc_editor::git::COMPARE_LIMIT`] 限制）。
+    pub counts: (usize, usize),
+}
+
+impl GraphCompare {
+    /// 提交 `oid` 在对比中的位置：`Some(true)` 领先、`Some(false)` 落后、`None` 两边都有。
+    pub(crate) fn side(&self, oid: &str) -> Option<bool> {
+        if self.ahead.contains(oid) {
+            return Some(true);
+        }
+        self.behind.contains(oid).then_some(false)
+    }
 }
 
 impl GraphPart {
@@ -58,7 +98,8 @@ impl GraphPart {
 impl App {
     /// 重新读取提交视图里的提交图（`HEAD` 变化、点击刷新、切换到提交视图时）。
     ///
-    /// 正在读取时不再发出请求：当前这一批读完后按那时的 `HEAD` 生效。
+    /// 正在读取时不再发出请求：当前这一批读完后按那时的 `HEAD` 生效。对比与图一起读取（见
+    /// [`Self::reload_compare`]）：图的基准取自同一时刻的分支列表。
     pub(in crate::app) fn reload_graph(&mut self) {
         let Some(root) = self.git.root.clone() else {
             self.git.graph = GraphPart::default();
@@ -77,6 +118,7 @@ impl App {
             let result = tool.map_err(|e| unusable(&e)).and_then(read);
             let _ = sender.send(Loaded::Graph { generation, result });
         });
+        self.reload_compare();
     }
 
     /// 后台读回的提交图（见 [`Loaded::Graph`]）：算好每行的车道后换上。
@@ -115,6 +157,125 @@ impl App {
         };
         let oid = oid.to_owned();
         self.show_log_commit(&oid, false);
+    }
+
+    /// 当前分支的上游（`origin/dev` 这样）：自动对比用的就是它。
+    ///
+    /// 游离的 `HEAD`、分支还没发布时返回 `None`。
+    pub(crate) fn graph_upstream(&self) -> Option<String> {
+        (self.git.branches.iter())
+            .find(|b| b.current)
+            .and_then(|b| b.upstream.clone())
+    }
+
+    /// 对比用的基准：手动选的，否则是当前分支的上游（见 [`Self::graph_upstream`]）。
+    ///
+    /// 两种情况都没有时返回 `None`，图里不显示对比。
+    pub(crate) fn graph_compare_base(&self) -> Option<String> {
+        self.git
+            .graph
+            .base
+            .clone()
+            .or_else(|| self.graph_upstream())
+    }
+
+    /// 重新读取提交图与基准的对比（每次重新读取图时，以及换了基准以后）。
+    ///
+    /// 没有基准时清掉上一个结果；读取失败时也清掉，图里就不画标记，不另外提示。
+    pub(in crate::app) fn reload_compare(&mut self) {
+        let base = self.graph_compare_base();
+        let Some((root, base)) = self.git.root.clone().zip(base) else {
+            self.git.graph.compare = None;
+            return;
+        };
+        self.git.graph.compare_generation += 1;
+        let generation = self.git.graph.compare_generation;
+        let sender = self.git.log.results.0.clone();
+        self.spawn_git(UserEvent::GitLog, move |tool| {
+            let result = tool
+                .map_err(|e| unusable(&e))
+                .and_then(|git| git.compare(&root, &base));
+            let _ = sender.send(Loaded::GraphCompare {
+                generation,
+                base,
+                result,
+            });
+        });
+    }
+
+    /// 后台读回的对比（见 [`Loaded::GraphCompare`]）：记下哪些行领先、哪些行落后。
+    pub(in crate::app) fn graph_compare_arrived(
+        &mut self,
+        generation: u64,
+        base: String,
+        result: Result<Divergence, String>,
+    ) {
+        // 已经重新发起读取时丢下过时的结果。
+        if generation != self.git.graph.compare_generation {
+            return;
+        }
+        self.git.graph.compare = result.ok().map(|diverged| GraphCompare {
+            base,
+            ahead: diverged.ahead.into_iter().collect(),
+            behind: diverged.behind.into_iter().collect(),
+            counts: (diverged.ahead_count, diverged.behind_count),
+        });
+        self.request_redraw();
+    }
+
+    /// 提交图标题行上的按钮、对比控件的悬停提示：不能用的写明原因（没有远程仓库、正在做别的
+    /// 操作）。
+    pub(crate) fn graph_tip(&self, target: CommitTarget) -> String {
+        let upstream = self.graph_upstream();
+        let busy = self.git.branch.running.as_deref();
+        if target != CommitTarget::GraphCompare {
+            if let Some(task) = busy {
+                return t!("workspace-status-branch-running", task = task);
+            }
+            if self.git.remotes.is_empty() {
+                return t!("git-graph-no-remote").to_owned();
+            }
+        }
+        match target {
+            CommitTarget::GraphFetch => t!("git-graph-fetch-tip").to_owned(),
+            CommitTarget::GraphPull | CommitTarget::GraphPush => match upstream {
+                Some(upstream) if target == CommitTarget::GraphPull => {
+                    t!("git-graph-pull-tip", upstream = upstream)
+                }
+                Some(upstream) => t!("git-graph-push-tip", upstream = upstream),
+                None => t!("git-graph-no-upstream").to_owned(),
+            },
+            _ => match &self.git.graph.compare {
+                Some(compare) if compare.counts == (0, 0) => {
+                    t!("git-graph-compare-same", base = compare.base.as_str())
+                }
+                Some(compare) => t!(
+                    "git-graph-compare-tip",
+                    base = compare.base.as_str(),
+                    ahead = compare.counts.0,
+                    behind = compare.counts.1
+                ),
+                None => t!("git-graph-compare-none").to_owned(),
+            },
+        }
+    }
+
+    /// 在日志标签里比较当前分支与对比的基准：改动的文件、逐个的差异。与分支菜单里的
+    /// 「与当前分支比较」打开的是同一页。
+    pub(in crate::app) fn graph_compare_in_log(&mut self) {
+        if let Some(base) = self.graph_compare_base() {
+            self.git_compare_branch(&base);
+        }
+    }
+
+    /// 换对比的基准：`None` 是回到自动对比上游。
+    pub(in crate::app) fn set_graph_compare_base(&mut self, base: Option<String>) {
+        if self.git.graph.base == base {
+            return;
+        }
+        self.git.graph.base = base;
+        self.reload_compare();
+        self.request_redraw();
     }
 
     /// 提交图内容的高度下界、上界，以及改动列表至少留多高（逻辑像素）。
@@ -179,6 +340,75 @@ pub(crate) fn graph_rows(area: Rect) -> Rect {
         area.w,
         (area.h - GRAPH_HEADER).max(0.0),
     )
+}
+
+/// 提交图对比控件的菜单：回到自动对比上游，然后是其余的本地分支、远程分支两组。
+///
+/// `branches` 是 [`crate::app::git::GitState::branches`]（本地分支在前），下标就是
+/// [`MenuCommand::GraphCompareBase`] 的参数；当前分支不比，`auto` 是自动对比用的上游（没有
+/// 上游时那一项灰掉）。
+pub(crate) fn compare_menu(
+    branches: &[winc_editor::git::Branch],
+    auto: Option<&str>,
+) -> Vec<MenuEntry> {
+    use MenuCommand::{GitHeading, GraphCompareAuto, GraphCompareBase, GraphCompareLog};
+    use MenuEntry::{Item, Separator};
+
+    let mut menu = vec![Item(GraphCompareAuto, auto.is_some())];
+    for remote in [false, true] {
+        let group: Vec<usize> = (0..branches.len())
+            .filter(|&i| branches[i].remote == remote && !branches[i].current)
+            .collect();
+        if group.is_empty() {
+            continue;
+        }
+        menu.push(Separator);
+        menu.push(Item(GitHeading(remote), false));
+        menu.extend(group.into_iter().map(|i| Item(GraphCompareBase(i), true)));
+    }
+    // 直接在日志标签里比较两个版本改动的文件：和图上的领先、落后是同一对版本。
+    menu.push(Separator);
+    menu.push(Item(GraphCompareLog, true));
+    menu
+}
+
+/// 提交图对比控件的菜单，见 [`compare_menu`]。
+impl App {
+    /// 对比控件弹出的菜单，见 [`compare_menu`]。
+    pub(in crate::app) fn compare_menu(&self) -> Vec<MenuEntry> {
+        compare_menu(&self.git.branches, self.graph_upstream().as_deref())
+    }
+
+    /// 对比菜单里命令的文案：基准写分支名，「自动」写明上游。
+    pub(in crate::app) fn compare_menu_label(&self, command: MenuCommand) -> MenuLabel {
+        match command {
+            MenuCommand::GraphCompareBase(i) => MenuLabel::plain(
+                self.git
+                    .branches
+                    .get(i)
+                    .map_or("", |branch| branch.name.as_str()),
+            ),
+            _ => {
+                let label = match self.graph_upstream() {
+                    Some(upstream) => t!("git-graph-compare-auto", upstream = upstream),
+                    None => t!("git-graph-compare-auto-none").to_owned(),
+                };
+                MenuLabel::plain(&label)
+            }
+        }
+    }
+
+    /// 对比菜单里的勾：换了基准时勾那一项，没换（自动对比上游）时勾「自动」。
+    pub(in crate::app) fn compare_menu_checked(&self, command: MenuCommand) -> bool {
+        match command {
+            MenuCommand::GraphCompareAuto => self.git.graph.base.is_none(),
+            MenuCommand::GraphCompareBase(i) => {
+                let name = self.git.branches.get(i).map(|b| b.name.as_str());
+                name.is_some() && self.git.graph.base.as_deref() == name
+            }
+            _ => false,
+        }
+    }
 }
 
 /// 提交图占的高度（逻辑像素）：一行标题加八行提交。

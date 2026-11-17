@@ -21,7 +21,7 @@ pub use output::{on_output, output_since, output_snapshot, output_text};
 pub use proxy::follow_system_proxy;
 pub use rebase::{RebaseAction, RebaseCommit, RebasePlan, RebaseStep, rebase_todo};
 pub use remote::{Remote, TagTarget, repository_dir_name};
-pub use sync::{Carried, MINIMUM_VERSION, Outgoing, Synced};
+pub use sync::{COMPARE_LIMIT, Carried, Divergence, MINIMUM_VERSION, Outgoing, Synced};
 mod history;
 mod trust;
 mod worktree;

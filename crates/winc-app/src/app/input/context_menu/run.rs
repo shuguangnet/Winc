@@ -42,6 +42,18 @@ impl App {
                     self.choose_form_base(base.map(|b| b.name.clone()));
                 }
             }
+            MenuTarget::GraphCompare => match command {
+                MenuCommand::GraphCompareAuto => self.set_graph_compare_base(None),
+                // 下标按弹出菜单时的分支列表解释，理由同分支、储藏。
+                MenuCommand::GraphCompareBase(i) => {
+                    let base = menu.branches.get(i).map(|b| b.name.clone());
+                    if base.is_some() {
+                        self.set_graph_compare_base(base);
+                    }
+                }
+                MenuCommand::GraphCompareLog => self.graph_compare_in_log(),
+                _ => {}
+            },
             MenuTarget::FormRemote => {
                 if let MenuCommand::FormRemote(i) = command {
                     let remote = self.git.remotes.get(i).cloned();

@@ -1,9 +1,9 @@
-//! 提交视图底部提交图的测试：位置、各行、点击打开提交、滚轮滚动和拖动。
+//! 提交视图底部提交图的测试：位置、各行、点击打开提交、滚轮滚动、拖动、获取与对比。
 
 use super::*;
 
 use crate::app::Drag;
-use crate::app::git::graph::{GRAPH_ROW, graph_rows};
+use crate::app::git::graph::{GRAPH_HEADER, GRAPH_ROW, graph_rows};
 
 #[test]
 fn the_commit_graph_lists_recent_commits_below_the_changes() {
@@ -216,6 +216,250 @@ fn the_commit_graph_scrollbar_can_be_dragged() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// 建一个真正的远程仓库并把当前分支推上去，返回远程目录和分支的名字：之后获取、拉取、推送
+/// 都有上游可用。
+fn push_to_remote(root: &Path) -> (PathBuf, String) {
+    let remote = root.with_extension("remote.git");
+    let _ = std::fs::remove_dir_all(&remote);
+    git_in(
+        root.parent().unwrap(),
+        &["init", "-q", "--bare", remote.to_str().unwrap()],
+    );
+    let branch = String::from_utf8(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_owned();
+    // 远程仓库的 HEAD 还指着别的名字：推上去以后把它指到这条分支，克隆时才会检出它。
+    git_in(root, &["remote", "add", "origin", remote.to_str().unwrap()]);
+    git_in(root, &["push", "-q", "-u", "origin", "HEAD"]);
+    git_in(
+        &remote,
+        &["symbolic-ref", "HEAD", &format!("refs/heads/{branch}")],
+    );
+    (remote, branch)
+}
+
+/// 标题行右端的三个按钮（获取、拉取、推送）与对比控件占的位置。
+fn graph_tools(app: &App) -> [(Rect, CommitTarget); 4] {
+    let find = |target: CommitTarget| {
+        app.hits
+            .commit
+            .iter()
+            .find(|(_, t)| *t == target)
+            .map(|(rect, _)| *rect)
+            .unwrap_or_else(|| panic!("标题行上画了 {target:?}"))
+    };
+    [
+        (find(CommitTarget::GraphFetch), CommitTarget::GraphFetch),
+        (find(CommitTarget::GraphPull), CommitTarget::GraphPull),
+        (find(CommitTarget::GraphPush), CommitTarget::GraphPush),
+        (find(CommitTarget::GraphCompare), CommitTarget::GraphCompare),
+    ]
+}
+
+#[test]
+fn the_graph_compares_the_branch_with_its_upstream() {
+    let Some((mut app, root)) = git_app("git-commit-graph-compare", false) else {
+        return;
+    };
+    history_repo(&root, 40);
+    // 推到远程以后再走两个提交：当前分支领先上游两个。
+    let (remote, _) = push_to_remote(&root);
+    many_commits(&root, 2);
+    app.run_action(Action::ShowCommit);
+    app.git_refresh();
+    paint(&mut app);
+    let upstream = app.graph_upstream().expect("推到远程后当前分支有上游");
+    let compare = app.git.graph.compare.as_ref().expect("自动与上游对比");
+    assert_eq!(compare.base, upstream);
+    assert_eq!(compare.counts, (2, 0));
+    // 只有本地那两个提交算领先，更早的已经在上游里。
+    let commits = app.git.graph.commits.clone();
+    assert_eq!(compare.side(&commits[0].oid), Some(true));
+    assert_eq!(compare.side(&commits[1].oid), Some(true));
+    assert_eq!(compare.side(&commits[2].oid), None);
+
+    // 标题行右端：三个按钮在右边，对比控件在它们左边，都在标题行里。
+    let graph = app.commit_parts().graph.expect("显示提交图");
+    let tools = graph_tools(&app);
+    let (fetch, pull, push, chip) = (tools[0].0, tools[1].0, tools[2].0, tools[3].0);
+    for rect in [fetch, pull, push, chip] {
+        assert!(rect.y >= graph.y, "在标题行里");
+        assert!(rect.bottom() <= graph.y + GRAPH_HEADER, "不压到第一行提交");
+        assert!(rect.right() <= graph.right(), "在侧栏里");
+    }
+    assert!(
+        fetch.right() < pull.x && pull.right() < push.x,
+        "从左到右获取、拉取、推送"
+    );
+    assert!(chip.right() < fetch.x, "对比控件在按钮左边");
+    assert!(chip.x > graph.x + 40.0, "标题不压到对比控件");
+
+    // 换基准：与五个提交前比，领先五个；再回到自动。
+    app.set_graph_compare_base(Some("HEAD~5".into()));
+    paint(&mut app);
+    let compare = app.git.graph.compare.as_ref().expect("换基准后重新对比");
+    let (ahead, behind) = compare.counts;
+    assert_eq!((compare.base.as_str(), behind), ("HEAD~5", 0));
+    assert!(ahead >= 5, "五个提交以前作基准时领先至少五个：{ahead}");
+    app.set_graph_compare_base(None);
+    paint(&mut app);
+    let compare = app.git.graph.compare.as_ref().expect("回到自动对比上游");
+    assert_eq!(compare.base, upstream);
+    assert_eq!(compare.counts, (2, 0));
+
+    // 在日志标签里比较当前分支与基准：打开该页，基准写在上游一侧。
+    app.graph_compare_in_log();
+    paint(&mut app);
+    let view = app.editor.active().and_then(|d| d.log.as_deref());
+    let view = view.expect("打开比较页");
+    let compare = view.compare.as_ref().expect("比较当前分支与基准");
+    let current = app.git.branches.iter().find(|b| b.current).unwrap();
+    assert_eq!(
+        (compare.from.as_str(), compare.to.as_str()),
+        (current.name.as_str(), upstream.as_str())
+    );
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn the_graph_marks_the_commits_only_one_side_has() {
+    let Some((mut app, root)) = git_app("git-commit-graph-behind", false) else {
+        return;
+    };
+    history_repo(&root, 40);
+    let (remote, branch) = push_to_remote(&root);
+    // 别处（另一个克隆）往远程推一个提交，本地获取以后落后一个、不领先。
+    let other = root.with_extension("other");
+    let _ = std::fs::remove_dir_all(&other);
+    git_in(
+        root.parent().unwrap(),
+        &[
+            "clone",
+            "-q",
+            remote.to_str().unwrap(),
+            other.to_str().unwrap(),
+        ],
+    );
+    std::fs::write(other.join("theirs.rs"), "// theirs\n").unwrap();
+    git_in(&other, &["add", "-A"]);
+    git_in(&other, &["commit", "-q", "-m", "别处的改动"]);
+    git_in(
+        &other,
+        &["push", "-q", "origin", &format!("HEAD:refs/heads/{branch}")],
+    );
+    many_commits(&root, 1);
+    app.run_action(Action::ShowCommit);
+    app.git_refresh();
+    app.run_branch_command(MenuCommand::GitFetch);
+    app.git_refresh();
+    paint(&mut app);
+    let compare = app.git.graph.compare.as_ref().expect("自动与上游对比");
+    assert_eq!(compare.counts, (1, 1), "本地一个提交没推，上游有一个没拉");
+    let commits = app.git.graph.commits.clone();
+    let ahead = commits
+        .iter()
+        .position(|c| Some(true) == compare.side(&c.oid));
+    let behind = commits
+        .iter()
+        .position(|c| Some(false) == compare.side(&c.oid));
+    assert!(ahead.is_some() && behind.is_some());
+    let _ = std::fs::remove_dir_all(&other);
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn the_graph_buttons_run_fetch_pull_and_push() {
+    let Some((mut app, root)) = git_app("git-commit-graph-tools", false) else {
+        return;
+    };
+    history_repo(&root, 40);
+    app.run_action(Action::ShowCommit);
+    app.git_refresh();
+    paint(&mut app);
+    // 没有远程仓库也没有上游：不画领先、落后的个数，但对比的入口还在。
+    assert!(app.graph_compare_base().is_none());
+    assert!(app.git.graph.compare.is_none());
+    let fetch_tip = app.graph_tip(CommitTarget::GraphFetch);
+    assert!(fetch_tip.contains("远程"), "{fetch_tip}");
+    let compare_tip = app.graph_tip(CommitTarget::GraphCompare);
+    assert!(
+        !compare_tip.is_empty() && compare_tip != fetch_tip,
+        "{compare_tip}"
+    );
+    let graph = app.commit_parts().graph.expect("显示提交图");
+    let tools = graph_tools(&app);
+    assert!(tools.iter().all(|(rect, _)| rect.y >= graph.y));
+
+    // 点推送：与命令面板、分支菜单走同一个入口，没有远程时说明原因。
+    app.press_commit(CommitTarget::GraphPush);
+    assert!(
+        app.notice
+            .text
+            .as_deref()
+            .is_some_and(|n| n.contains("未配置远程仓库")),
+        "{:?}",
+        app.notice.text
+    );
+
+    // 点对比控件弹出换基准的菜单：没有分支时只剩「在日志里比较」。
+    app.press_commit(CommitTarget::GraphCompare);
+    assert_eq!(
+        app.overlays.context_menu.as_ref().map(|m| m.target.clone()),
+        Some(MenuTarget::GraphCompare)
+    );
+    let commands = menu_commands(&app);
+    let enabled = |command: MenuCommand| {
+        commands
+            .iter()
+            .find(|(c, _)| *c == command)
+            .is_some_and(|(_, on)| *on)
+    };
+    assert!(enabled(MenuCommand::GraphCompareLog));
+    // 没有上游时「自动」不能用，但仍可自己挑一个基准（本地分支）。
+    assert!(!enabled(MenuCommand::GraphCompareAuto));
+    let bases: Vec<usize> = commands
+        .iter()
+        .filter_map(|(c, on)| match c {
+            MenuCommand::GraphCompareBase(i) if *on => Some(*i),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        bases.len(),
+        app.git.branches.iter().filter(|b| !b.current).count(),
+        "当前分支以外的分支都能当基准"
+    );
+    app.dismiss_popup();
+
+    // 加上远程：拉取、推送有上游可用，按钮的提示写明上游。
+    let (remote, _) = push_to_remote(&root);
+    app.git_refresh();
+    paint(&mut app);
+    let upstream = app.graph_upstream().expect("有上游");
+    for target in [CommitTarget::GraphPull, CommitTarget::GraphPush] {
+        let tip = app.graph_tip(target);
+        assert!(tip.contains(&upstream), "{target:?} 的提示写明上游：{tip}");
+    }
+    assert!(
+        app.graph_tip(CommitTarget::GraphCompare)
+            .contains(&upstream),
+        "对比控件的提示写明基准与领先、落后的个数"
+    );
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// 画出具名仓库的提交视图，供人工查看提交图（改动列表多、储藏、上一次提交都在）。
 #[test]
 #[ignore = "截图，手动运行"]
@@ -228,18 +472,47 @@ fn shoot_commit_graph() {
         }
         history_repo(&dir, 40);
         many_commits(&dir, 24);
+        // 与上游有来有往：本地两个提交没推，远程有一个没拉，标题上写「↑2 ↓1」，两边的提交行
+        // 前各有一个箭头。
+        let (remote, branch) = push_to_remote(&dir);
+        for i in 0..2 {
+            std::fs::write(dir.join(format!("ahead{i}.rs")), format!("// ahead {i}\n")).unwrap();
+            git_in(&dir, &["add", "-A"]);
+            git_in(&dir, &["commit", "-q", "-m", &format!("本地第 {i} 个改动")]);
+        }
+        let other = dir.with_extension("other");
+        let _ = std::fs::remove_dir_all(&other);
+        git_in(
+            dir.parent().unwrap(),
+            &[
+                "clone",
+                "-q",
+                remote.to_str().unwrap(),
+                other.to_str().unwrap(),
+            ],
+        );
+        std::fs::write(other.join("theirs.rs"), "// theirs\n").unwrap();
+        git_in(&other, &["add", "-A"]);
+        git_in(&other, &["commit", "-q", "-m", "远程上的改动"]);
+        git_in(
+            &other,
+            &["push", "-q", "origin", &format!("HEAD:refs/heads/{branch}")],
+        );
+        git_in(&dir, &["fetch", "-q", "origin"]);
         std::fs::write(dir.join("notes.md"), "# notes\n").unwrap();
         let mut app = app_with(&dir, dark);
         app.settings_toggle(Setting::GitModule);
         app.run_action(Action::ShowCommit);
         paint(&mut app);
         // 滚动一段并停一会儿：滚动条淡入之后才画得出来，截图里能看到。
-        app.git.graph.scroll = 40.0;
+        app.git.graph.scroll = 20.0;
         for _ in 0..12 {
             paint(&mut app);
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         shoot(&mut app, &format!("commit-graph-{theme}"));
+        let _ = std::fs::remove_dir_all(&other);
+        let _ = std::fs::remove_dir_all(&remote);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

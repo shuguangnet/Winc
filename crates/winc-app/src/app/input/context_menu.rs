@@ -76,6 +76,8 @@ pub enum MenuButton {
     Project,
     /// 提交视图标题行的「⋯」。
     CommitMore,
+    /// 提交图标题行的对比控件：选对比的基准。
+    GraphCompare,
     /// 提交视图「提交 ⌄」拆分按钮的箭头。
     CommitButton,
     /// 提交视图底部「上一次提交」那一栏的「⋯」。
@@ -275,6 +277,12 @@ pub enum MenuCommand {
     GitSkip,
     /// 菜单里分支一组的小标题（不能点）：`false` 本地分支，`true` 远程分支。
     GitHeading(bool),
+    /// 提交图对比的基准：回到自动，即当前分支的上游。
+    GraphCompareAuto,
+    /// 提交图对比的基准：分支列表里第几个分支（本地分支在前，远程分支在后）。
+    GraphCompareBase(usize),
+    /// 提交图：在日志标签里比较当前分支与对比基准改动的文件。
+    GraphCompareLog,
     /// 对分支列表里第几个分支做的事。
     GitBranch(crate::app::git::branch::BranchOp, usize),
     /// 提交视图里的文件：打开它和 `HEAD` 的差异。
@@ -614,8 +622,13 @@ impl MenuCommand {
             MenuCommand::LogColumn(column) => column.label(),
             MenuCommand::LogSince(_) | MenuCommand::LogPath(_) => "",
             MenuCommand::FormBase(0) => t!("menu-git-current-branch"),
-            MenuCommand::LogAuthor(_) | MenuCommand::FormBase(_) | MenuCommand::FormRemote(_) => "",
+            MenuCommand::LogAuthor(_)
+            | MenuCommand::FormBase(_)
+            | MenuCommand::FormRemote(_)
+            | MenuCommand::GraphCompareAuto
+            | MenuCommand::GraphCompareBase(_) => "",
             MenuCommand::GitAbort => t!("git-operation-abort"),
+            MenuCommand::GraphCompareLog => t!("git-graph-compare-log"),
             MenuCommand::GitHeading(false) => t!("menu-git-local-branches"),
             MenuCommand::GitHeading(true) => t!("menu-git-remote-branches"),
             MenuCommand::GitBranch(op, _) => op.label(),
@@ -825,6 +838,8 @@ pub enum MenuTarget {
     Location(PathBuf, Option<usize>),
     /// 提交视图标题行的「⋯」。
     CommitMore,
+    /// 提交图标题行的对比控件：选对比的基准。
+    GraphCompare,
     /// 提交视图「提交 ⌄」拆分按钮的箭头。
     CommitButton,
     /// 提交视图底部「上一次提交」那一栏的「⋯」。

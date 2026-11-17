@@ -109,6 +109,36 @@ impl QuestionView {
         }
     }
 
+    /// 返回「按作者筛选」对话框的内容：一个输入框，填作者名字或邮箱的一部分。
+    pub(super) fn log_author() -> Self {
+        Self {
+            title: t!("git-log-author-title").to_owned(),
+            message: None,
+            message_lines: 0,
+            values: Vec::new(),
+            inputs: vec![QuestionInput {
+                label: t!("git-log-author-label"),
+                placeholder: t!("git-log-author-placeholder"),
+            }],
+            confirm: t!("git-log-author-button"),
+        }
+    }
+
+    /// 返回「按时间筛选」对话框的内容：一个输入框，填 `git log --since` 认识的时间。
+    pub(super) fn log_since() -> Self {
+        Self {
+            title: t!("git-log-since-title").to_owned(),
+            message: None,
+            message_lines: 0,
+            values: Vec::new(),
+            inputs: vec![QuestionInput {
+                label: t!("git-log-since-label"),
+                placeholder: t!("git-log-since-placeholder"),
+            }],
+            confirm: t!("git-log-since-button"),
+        }
+    }
+
     /// 返回添加远程仓库（`editing` 为 `None`）或修改其地址的对话框内容。
     pub(crate) fn remote(editing: Option<&str>) -> QuestionView {
         let input = |label, placeholder| QuestionInput { label, placeholder };

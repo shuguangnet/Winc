@@ -394,7 +394,10 @@ fn pill_info(pill: LogPill, query: &LogQuery) -> (LogTarget, &'static str, bool)
     let (name, on) = match pill {
         LogPill::Branch => (t!("git-log-filter-branch"), !query.branches.is_empty()),
         LogPill::Author => (t!("git-log-filter-author"), !query.authors.is_empty()),
-        LogPill::Date => (t!("git-log-filter-date"), query.since_days.is_some()),
+        LogPill::Date => (
+            t!("git-log-filter-date"),
+            query.since_days.is_some() || query.since.is_some(),
+        ),
         LogPill::Path => (t!("git-log-filter-path"), !query.paths.is_empty()),
     };
     (pill.target(), name, on)
@@ -420,7 +423,12 @@ fn log_pills(app: &App, frame: &mut Frame<'_>, query: &LogQuery) -> Vec<StatusEn
             [one] => one.clone(),
             many => t!("git-log-filter-authors", count = many.len()),
         },
-        LogPill::Date => query.since_days.map_or(all.to_owned(), since_label),
+        // 日期：常用的几天按天写，自己填的按原样写。
+        LogPill::Date => match (query.since_days, query.since.as_deref()) {
+            (Some(days), _) => since_label(days),
+            (None, Some(since)) => since.to_owned(),
+            (None, None) => all.to_owned(),
+        },
         LogPill::Path => match query.paths.as_slice() {
             [] => all.to_owned(),
             [one] => one.clone(),

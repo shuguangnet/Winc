@@ -264,8 +264,11 @@ pub struct LogQuery {
     /// 固定在最前面的提交（完整的提交号），见 [`Git::log_stream`]；「转到提交号、分支或标签」
     /// 找到的提交不在已列出的提交中时使用。
     pub pin: Option<String>,
-    /// 只看最近几天的提交（`--since`）。
+    /// 只看最近几天的提交（`--since`）；日期菜单里常用的几项用它。
     pub since_days: Option<u32>,
+    /// 只看这个时间之后的提交，按 `git log --since` 认识的样子写（如 `2024-01-01`、`3 weeks
+    /// ago`）；日期菜单里「其他时间…」填的。与 [`Self::since_days`] 只用一个，两个都填时按天数。
+    pub since: Option<String>,
     /// 只看改过这些路径的提交：相对仓库根目录的路径或通配（`git` 的路径规格），目录包括其中
     /// 的全部文件。与文件历史的 `path` 不同时使用。
     pub paths: Vec<String>,
@@ -298,6 +301,7 @@ impl LogQuery {
             || !self.authors.is_empty()
             || self.pin.is_some()
             || self.since_days.is_some()
+            || self.since.is_some()
             || !self.paths.is_empty()
     }
 }

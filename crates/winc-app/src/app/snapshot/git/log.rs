@@ -687,8 +687,13 @@ fn log_filters_by_text_branch_and_author_and_shows_a_files_history() {
     click(&mut app, (button.x + 5.0, button.y + button.h / 2.0));
     assert_eq!(app.focus, Focus::Picker);
     app.edit_field(|f| f.insert("no-such-branch"));
-    assert!(app.overlays.picker.hits.is_empty());
-    app.picker_accept();
+    // 输入的不是已有的分支或标签：只剩「按…筛选」一行，回车按这个修订筛（这里先改回来）。
+    let rows = app.overlays.picker.branch_rows.clone().unwrap();
+    assert!(matches!(rows.as_slice(), [BranchRow::Revision(name)] if name == "no-such-branch"));
+    app.edit_field(|f| {
+        f.set_text("");
+        true
+    });
     assert!(app.overlays.picker.open);
     assert_eq!(app.log_branch_filter(), None);
     app.edit_field(|f| {

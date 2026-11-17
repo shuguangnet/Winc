@@ -612,6 +612,44 @@ fn shoot_log_branch_filter() {
     }
 }
 
+/// 画出自定义筛选后的日志页：作者、时间由对话框输入，日期下拉里写输入的原文，分支选择器里
+/// 输入修订时最后一行是「按…筛选」。
+#[test]
+#[ignore = "截图，手动运行"]
+fn shoot_log_typed_filters() {
+    for dark in [false, true] {
+        let theme = if dark { "dark" } else { "light" };
+        let Some((mut app, root)) = git_app_in(&format!("log-typed-{theme}"), false, dark) else {
+            return;
+        };
+        history_repo(&root, 10);
+        app.git_refresh();
+        show_all_log(&mut app);
+        app.layout.editor.w = app.layout.editor.w.max(1200.0);
+        paint(&mut app);
+        app.open_log_author_dialog();
+        app.overlays
+            .form_dialog
+            .as_mut()
+            .unwrap()
+            .name
+            .set_text("alice");
+        app.submit_form_dialog();
+        app.open_log_since_dialog();
+        let dialog = app.overlays.form_dialog.as_mut().unwrap();
+        dialog.name.set_text("3 weeks ago");
+        shoot(&mut app, &format!("log-typed-dialog-{theme}"));
+        app.submit_form_dialog();
+        shoot(&mut app, &format!("log-typed-since-{theme}"));
+        app.press_log(LogTarget::Branch);
+        app.overlays.picker.input.set_text("HEAD~4");
+        app.branch_picker_refresh();
+        shoot(&mut app, &format!("log-typed-branch-{theme}"));
+        app.close_picker();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
 /// 详情标题行的放大镜打开「查找文件」：键入的文字按路径筛选选中提交改动的文件，标题行写成
 /// 「留下来的 / 全部」；关掉搜索框以后文件列表恢复原样。
 #[test]
@@ -803,4 +841,114 @@ fn switching_folders_clears_the_file_filter() {
 
     let _ = std::fs::remove_dir_all(&root);
     let _ = std::fs::remove_dir_all(&other);
+}
+
+/// 输入筛选条件：作者、时间在对话框里填，分支筛选在选择器里输入修订（提交号、`HEAD~3` 等）。
+#[test]
+fn log_filters_can_be_typed_in() {
+    let Some((mut app, root)) = git_app("git-log-typed-filters", false) else {
+        return;
+    };
+    history_repo(&root, 10);
+    app.git_refresh();
+    show_all_log(&mut app);
+    paint(&mut app);
+    let query = |app: &App| {
+        app.editor
+            .active()
+            .unwrap()
+            .log
+            .as_deref()
+            .unwrap()
+            .query
+            .clone()
+    };
+    let listed = |app: &App| {
+        app.editor
+            .active()
+            .unwrap()
+            .log
+            .as_deref()
+            .unwrap()
+            .commits
+            .len()
+    };
+    let all = listed(&app);
+    assert_eq!(all, count(&root, &[]));
+
+    // 作者：菜单最后是「其他作者…」，填名字或邮箱的一部分就能筛（不分大小写）。
+    app.open_context_menu(MenuTarget::LogAuthor, (0.0, 0.0));
+    app.run_menu_command(MenuCommand::LogAuthorOther);
+    let dialog = app.overlays.form_dialog.as_mut().unwrap();
+    dialog.name.set_text("alice");
+    app.submit_form_dialog();
+    assert_eq!(query(&app).authors, ["alice"]);
+    let alice = count(
+        &root,
+        &["--author=alice", "--regexp-ignore-case", "--fixed-strings"],
+    );
+    assert!(alice > 0 && alice < all);
+    assert_eq!(listed(&app), alice);
+    // 再填一次同一个作者不会重复。
+    app.open_log_author_dialog();
+    app.overlays
+        .form_dialog
+        .as_mut()
+        .unwrap()
+        .name
+        .set_text("alice");
+    app.submit_form_dialog();
+    assert_eq!(query(&app).authors, ["alice"]);
+    app.open_context_menu(MenuTarget::LogAuthor, (0.0, 0.0));
+    app.run_menu_command(MenuCommand::LogAuthor(0));
+    assert_eq!(listed(&app), all);
+
+    // 时间：菜单最后是「其他时间…」，填 `git log --since` 认识的时间；和「最近几天」只用一个。
+    let before = count(&root, &["--since=7.days.ago"]);
+    app.open_context_menu(MenuTarget::LogDate, (0.0, 0.0));
+    app.run_menu_command(MenuCommand::LogSinceOther);
+    let dialog = app.overlays.form_dialog.as_mut().unwrap();
+    dialog.name.set_text(" 7.days.ago ");
+    app.submit_form_dialog();
+    let after = count(&root, &["--since=7.days.ago"]);
+    assert_eq!(query(&app).since.as_deref(), Some("7.days.ago"));
+    assert_eq!(query(&app).since_days, None);
+    assert!([before, after].contains(&listed(&app)));
+    // 选「最近 30 天」时自定义的时间不再留着。
+    app.open_context_menu(MenuTarget::LogDate, (0.0, 0.0));
+    app.run_menu_command(MenuCommand::LogSince(30));
+    assert_eq!(query(&app).since, None);
+    assert_eq!(query(&app).since_days, Some(30));
+    app.run_menu_command(MenuCommand::LogSince(0));
+    assert_eq!(listed(&app), all);
+
+    // 分支：选择器里输入的不是已有的分支或标签时，最后一行是「按…筛选」，回车按这个修订筛。
+    app.press_log(LogTarget::Branch);
+    app.overlays.picker.input.set_text("HEAD~3");
+    app.branch_picker_refresh();
+    let rows = app.overlays.picker.branch_rows.clone().unwrap();
+    assert_eq!(rows.last(), Some(&BranchRow::Revision("HEAD~3".into())));
+    app.overlays.picker.selected = rows.len() - 1;
+    app.branch_picker_accept();
+    assert!(app.overlays.picker.branch_rows.is_none());
+    assert_eq!(query(&app).branches, ["HEAD~3"]);
+    let rev = Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["log", "--oneline", "HEAD~3"])
+        .output()
+        .unwrap();
+    let rev = String::from_utf8_lossy(&rev.stdout).lines().count();
+    assert!(rev > 0 && rev < all);
+    assert_eq!(listed(&app), rev);
+
+    // 输入的是已有的分支名时没有这一行，仍然只是从列表里挑分支。
+    app.press_log(LogTarget::Branch);
+    app.overlays.picker.input.set_text("main");
+    app.branch_picker_refresh();
+    let rows = app.overlays.picker.branch_rows.clone().unwrap();
+    assert!(!rows.iter().any(|r| matches!(r, BranchRow::Revision(_))));
+    app.close_picker();
+
+    let _ = std::fs::remove_dir_all(&root);
 }

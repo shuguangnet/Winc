@@ -670,6 +670,11 @@ fn draw_branch_rows(
                 };
                 draw_branch_row(app, frame, &line, i, &row, hits);
             }
+            // 日志的分支筛选里按输入的修订筛选：和「全部分支」一样是一行文字，左边空着对勾的位置。
+            BranchRow::Revision(revision) => {
+                let label = t!("git-log-branch-revision-row", name = revision.as_str());
+                draw_log_branch_row(app, frame, &line, &label, Some(revision.as_str()));
+            }
             BranchRow::Create(name) => {
                 let (icon, text) = line.columns(0);
                 icons::plus(frame, (icon, line.cy), 8.0, line.dim, line.clip);

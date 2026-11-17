@@ -66,8 +66,13 @@ impl Git {
         if query.rewrites_parents() {
             command.arg("--parents");
         }
+        // 日期筛选：常用的是「最近几天」，否则用「其他时间…」填的原文，`git` 自己认。
         if let Some(days) = query.since_days {
             command.arg(format!("--since={days}.days.ago"));
+        } else if let Some(since) = query.since.as_deref().map(str::trim)
+            && !since.is_empty()
+        {
+            command.arg(format!("--since={since}"));
         }
         command.arg(LOG_DATE).arg(LOG_FORMAT);
         // 按行范围查找时文件写在 `-L` 里，不能再写路径；`-s` 不输出每个提交改了这段的哪些地方。

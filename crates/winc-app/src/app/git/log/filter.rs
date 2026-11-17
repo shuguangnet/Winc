@@ -59,8 +59,8 @@ pub(crate) fn since_label(days: u32) -> String {
 }
 
 impl App {
-    /// 标题栏「日期」「路径」「作者」下拉弹出的菜单：最上面是不筛选的一项，下面是各个选项；路径
-    /// 菜单最后是「其他路径…」。
+    /// 标题栏「日期」「路径」「作者」下拉弹出的菜单：最上面是不筛选的一项，下面是各个选项，
+    /// 最后是「其他…」——不在列出的选项里时自己输入。
     pub(in crate::app) fn log_filter_menu(&self, target: &MenuTarget) -> Vec<MenuEntry> {
         let item = |command| MenuEntry::Item(command, true);
         let (all, rest): (MenuCommand, Vec<MenuCommand>) = match target {
@@ -88,14 +88,20 @@ impl App {
         if *target == MenuTarget::LogAuthor && !self.git.my_email.is_empty() {
             menu.push(item(MenuCommand::LogAuthorMe));
         }
-        menu.push(MenuEntry::Separator);
-        let listed = !rest.is_empty();
-        menu.extend(rest.into_iter().map(item));
-        if *target == MenuTarget::LogPath {
-            if listed {
-                menu.push(MenuEntry::Separator);
-            }
-            menu.push(item(MenuCommand::LogPathOther));
+        if !rest.is_empty() {
+            menu.push(MenuEntry::Separator);
+            menu.extend(rest.into_iter().map(item));
+        }
+        // 路径、作者、日期菜单最后是「其他…」：不在列出的选项里时自己输入。
+        let other = match target {
+            MenuTarget::LogPath => Some(MenuCommand::LogPathOther),
+            MenuTarget::LogAuthor => Some(MenuCommand::LogAuthorOther),
+            MenuTarget::LogDate => Some(MenuCommand::LogSinceOther),
+            _ => None,
+        };
+        if let Some(other) = other {
+            menu.push(MenuEntry::Separator);
+            menu.push(item(other));
         }
         menu
     }
@@ -120,6 +126,9 @@ impl App {
         match command {
             MenuCommand::LogSince(days) => {
                 Some(query.is_some_and(|q| q.since_days.unwrap_or(0) == days))
+            }
+            MenuCommand::LogSinceOther => {
+                Some(query.is_some_and(|q| q.since.as_ref().is_some_and(|s| !s.trim().is_empty())))
             }
             MenuCommand::LogAuthorMe => {
                 let me = self.git.my_email.as_str();
@@ -167,6 +176,26 @@ impl App {
         use crate::app::git::form::FormKind;
         self.show_form_dialog(
             FormKind::LogPath,
+            TextField::default(),
+            crate::layout::DialogPart::Branch,
+        );
+    }
+
+    /// 打开输入其他作者的对话框（作者菜单的「其他作者…」）。
+    pub(in crate::app) fn open_log_author_dialog(&mut self) {
+        use crate::app::git::form::FormKind;
+        self.show_form_dialog(
+            FormKind::LogAuthor,
+            TextField::default(),
+            crate::layout::DialogPart::Branch,
+        );
+    }
+
+    /// 打开输入其他时间的对话框（日期菜单的「其他时间…」）。
+    pub(in crate::app) fn open_log_since_dialog(&mut self) {
+        use crate::app::git::form::FormKind;
+        self.show_form_dialog(
+            FormKind::LogSince,
             TextField::default(),
             crate::layout::DialogPart::Branch,
         );

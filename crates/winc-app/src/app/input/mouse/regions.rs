@@ -410,12 +410,20 @@ impl App {
             ),
         ];
 
+        // 分支面板顶部的搜索框只在面板完全展开时绘制（见 `view::git::log`）。
+        let log_branch = Some((
+            Focus::LogBranchFilter,
+            self.log_active() && self.log_branches_shown() >= 1.0,
+            &self.git.log.branch_filter,
+        ));
+
         visible
             .into_iter()
             .chain(prompt)
             .chain(rename)
             .chain(terminal_find)
             .chain(panel)
+            .chain(log_branch)
             .find(|(_, shown, f)| *shown && f.view.area.contains(x, y))
             .map(|(focus, ..)| focus)
     }

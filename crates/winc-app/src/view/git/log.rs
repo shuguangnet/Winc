@@ -115,6 +115,10 @@ pub(in crate::view) fn draw_log(app: &mut App, frame: &mut Frame<'_>, index: usi
     app.sync_log_filter();
     let search = draw_search(app, frame, &parts);
     hits.push((search, LogTarget::Search));
+    // 分支面板顶部的搜索框同样要更新排版状态（供点击、拖选使用），也在这一段绘制。
+    if let Some(rect) = branches::branch_field(&parts) {
+        branches::draw_branch_field(app, frame, rect, &mut hits);
+    }
     let pills = match app.editor.documents[index].log.as_deref() {
         Some(view) => log_pills(app, frame, &view.query),
         None => Vec::new(),

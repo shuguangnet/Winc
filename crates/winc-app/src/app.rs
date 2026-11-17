@@ -406,6 +406,8 @@ pub enum Focus {
     Outline,
     /// 日志标签标题栏的筛选输入框。
     LogFilter,
+    /// 日志左侧分支面板顶部的搜索框。
+    LogBranchFilter,
     /// 功能对话框（新建工作树）里的输入框。
     Dialog,
 }

@@ -503,3 +503,111 @@ fn the_author_menu_lists_every_author_and_can_be_searched() {
     app.run_menu_command(MenuCommand::LogAuthor(0));
     assert!(query(&app).authors.is_empty());
 }
+
+/// 日志页中 `target` 的点击范围：最后一次 `paint` 记下的（`hit` 返回首个命中的）。
+fn hit(app: &App, target: &LogTarget) -> Option<Rect> {
+    app.hits
+        .log
+        .iter()
+        .find(|(_, t)| t == target)
+        .map(|(rect, _)| *rect)
+}
+
+/// 分支面板顶部的搜索框按名字筛选面板里的各行：只剩匹配的分支和它们所在的一组，面板回到顶部；
+/// 清空以后恢复，包括「全部分支」。
+#[test]
+fn the_branch_panel_can_be_searched() {
+    use crate::app::git::branch::picker::BranchRow;
+    let Some((mut app, root)) = git_app("git-log-branch-search", false) else {
+        return;
+    };
+    history_repo(&root, 10);
+    app.git_refresh();
+    show_all_log(&mut app);
+    app.layout.editor.w = app.layout.editor.w.max(1200.0);
+    paint(&mut app);
+    let all = app.log_branch_rows().len();
+    assert!(matches!(app.log_branch_rows()[0], BranchRow::All));
+
+    // 点搜索框以后键入的文字进它，各行只剩名字匹配的。
+    let (rect, _) = *app
+        .hits
+        .log
+        .iter()
+        .find(|(_, t)| *t == LogTarget::BranchFilter)
+        .unwrap();
+    app.pointer.mouse = (rect.x + 30.0, rect.y + rect.h / 2.0);
+    app.press_log(LogTarget::BranchFilter);
+    assert_eq!(app.focus, Focus::LogBranchFilter);
+    app.edit_field(|f| f.insert("LOGIN"));
+    let rows = app.log_branch_rows();
+    assert!(rows.len() < all);
+    assert!(rows.iter().all(|row| !matches!(row, BranchRow::All)));
+    let named: Vec<&str> = rows
+        .iter()
+        .filter_map(|row| match row {
+            BranchRow::Branch { index, .. } => Some(app.git.branches[*index].name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(named, ["feature/login"]);
+    assert!(app.git.log.branches_scroll == 0.0);
+
+    // 搜索框下面是各行：滚到最上面时第一行也不会盖住它。
+    let field = hit(&app, &LogTarget::BranchFilter).unwrap();
+    let first = hit(&app, &LogTarget::BranchRow(0)).unwrap();
+    assert!(field.y >= app.log_parts().branches.y);
+    assert!(first.y >= field.bottom());
+
+    // 一个也不匹配时面板不画行（只剩分支选择器的「新建分支」，面板不画它）。
+    app.edit_field(|f| {
+        f.set_text("zzz");
+        true
+    });
+    let rows = app.log_branch_rows();
+    assert!(rows.iter().all(|r| matches!(r, BranchRow::Create(_))));
+    paint(&mut app);
+    assert!(hit(&app, &LogTarget::BranchRow(0)).is_none());
+
+    // 清空以后面板恢复原样（「全部分支」在最上面）。
+    app.edit_field(|f| {
+        f.set_text("");
+        true
+    });
+    assert_eq!(app.log_branch_rows().len(), all);
+    assert!(matches!(app.log_branch_rows()[0], BranchRow::All));
+}
+
+/// 画出具名仓库的日志页，供人工查看分支面板的搜索框和筛选后的各行。
+#[test]
+#[ignore = "截图，手动运行"]
+fn shoot_log_branch_filter() {
+    for dark in [false, true] {
+        let theme = if dark { "dark" } else { "light" };
+        let Some((mut app, root)) = git_app_in(&format!("log-branch-filter-{theme}"), false, dark)
+        else {
+            return;
+        };
+        history_repo(&root, 10);
+        for name in ["feature/login-remember", "release/1.0"] {
+            git_in(&root, &["branch", name]);
+        }
+        app.git_refresh();
+        show_all_log(&mut app);
+        app.layout.editor.w = app.layout.editor.w.max(1200.0);
+        paint(&mut app);
+        if let Some((rect, _)) = app
+            .hits
+            .log
+            .iter()
+            .find(|(_, t)| *t == LogTarget::BranchFilter)
+            .copied()
+        {
+            app.pointer.mouse = (rect.x + 30.0, rect.y + rect.h / 2.0);
+            app.press_log(LogTarget::BranchFilter);
+            app.edit_field(|f| f.insert("login"));
+            shoot(&mut app, &format!("log-branch-filter-{theme}"));
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

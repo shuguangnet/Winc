@@ -732,6 +732,7 @@ impl App {
             MenuTarget::FormBase => (self.git.branches.clone(), Vec::new()),
             _ => Default::default(),
         };
+        let typed = target.typed();
         self.overlays.context_menu = Some(ContextMenu {
             target,
             entries: entries.clone(),
@@ -741,9 +742,9 @@ impl App {
         });
         self.set_hover(Hover::None);
 
-        // 没有系统菜单（macOS 以外的平台，以及没有窗口的测试中）：在窗口里画出来，由应用自己
-        // 处理悬停、点击和按键，打开期间菜单按钮保持按下的样子。
-        if !cfg!(target_os = "macos") || self.window.handle.is_none() {
+        // 没有系统菜单（macOS 以外的平台、没有窗口的测试中，以及要在菜单里键入文字的）：
+        // 在窗口里画出来，由应用自己处理悬停、点击和按键，打开期间菜单按钮保持按下的样子。
+        if typed || !cfg!(target_os = "macos") || self.window.handle.is_none() {
             let rows = self.popup_rows(&entries, context, &mut 0);
             if let Some(menu) = &mut self.overlays.context_menu {
                 let mut popup = PopupMenu::new(rows, at, (at_checked, right_aligned));

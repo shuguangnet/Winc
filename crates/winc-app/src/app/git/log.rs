@@ -394,10 +394,8 @@ pub(crate) struct LogState {
     ///
     /// 所有日志标签共用一个输入框，切换标签时换为该标签的筛选文字。
     pub filter: TextField,
-    /// 作者菜单中列出的作者，弹出菜单时从已读取的提交中收集；菜单项按下标对应。
+    /// 作者菜单中列出的作者，弹出菜单时收集（见 [`App::log_authors`]）；菜单项按下标对应。
     pub authors: Vec<String>,
-    /// `authors` 是哪个日志标签的：按作者筛选时只沿用同一个标签上次的名单。
-    pub(super) authors_of: Option<DocumentId>,
     /// 路径菜单中列出的路径（相对仓库根目录），弹出菜单时收集；菜单项按下标对应。
     pub paths: Vec<String>,
     /// 打开文件差异的标签；依次查看多个文件时只占用一个标签。
@@ -547,7 +545,6 @@ impl Default for LogState {
             results: channel(),
             filter: TextField::default(),
             authors: Vec::new(),
-            authors_of: None,
             paths: Vec::new(),
             preview: None,
             tree: None,
@@ -1021,7 +1018,6 @@ impl App {
                     return;
                 };
                 self.git.log.authors = self.log_authors();
-                self.git.log.authors_of = self.editor.active().map(|d| d.id);
                 self.open_context_menu(MenuTarget::LogAuthor, (rect.x, rect.bottom() + 4.0));
             }
             LogTarget::FilesLayout => self.toggle_commit_layout(),

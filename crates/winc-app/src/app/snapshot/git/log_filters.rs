@@ -431,3 +431,75 @@ fn log_columns_can_be_hidden_shown_and_widened() {
     assert_eq!(app.git.log.author_w, None);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// 「作者」下拉可以键入文字筛选：名单不受当前筛选条件影响（日期、路径收窄了取回的提交，作者仍然
+/// 全列出来），键入几位只剩名字里含这几个字的作者，↩ 选一位即按该作者筛选，再选一位加上。
+#[test]
+fn the_author_menu_lists_every_author_and_can_be_searched() {
+    use crate::app::PopupRow;
+    use winit::keyboard::{Key, NamedKey};
+    let Some((mut app, root)) = git_app("git-log-author-search", false) else {
+        return;
+    };
+    history_repo(&root, 10);
+    app.git_refresh();
+    show_all_log(&mut app);
+    // 只看最近一天：取回来的提交没有几位作者，菜单里仍然列出仓库里的全部作者。
+    app.press_log(LogTarget::Date);
+    app.run_menu_command(MenuCommand::LogSince(1));
+    paint(&mut app);
+    app.press_log(LogTarget::Author);
+    let authors = app.git.log.authors.clone();
+    assert!(authors.len() >= 3, "{authors:?}");
+    assert!(authors.iter().all(|a| !a.contains('<')), "{authors:?}");
+    let titles = |app: &App| -> Vec<String> {
+        let rows = &app.popup().unwrap().levels[0].rows;
+        rows.iter()
+            .filter_map(|r| match r {
+                PopupRow::Item { label, .. } => Some(label.title.clone()),
+                PopupRow::Query(q) => Some(format!("[{q}]")),
+                _ => None,
+            })
+            .collect()
+    };
+
+    // 键入「ali」：只剩名字里有它的作者，以及第一行写出的键入文字。
+    for c in "ali".chars() {
+        assert!(app.popup_logical_key(&Key::Character(c.to_string().into())));
+    }
+    assert_eq!(titles(&app), ["[ali]", "Alice Chen"]);
+    assert!(app.popup_logical_key(&Key::Named(NamedKey::Enter)));
+    assert!(app.overlays.context_menu.is_none());
+    let query = |app: &App| {
+        app.editor
+            .active()
+            .unwrap()
+            .log
+            .as_deref()
+            .unwrap()
+            .query
+            .clone()
+    };
+    assert_eq!(query(&app).authors, ["Alice Chen"]);
+    let view = app.editor.active().unwrap().log.as_deref().unwrap();
+    assert!(!view.commits.is_empty());
+    assert!(view.commits.iter().all(|c| c.author == "Alice Chen"));
+
+    // 再打开、键入「张」，选上以后两位作者都列出；「全部作者」清空。
+    paint(&mut app);
+    app.press_log(LogTarget::Author);
+    assert!(app.popup_logical_key(&Key::Character("张".into())));
+    assert_eq!(titles(&app), ["[张]", "张伟"]);
+    assert!(app.popup_logical_key(&Key::Named(NamedKey::Enter)));
+    assert_eq!(query(&app).authors, ["Alice Chen", "张伟"]);
+    let view = app.editor.active().unwrap().log.as_deref().unwrap();
+    assert!(
+        view.commits
+            .iter()
+            .all(|c| ["Alice Chen", "张伟"].contains(&c.author.as_str()))
+    );
+    paint(&mut app);
+    app.press_log(LogTarget::Author);
+    app.run_menu_command(MenuCommand::LogAuthor(0));
+    assert!(query(&app).authors.is_empty());
+}

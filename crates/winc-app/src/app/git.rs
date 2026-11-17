@@ -806,6 +806,8 @@ impl App {
         }
         self.git.changes.forget();
         self.git.blame.clear();
+        // 提交图是旧仓库的：清掉，否则读出新仓库的图之前点一行会打开旧仓库的提交号。
+        self.git.graph = graph::GraphPart::default();
         // 旧仓库中进行的分支操作与提交属于旧仓库：此处不再显示「正在拉取…」，不阻止新仓库的操作，
         // 也不沿用「修改上一次提交」。操作完成时只显示提示（见 `poll_branch_ops`、`poll_commit`）。
         self.git.branch.running = None;
@@ -1102,8 +1104,9 @@ impl App {
                     if moved {
                         self.reload_logs();
                     }
-                    // 提交视图里的提交图跟着 `HEAD` 走；还没读过、或者正显示提交视图时读一次。
-                    if moved || (self.commit_shown() && self.git.graph.is_empty()) {
+                    // 提交视图里的提交图跟着 `HEAD` 走：还没读过、或者读的还是别的 `HEAD` 时读一次。
+                    let head = self.git.status.as_ref().and_then(|s| s.oid.as_deref());
+                    if moved || (self.commit_shown() && self.git.graph.stale(head)) {
                         self.reload_graph();
                     }
                 }

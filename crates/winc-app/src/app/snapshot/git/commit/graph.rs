@@ -84,6 +84,75 @@ fn the_commit_graph_scrolls_with_the_wheel() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+#[test]
+fn the_graph_is_dropped_when_the_repository_switches() {
+    let Some((mut app, root)) = git_app("git-commit-graph-switch", false) else {
+        return;
+    };
+    history_repo(&root, 40);
+    app.run_action(Action::ShowCommit);
+    paint(&mut app);
+    let old = app.git.graph.commits[0].subject.clone();
+
+    // 打开目录下的第二个仓库：图必须换成它的提交，不能留着上一个仓库的。
+    let other = root.join("nested");
+    std::fs::create_dir_all(&other).unwrap();
+    git_in(&other, &["init", "-q", "-b", "main"]);
+    std::fs::write(other.join("a.rs"), "// a\n").unwrap();
+    git_in(&other, &["add", "-A"]);
+    git_in(&other, &["commit", "-q", "-m", "另一个仓库里的提交"]);
+    app.git.repositories = vec![root.clone(), other.clone()];
+    app.git.graph.scroll = 60.0;
+    app.set_graph_compare_base(Some("origin/whatever".to_owned()));
+    app.git_switch_repository(1);
+    // 切换仓库时清掉旧仓库的图：读出新仓库的图之前点一行不该打开旧仓库的提交号，滚动位置和
+    // 对比基准也不该跟着过来。
+    assert!(
+        !app.git.graph.commits.iter().any(|c| c.subject == old),
+        "{:?}",
+        app.git
+            .graph
+            .commits
+            .iter()
+            .map(|c| &c.subject)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(app.git.graph.scroll, 0.0);
+    assert!(app.git.graph.base.is_none());
+    // 状态刷新后读的是新仓库的图。
+    app.git_refresh();
+    paint(&mut app);
+    let commits = app.git.graph.commits.clone();
+    assert_eq!(commits.len(), 1);
+    assert_ne!(commits[0].subject, old);
+    assert_eq!(app.git.graph.oid(0), Some(commits[0].oid.as_str()));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn the_graph_does_not_take_the_wheel_when_the_commit_view_is_hidden() {
+    let Some((mut app, root)) = git_app("git-commit-graph-hidden", false) else {
+        return;
+    };
+    history_repo(&root, 40);
+    many_commits(&root, 24);
+    app.run_action(Action::ShowCommit);
+    app.git_refresh();
+    paint(&mut app);
+    let graph = app.commit_parts().graph.expect("显示提交图");
+    let at = (graph.x + 30.0, graph.y + 40.0);
+    assert_eq!(app.scroll_target_at(at.0, at.1), ScrollTarget::Graph);
+
+    // 换成文件树：同一位置的滚轮不该去滚看不见的提交图。
+    app.set_sidebar_view(SidebarView::Files);
+    paint(&mut app);
+    assert_ne!(app.scroll_target_at(at.0, at.1), ScrollTarget::Graph);
+    app.pointer.mouse = at;
+    app.on_wheel(MouseScrollDelta::LineDelta(0.0, -2.0));
+    assert_eq!(app.git.graph.scroll, 0.0);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// 在仓库里再提交 `count` 次：提交图上的行多于一屏，可以滚动很长一段。
 fn many_commits(root: &Path, count: usize) {
     for i in 0..count {

@@ -1409,7 +1409,8 @@ impl App {
         }
         self.focus = self.commit_view_focus();
         // 提交图在这个视图第一次显示时读取（之后随 `HEAD` 变化一起更新）。
-        if self.git.graph.is_empty() {
+        let head = self.git.status.as_ref().and_then(|s| s.oid.clone());
+        if self.git.graph.stale(head.as_deref()) {
             self.reload_graph();
         }
         self.request_redraw();

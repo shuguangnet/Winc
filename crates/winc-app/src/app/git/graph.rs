@@ -43,6 +43,10 @@ pub(crate) struct GraphPart {
     pub base: Option<String>,
     /// 与基准的对比结果；没有上游、也没手动选基准时为 `None`。
     pub compare: Option<GraphCompare>,
+    /// 上一次读取时的 `HEAD`（空仓库时是空串）：`HEAD` 不变的失败或空结果不重复读。
+    head: Option<String>,
+    /// 读取期间又要重新读取：读回的这一批已经过时，读完再读一次。
+    again: bool,
     /// 当前这批的版本号：发出请求与返回不一致时丢弃结果。
     generation: u64,
     /// 对比的版本号：同上。
@@ -89,6 +93,14 @@ impl GraphPart {
         self.commits.is_empty()
     }
 
+    /// 要不要（重新）读一次图：还没读过，或者读的还是别的 `HEAD`。
+    ///
+    /// 空仓库和读取出错也算读过（[`Self::head`] 记的是尝试时的 `HEAD`）：`HEAD` 不变时不重复读，
+    /// 否则每次刷新状态都会再跑一遍 `git log`。手动刷新与切回提交视图会直接读一次。
+    pub(crate) fn stale(&self, head: Option<&str>) -> bool {
+        self.head.as_deref() != Some(head.unwrap_or_default())
+    }
+
     /// 第 `index` 个提交的提交号。
     pub(crate) fn oid(&self, index: usize) -> Option<&str> {
         self.commits.get(index).map(|c| c.oid.as_str())
@@ -98,16 +110,23 @@ impl GraphPart {
 impl App {
     /// 重新读取提交视图里的提交图（`HEAD` 变化、点击刷新、切换到提交视图时）。
     ///
-    /// 正在读取时不再发出请求：当前这一批读完后按那时的 `HEAD` 生效。对比与图一起读取（见
+    /// 正在读取时不再发出请求：当前这一批读完后按那时的 `HEAD` 再读一次。对比与图一起读取（见
     /// [`Self::reload_compare`]）：图的基准取自同一时刻的分支列表。
+    ///
+    /// 读的是全部分支的最近 [`GRAPH_COMMITS`] 个提交，分支很多时当前分支更早的提交可能不在这
+    /// 一段里；侧栏只看最近做了什么，要看得更远就打开日志标签。
     pub(in crate::app) fn reload_graph(&mut self) {
         let Some(root) = self.git.root.clone() else {
             self.git.graph = GraphPart::default();
             return;
         };
         if self.git.graph.loading {
+            // 这一批读完之前 `HEAD` 又动了：读回的结果已经过时，读完按新的 `HEAD` 再读一次。
+            self.git.graph.again = true;
             return;
         }
+        let head = self.git.status.as_ref().and_then(|s| s.oid.clone());
+        self.git.graph.head = Some(head.unwrap_or_default());
         let generation = self.git.graph.begin();
         let sender = self.git.log.results.0.clone();
         self.spawn_git(UserEvent::GitLog, move |tool| {
@@ -144,6 +163,9 @@ impl App {
                 self.git.graph.scroll = self.git.graph.scroll.max(0.0);
             }
             Err(error) => self.git.graph.error = Some(error),
+        }
+        if std::mem::take(&mut self.git.graph.again) {
+            self.reload_graph();
         }
         self.request_redraw();
     }

@@ -121,10 +121,11 @@ impl App {
             ScrollTarget::LogList
         } else if self.commit_shown() && self.commit_parts().message.contains(x, y) {
             ScrollTarget::CommitMessage
-        } else if self
-            .commit_parts()
-            .graph
-            .is_some_and(|graph| graph.contains(x, y))
+        } else if self.commit_shown()
+            && self
+                .commit_parts()
+                .graph
+                .is_some_and(|graph| graph.contains(x, y))
         {
             ScrollTarget::Graph
         } else if self.commit_shown() && in_list(self) {

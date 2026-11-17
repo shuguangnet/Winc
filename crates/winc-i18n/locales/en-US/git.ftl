@@ -767,6 +767,7 @@ git-log-files-changed = { $count ->
    *[other] { $count } files changed
 }
 git-log-files-changed-of = { $shown } of { $total } files
+git-log-files-no-match = No matching files
 git-log-find-file = Find file
 git-log-file-binary = Binary
 

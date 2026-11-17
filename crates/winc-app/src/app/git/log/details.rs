@@ -359,8 +359,17 @@ impl App {
         }
     }
 
+    /// 点了「一个文件也不剩」那一行：清掉键入的文字，文件列表恢复成全部文件（搜索框还开着）。
+    pub(super) fn clear_log_file_filter(&mut self) {
+        if self.git.log.file_filter.text().is_empty() {
+            return;
+        }
+        self.git.log.file_filter.set_text("");
+        self.log_file_filter_changed();
+    }
+
     /// 新开日志标签时收起「查找文件」、清掉键入的文字：上一个标签的筛选不该影响新的列表。
-    pub(super) fn reset_log_find_files(&mut self) {
+    pub(in crate::app) fn reset_log_find_files(&mut self) {
         if !self.git.log.find_files && self.git.log.file_filter.text().is_empty() {
             return;
         }

@@ -670,19 +670,23 @@ fn the_log_details_can_be_filtered_by_file_path() {
         assert_eq!(hit(&app, &LogTarget::File(i)).is_some(), shown, "文件 {i}");
     }
 
-    // 一个也不匹配时文件列表空着；清空文字后恢复四个文件。
+    // 一个也不匹配时文件列表空着，写一行「没有匹配的文件」；点这一行清掉键入的文字。
     app.edit_field(|f| {
         f.set_text("zzz");
         true
     });
     paint(&mut app);
     assert!(app.log_file_order().is_empty());
-    app.edit_field(|f| {
-        f.set_text("");
-        true
-    });
+    for i in 0..all.len() {
+        assert!(hit(&app, &LogTarget::File(i)).is_none(), "文件 {i}");
+    }
+    let empty = hit(&app, &LogTarget::ClearFileFilter).unwrap();
+    assert!(empty.y >= button.bottom());
+    click(&mut app, (empty.x + 20.0, empty.y + empty.h / 2.0));
     paint(&mut app);
     assert_eq!(app.log_file_order().len(), 4);
+    assert!(hit(&app, &LogTarget::ClearFileFilter).is_none());
+    assert!(app.git.log.file_filter.text().is_empty());
 
     // 再点一次放大镜关掉搜索框：清掉文字，底部回到提示行。
     click(&mut app, middle);
@@ -757,8 +761,46 @@ fn shoot_log_find_file() {
             click(&mut app, middle);
             app.edit_field(|f| f.insert("docs/"));
             shoot(&mut app, &format!("log-find-file-{theme}"));
-            let _ = middle;
+            // 一个也不匹配时的提示行。
+            app.edit_field(|f| {
+                f.set_text("zzz");
+                true
+            });
+            shoot(&mut app, &format!("log-find-file-empty-{theme}"));
         }
         let _ = std::fs::remove_dir_all(&root);
     }
+}
+
+/// 切换到另一个目录时「查找文件」也收起来：旧目录的筛选不该藏起新目录的文件。
+#[test]
+fn switching_folders_clears_the_file_filter() {
+    let Some((mut app, root)) = git_app("git-log-find-file-switch", false) else {
+        return;
+    };
+    history_repo(&root, 10);
+    app.git_refresh();
+    show_all_log(&mut app);
+    app.layout.editor.w = app.layout.editor.w.max(1200.0);
+    paint(&mut app);
+    app.press_log(LogTarget::Row(0));
+    paint(&mut app);
+    let button = hit(&app, &LogTarget::FindFiles).unwrap();
+    click(
+        &mut app,
+        (button.x + button.w / 2.0, button.y + button.h / 2.0),
+    );
+    app.edit_field(|f| f.insert("src/"));
+    assert!(app.git.log.find_files);
+    assert_eq!(app.git.log.file_filter.text(), "src/");
+
+    let other = search_folder("git-log-find-file-target");
+    app.open_path(&other);
+    assert_ne!(app.git.root.as_deref(), Some(root.as_path()));
+    assert!(!app.git.log.find_files);
+    assert!(app.git.log.file_filter.text().is_empty());
+    assert_ne!(app.focus, Focus::LogFileFilter);
+
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(&other);
 }

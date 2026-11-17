@@ -4,7 +4,7 @@
 //! 分组（见 [`log_file_rows`]）。截短的路径记进 `long_files`，鼠标悬停时提示完整路径。
 //!
 //! 标题行右端的放大镜打开「查找文件」：详情底部的搜索框（[`draw_file_filter`]）按路径筛选
-//! 列出的文件。
+//! 列出的文件；一个文件也不剩时写一行提示，点它清掉键入的文字。
 
 use super::*;
 use crate::app::git::log::LogFileRow;
@@ -89,6 +89,25 @@ pub(super) fn draw_files(
     icons::magnifier(frame, center(find), ink, area);
     hits.push((find.intersect(area), LogTarget::FindFiles));
     y += 26.0;
+
+    // 「查找文件」把文件全筛掉了：在标题下面写一行，点它清掉键入的文字。
+    if rows.is_empty() && !files.is_empty() {
+        let row = Rect::new(x, y, width, 24.0);
+        if app.pointer.hover == Hover::Log(LogTarget::ClearFileFilter) {
+            frame.rounded(row, p.hover, RADIUS_ROW);
+        }
+        ui_text_small(
+            frame,
+            app,
+            x,
+            row,
+            t!("git-log-files-no-match"),
+            p.text_dim,
+            area,
+        );
+        hits.push((row.intersect(area), LogTarget::ClearFileFilter));
+        return row.bottom();
+    }
 
     let root = app.git.root.as_deref();
     for entry in rows {

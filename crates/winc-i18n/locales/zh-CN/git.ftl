@@ -603,6 +603,7 @@ git-commit-open-deleted = 文件已删除，无法打开
 git-commit-blocker-conflicts = { $count } 个文件仍有未解决的冲突
 git-log-files-changed = 更改了 { $count } 个文件
 git-log-files-changed-of = { $total } 个文件中的 { $shown } 个
+git-log-files-no-match = 没有匹配的文件
 git-log-find-file = 查找文件
 git-log-file-binary = 二进制
 

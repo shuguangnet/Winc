@@ -408,6 +408,8 @@ pub enum Focus {
     LogFilter,
     /// 日志左侧分支面板顶部的搜索框。
     LogBranchFilter,
+    /// 日志详情里「查找文件」的搜索框。
+    LogFileFilter,
     /// 功能对话框（新建工作树）里的输入框。
     Dialog,
 }

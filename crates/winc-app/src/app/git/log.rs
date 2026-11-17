@@ -190,6 +190,10 @@ pub enum LogTarget {
     Path,
     /// 详情里改动的文件一行右端的按钮：平铺、按目录分组之间切换（与提交视图一起）。
     FilesLayout,
+    /// 详情标题行右端的放大镜：打开、关闭下面的「查找文件」搜索框。
+    FindFiles,
+    /// 详情里「查找文件」的搜索框：键入文字按路径筛选改动的文件。
+    FileFilter,
     /// 标题栏最左边的按钮：显示、隐藏分支面板。
     BranchesToggle,
     /// 分支面板顶部的搜索框：键入文字筛选面板里的分支。
@@ -450,6 +454,11 @@ pub(crate) struct LogState {
     ///
     /// 所有日志标签共用，与面板的滚动位置相同。
     pub(crate) branch_filter: TextField,
+    /// 详情里「查找文件」的搜索框：按路径筛选选中提交改动的文件（与 `Git History` 的
+    /// `Find file` 相同）。留空时列出全部文件。
+    pub(crate) file_filter: TextField,
+    /// 详情里的「查找文件」搜索框是否打开（标题行右端的放大镜切换）。
+    pub(crate) find_files: bool,
     /// 标题栏各个筛选下拉的宽度过渡：换了筛选条件、文字变长变短时宽度缓动，旧文字淡出、新文字
     /// 淡入，与状态栏右侧各项相同。
     pub(crate) pills: crate::app::StatusMotion<LogPill>,
@@ -571,6 +580,8 @@ impl Default for LogState {
             branches_max: 0.0,
             branch_fold: None,
             branch_filter: TextField::default(),
+            file_filter: TextField::default(),
+            find_files: false,
             branches_motion: None,
             branch_rows: Default::default(),
             pills: Default::default(),
@@ -604,6 +615,7 @@ impl App {
         let (index, new) = self.editor.show_log(log_title());
         let id = self.editor.documents[index].id;
         if new {
+            self.reset_log_find_files();
             // 新打开的日志默认只显示当前分支的提交；分离 `HEAD` 时显示全部分支。
             let current = self.git.branches.iter().find(|b| b.current);
             let branches = current.map(|b| b.name.clone()).into_iter().collect();
@@ -1031,6 +1043,8 @@ impl App {
             LogTarget::FilesLayout => self.toggle_commit_layout(),
             LogTarget::BranchesToggle => self.toggle_log_branches(),
             LogTarget::BranchFilter => self.press_log_branch_filter(),
+            LogTarget::FindFiles => self.toggle_log_find_files(),
+            LogTarget::FileFilter => self.press_log_file_filter(),
             // 拖动由 `mouse.rs` 开始处理。
             LogTarget::AuthorEdge => {}
             LogTarget::Columns => {

@@ -30,6 +30,7 @@ impl App {
             Focus::SettingsSearch => Some(&mut self.settings.search),
             Focus::LogFilter => Some(&mut self.git.log.filter),
             Focus::LogBranchFilter => Some(&mut self.git.log.branch_filter),
+            Focus::LogFileFilter => Some(&mut self.git.log.file_filter),
             Focus::Dialog => self.overlays.form_dialog.as_mut().map(|d| match d.focus {
                 crate::layout::DialogPart::Second => &mut d.second,
                 crate::layout::DialogPart::Third => &mut d.third,
@@ -69,6 +70,7 @@ impl App {
                 Focus::Setting => self.settings_live_font(),
                 Focus::LogFilter => self.log_filter_changed(),
                 Focus::LogBranchFilter => self.log_branch_filter_changed(),
+                Focus::LogFileFilter => self.log_file_filter_changed(),
                 Focus::TerminalFind => self.terminal_find_changed(),
                 Focus::SettingsSearch => self.settings_search_changed(),
                 Focus::Dialog => self.refresh_push_list(),

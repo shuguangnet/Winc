@@ -260,6 +260,7 @@ impl App {
         let (index, new) = self.editor.show_log(&title);
         let id = self.editor.documents[index].id;
         if new {
+            self.reset_log_find_files();
             if let Some(view) = self.editor.documents[index].log.as_deref_mut() {
                 view.query.path = Some(path);
                 view.query.lines = lines;

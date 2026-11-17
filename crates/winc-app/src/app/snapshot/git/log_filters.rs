@@ -611,3 +611,154 @@ fn shoot_log_branch_filter() {
         let _ = std::fs::remove_dir_all(&root);
     }
 }
+
+/// 详情标题行的放大镜打开「查找文件」：键入的文字按路径筛选选中提交改动的文件，标题行写成
+/// 「留下来的 / 全部」；关掉搜索框以后文件列表恢复原样。
+#[test]
+fn the_log_details_can_be_filtered_by_file_path() {
+    let Some((mut app, root)) = git_app("git-log-find-file", false) else {
+        return;
+    };
+    history_repo(&root, 10);
+    multi_file_commit(&root);
+    app.git_refresh();
+    show_all_log(&mut app);
+    app.layout.editor.w = app.layout.editor.w.max(1200.0);
+    paint(&mut app);
+    // 最新的提交排在最上面，选中它看详情里的四个文件。
+    app.press_log(LogTarget::Row(0));
+    paint(&mut app);
+    let all = app.log_file_order();
+    assert_eq!(all.len(), 4, "{all:?}");
+
+    // 放大镜在标题行右端、平铺与分组按钮的左边：点它打开搜索框，焦点移进去。
+    let button = hit(&app, &LogTarget::FindFiles).unwrap();
+    let layout = hit(&app, &LogTarget::FilesLayout).unwrap();
+    assert!(button.right() <= layout.x);
+    assert!(hit(&app, &LogTarget::FileFilter).is_none());
+    let middle = (button.x + button.w / 2.0, button.y + button.h / 2.0);
+    click(&mut app, middle);
+    assert!(app.git.log.find_files);
+    assert_eq!(app.focus, Focus::LogFileFilter);
+    paint(&mut app);
+
+    // 搜索框占的是详情底部提示行那一条，因此在文件列表滚动时也一直看得见。
+    let details = app.log_parts().details;
+    let field = hit(&app, &LogTarget::FileFilter).unwrap();
+    assert!(field.y >= details.bottom() - 30.0);
+    assert!(field.bottom() <= details.bottom());
+
+    // 键入目录名：只剩这个目录下的两个文件，按目录分组时另一组的标题也不出现。
+    app.edit_field(|f| f.insert("DOCS/"));
+    paint(&mut app);
+    let filtered = app.log_file_order();
+    assert_eq!(filtered.len(), 2, "{filtered:?}");
+    let named: Vec<String> = filtered
+        .iter()
+        .map(|i| {
+            let view = app.editor.active().unwrap().log.as_deref().unwrap();
+            view.details.as_ref().unwrap().files.as_ref().unwrap()[*i]
+                .path
+                .display()
+                .to_string()
+        })
+        .collect();
+    assert!(named.iter().all(|p| p.contains("docs/")), "{named:?}");
+    // 被筛掉的文件不再记录点击范围。
+    for i in 0..all.len() {
+        let shown = filtered.contains(&i);
+        assert_eq!(hit(&app, &LogTarget::File(i)).is_some(), shown, "文件 {i}");
+    }
+
+    // 一个也不匹配时文件列表空着；清空文字后恢复四个文件。
+    app.edit_field(|f| {
+        f.set_text("zzz");
+        true
+    });
+    paint(&mut app);
+    assert!(app.log_file_order().is_empty());
+    app.edit_field(|f| {
+        f.set_text("");
+        true
+    });
+    paint(&mut app);
+    assert_eq!(app.log_file_order().len(), 4);
+
+    // 再点一次放大镜关掉搜索框：清掉文字，底部回到提示行。
+    click(&mut app, middle);
+    paint(&mut app);
+    assert!(!app.git.log.find_files);
+    assert_ne!(app.focus, Focus::LogFileFilter);
+    assert!(hit(&app, &LogTarget::FileFilter).is_none());
+    assert_eq!(app.log_file_order().len(), 4);
+
+    // 新开一个日志标签（当前文件的历史）时搜索框收起、文字清空：上一个标签的筛选不带过去。
+    click(&mut app, middle);
+    app.edit_field(|f| f.insert("docs/"));
+    app.git_file_history(&root.join("src/alpha.rs"));
+    assert!(!app.git.log.find_files);
+    assert!(app.git.log.file_filter.text().is_empty());
+}
+
+/// 在 [`history_repo`] 之上再加一次改动 `src`、`docs` 下各两个文件的提交：详情里的「查找文件」
+/// 按目录筛时，两个组的文件和标题都看得出区别。
+fn multi_file_commit(root: &Path) {
+    std::fs::create_dir_all(root.join("docs")).unwrap();
+    for (path, text) in [
+        ("src/alpha.rs", "pub fn alpha() {}\n"),
+        ("src/beta.rs", "pub fn beta() {}\n"),
+        ("docs/guide.md", "# 使用说明\n"),
+        ("docs/notes.md", "# 备注\n"),
+    ] {
+        std::fs::write(root.join(path), text).unwrap();
+    }
+    git_in(root, &["add", "."]);
+    git_in(
+        root,
+        &[
+            "-c",
+            "user.name=Alice Chen",
+            "-c",
+            "user.email=alice@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "文档：补充说明",
+        ],
+    );
+}
+
+/// 画出具名仓库的日志页，供人工查看详情底部的「查找文件」和筛选后的文件列表。
+#[test]
+#[ignore = "截图，手动运行"]
+fn shoot_log_find_file() {
+    for dark in [false, true] {
+        let theme = if dark { "dark" } else { "light" };
+        let Some((mut app, root)) = git_app_in(&format!("log-find-file-{theme}"), false, dark)
+        else {
+            return;
+        };
+        history_repo(&root, 10);
+        multi_file_commit(&root);
+        app.git_refresh();
+        show_all_log(&mut app);
+        app.layout.editor.w = app.layout.editor.w.max(1200.0);
+        paint(&mut app);
+        app.press_log(LogTarget::Row(0));
+        paint(&mut app);
+        if let Some((rect, _)) = app
+            .hits
+            .log
+            .iter()
+            .find(|(_, t)| *t == LogTarget::FindFiles)
+            .copied()
+        {
+            let middle = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
+            click(&mut app, middle);
+            app.edit_field(|f| f.insert("docs/"));
+            shoot(&mut app, &format!("log-find-file-{theme}"));
+            let _ = middle;
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

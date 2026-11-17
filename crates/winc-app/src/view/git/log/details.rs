@@ -447,6 +447,10 @@ pub(super) fn draw_details_footer(
     if view.commits.is_empty() || view.compare.is_some() || view.selected.is_none() {
         return;
     }
+    // 打开「查找文件」时这一条让给搜索框（见 `files::draw_file_filter`）。
+    if app.git.log.find_files {
+        return;
+    }
     let row = Rect::new(area.x, area.bottom() - 30.0, area.w, 30.0);
     frame.rect(Rect::new(area.x, row.y, area.w, 1.0), p.separator);
     let mut items: Vec<(String, &str)> = if app.git.log.file.is_some() {

@@ -92,6 +92,10 @@ impl App {
         match self.pointer.drag {
             Drag::Picture { at } => self.drag_picture(x, y, at),
             Drag::GraphPan { start, scroll, .. } => self.drag_graph(start, scroll, y),
+            Drag::GraphResize { start_y, height } => self.drag_graph_resize(start_y, height, y),
+            Drag::StashPan {
+                start_y, scroll, ..
+            } => self.drag_stash_pan(start_y, scroll, y),
             Drag::TerminalSelect | Drag::TerminalMouse(_) => self.terminal_mouse_drag(x, y),
             Drag::None if self.layout.terminal.contains(x, y) => self.terminal_mouse_hover(x, y),
             Drag::Select { by_word, origin } => self.drag_select(x, y, by_word, origin),
@@ -282,6 +286,19 @@ impl App {
                     let max = self.graph_scroll_max(rows);
                     if let Some(thumb) = scrollbar_thumb(rows, 0.0, max + rows.h) {
                         self.git.graph.scroll =
+                            scroll_for_thumb(rows.y, rows.h, thumb.h, y, grab, max);
+                    }
+                }
+                self.request_redraw();
+            }
+            Drag::Scrollbar {
+                bar: Scrollbar::Stash,
+                grab,
+            } => {
+                if let Some(rows) = self.stash_rows_area() {
+                    let max = self.stash_scroll_max();
+                    if let Some(thumb) = scrollbar_thumb(rows, 0.0, max + rows.h) {
+                        self.git.commit.stash_scroll =
                             scroll_for_thumb(rows.y, rows.h, thumb.h, y, grab, max);
                     }
                 }

@@ -189,7 +189,9 @@ impl App {
         match self.pointer.drag {
             Drag::Scrollbar { bar, .. } => return Hover::Scrollbar(bar),
             // 拖动提交图时内容跟着走，指针下面那一行不再高亮。
-            Drag::GraphPan { .. } => return Hover::None,
+            Drag::GraphPan { .. } | Drag::GraphResize { .. } | Drag::StashPan { .. } => {
+                return Hover::None;
+            }
             _ if self.tree_dragging().is_some() || self.dragged_tab().is_some() => {
                 return Hover::None;
             }
@@ -326,6 +328,7 @@ impl App {
                 Scrollbar::Panel
                     | Scrollbar::Commit
                     | Scrollbar::Graph
+                    | Scrollbar::Stash
                     | Scrollbar::Outline
                     | Scrollbar::LogBranches
             )
@@ -582,6 +585,21 @@ impl App {
                 let thumb = scrollbar_thumb(list, self.git.commit.scroll, content)?;
                 return Some((Scrollbar::Commit, grab(y, thumb.y, thumb.h)));
             }
+        }
+
+        // 提交视图里储藏一组展开时，标题下面各行的右端。
+        if self.commit_shown()
+            && self.git.commit.stash_open
+            && let Some(rows) = self.stash_rows_area()
+            && rows.contains(x, y)
+            && x >= rows.right() - SCROLLBAR_HIT
+            && let Some(thumb) = scrollbar_thumb(
+                rows,
+                self.git.commit.stash_scroll,
+                self.stash_scroll_max() + rows.h,
+            )
+        {
+            return Some((Scrollbar::Stash, grab(y, thumb.y, thumb.h)));
         }
 
         // 提交视图底部的提交图：标题行下面那几行的右端。
@@ -877,11 +895,21 @@ impl App {
         } else if matches!(self.pointer.drag, Drag::GraphPan { .. }) {
             // 拖动提交图：内容跟着指针走，指针显示抓取中。
             CursorIcon::Grabbing
+        } else if matches!(self.pointer.drag, Drag::GraphResize { .. })
+            || matches!(
+                self.pointer.hover,
+                Hover::Commit(crate::app::CommitTarget::GraphDivider)
+            )
+        {
+            // 提交图的上沿可以按住上下拉，调整图的高度。
+            CursorIcon::RowResize
         } else if matches!(
             self.pointer.hover,
-            Hover::Commit(crate::app::CommitTarget::GraphRow(_))
+            Hover::Commit(
+                crate::app::CommitTarget::GraphRow(_) | crate::app::CommitTarget::GraphBlank
+            )
         ) {
-            // 提交图上的行可以按住上下拖动。
+            // 提交图上的行、行下面的空白处可以按住上下拖动。
             CursorIcon::Grab
         } else if matches!(self.pointer.drag, Drag::Picture { .. }) {
             CursorIcon::Grabbing

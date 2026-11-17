@@ -30,8 +30,10 @@ fn the_commit_graph_lists_recent_commits_below_the_changes() {
             _ => None,
         })
         .collect();
-    // 一处一百八十四高，标题占二十四，正好八行。
-    assert_eq!(rows.len(), 8);
+    // 标题行下面每一行都算得出来：行高二十，一直排到看得到的那部分的底边。
+    let shown = (graph_rows(graph).h / GRAPH_ROW).floor() as usize;
+    assert_eq!(rows.len(), commits.len().min(shown));
+    assert!(shown >= 3);
     assert_eq!(rows[0], 0);
     assert!(rows.windows(2).all(|pair| pair[1] == pair[0] + 1));
 
@@ -150,6 +152,168 @@ fn the_graph_does_not_take_the_wheel_when_the_commit_view_is_hidden() {
     app.pointer.mouse = at;
     app.on_wheel(MouseScrollDelta::LineDelta(0.0, -2.0));
     assert_eq!(app.git.graph.scroll, 0.0);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 图里只有当前分支（和对比的基准）的提交：别的分支独有的提交不上图。
+///
+/// 以前读的是全部分支，分支一多，当前分支自己的提交就被挤到一屏之外了；顺带图里全是别的分支的
+/// 车道，看着也不像当前分支的历史。
+#[test]
+fn the_commit_graph_only_shows_the_current_branch() {
+    let Some((mut app, root)) = git_app("git-commit-graph-current", false) else {
+        return;
+    };
+    history_repo(&root, 40);
+    // 另起一个分支，在它上面单独提交两个别处没有的改动。
+    let before = app
+        .git
+        .branches
+        .iter()
+        .find(|b| b.current)
+        .map(|b| b.name.clone());
+    let branch = before.unwrap_or_else(|| "main".to_owned());
+    let side = format!("side-of-{branch}");
+    git_in(&root, &["switch", "-q", "-c", &side]);
+    for i in 0..2 {
+        std::fs::write(root.join(format!("side{i}.rs")), "// side\n").unwrap();
+        git_in(&root, &["add", "-A"]);
+        git_in(
+            &root,
+            &["commit", "-q", "-m", &format!("只在分支上的第 {i} 次改动")],
+        );
+    }
+    git_in(&root, &["switch", "-q", &branch]);
+    app.git_refresh();
+    app.run_action(Action::ShowCommit);
+    paint(&mut app);
+    let subjects: Vec<String> = app
+        .git
+        .graph
+        .commits
+        .iter()
+        .map(|c| c.subject.clone())
+        .collect();
+    assert!(
+        !subjects.iter().any(|s| s.starts_with("只在分支上")),
+        "{subjects:?}"
+    );
+    // 当前分支自己的提交都在（读得够深，不会因为别的分支占坑而缺一段）。
+    assert!(
+        subjects
+            .iter()
+            .any(|s| s.contains("{commit}") || !s.is_empty())
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 分支没有配置上游时，自动对比仍然拿远程上的同名分支（`origin/dev` 这样）：本地和线上差多少
+/// 看得出来，不必先手动发布一次。
+#[test]
+fn a_branch_without_an_upstream_still_compares_with_the_remote_copy() {
+    let Some((mut app, root)) = git_app("git-commit-graph-auto-base", false) else {
+        return;
+    };
+    history_repo(&root, 40);
+    let (remote, branch) = push_to_remote(&root);
+    git_in(&root, &["branch", "--unset-upstream"]);
+    app.run_action(Action::ShowCommit);
+    app.git_refresh();
+    paint(&mut app);
+    let remote_copy = format!("origin/{branch}");
+    assert_eq!(app.graph_upstream().as_deref(), Some(remote_copy.as_str()));
+    assert_eq!(
+        app.graph_compare_base().as_deref(),
+        Some(remote_copy.as_str())
+    );
+    // 图里读的也是这个引用：基准那一侧的提交才能标出向下的箭头。
+    assert_eq!(app.graph_refs(), vec![branch.clone(), remote_copy.clone()]);
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 按住提交图的上沿上下拉可以调整它占的高度：往上拉图变高、改动列表变矮，松开后记进状态文件，
+/// 下次启动沿用。
+#[test]
+fn dragging_the_top_edge_of_the_commit_graph_resizes_it() {
+    let Some((mut app, root)) = git_app("git-commit-graph-resize", false) else {
+        return;
+    };
+    history_repo(&root, 40);
+    app.run_action(Action::ShowCommit);
+    paint(&mut app);
+    let parts = app.commit_parts();
+    let graph = parts.graph.expect("显示提交图");
+    let (height, list_height) = (graph.h, parts.list.h);
+    let (x, y) = (graph.x + 100.0, graph.y + 2.0);
+    app.on_mouse_move(x, y);
+    assert_eq!(
+        app.pointer.hover,
+        Hover::Commit(CommitTarget::GraphDivider),
+        "上沿附近能按住"
+    );
+    app.on_mouse_down(MouseButton::Left);
+    assert!(app.graph_resizing(), "按住上沿开始调整高度，而不是拖动内容");
+    // 往上拉八十像素：图变高八十，改动列表正好矮八十，别的地方不动。
+    app.on_mouse_move(x, y - 80.0);
+    paint(&mut app);
+    let after = app.commit_parts();
+    assert_eq!(after.graph.expect("仍然显示").h, height + 80.0);
+    assert_eq!(after.list.h, list_height - 80.0);
+    app.on_mouse_up(MouseButton::Left);
+    assert!(!app.graph_resizing());
+    assert_eq!(app.state.graph_height, Some(height + 80.0), "记进状态文件");
+
+    // 下次启动按记下的高度恢复。
+    app.git.graph.height = None;
+    app.restore_graph_height();
+    assert_eq!(app.git.graph.height, Some(height + 80.0));
+
+    // 往下拉过头停在最小的 {@link GRAPH_MIN}。
+    let graph = app.commit_parts().graph.expect("显示提交图");
+    let (x, y) = (graph.x + 100.0, graph.y + 2.0);
+    app.on_mouse_move(x, y);
+    app.on_mouse_down(MouseButton::Left);
+    app.on_mouse_move(x, y + 900.0);
+    paint(&mut app);
+    assert_eq!(
+        app.commit_parts().graph.expect("仍然显示").h,
+        crate::app::git::graph::GRAPH_MIN
+    );
+    app.on_mouse_up(MouseButton::Left);
+    assert!(app.state.graph_height.is_some_and(|h| h > 0.0));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 最后一行下面的空白处也能按住拖动：不用先找准一行才开始滚，松开时也不会打开提交。
+#[test]
+fn the_blank_space_under_the_commit_rows_can_be_dragged() {
+    let Some((mut app, root)) = git_app("git-commit-graph-blank", false) else {
+        return;
+    };
+    history_repo(&root, 40);
+    app.run_action(Action::ShowCommit);
+    paint(&mut app);
+    let graph = app.commit_parts().graph.expect("显示提交图");
+    let shown = (graph_rows(graph).h / GRAPH_ROW).floor() as usize;
+    let rows = app.git.graph.commits.len();
+    assert!(rows < shown, "提交少于一屏时下面有空白（{rows} < {shown}）");
+    let (x, y) = (
+        graph.x + 100.0,
+        graph.y + GRAPH_HEADER + rows as f32 * GRAPH_ROW + 10.0,
+    );
+    app.on_mouse_move(x, y);
+    assert_eq!(app.pointer.hover, Hover::Commit(CommitTarget::GraphBlank));
+    app.on_mouse_down(MouseButton::Left);
+    assert!(
+        matches!(app.pointer.drag, Drag::GraphPan { row: None, .. }),
+        "空白处按下也开始拖动"
+    );
+    app.on_mouse_up(MouseButton::Left);
+    assert!(
+        app.editor.active().and_then(|d| d.log.as_deref()).is_none(),
+        "空白处松开不打开提交"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 

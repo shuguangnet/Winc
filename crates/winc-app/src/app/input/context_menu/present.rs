@@ -583,10 +583,6 @@ impl App {
             MenuTarget::StashRow(i) => {
                 crate::app::git::branch::stash_ops(*i, self.git.branch.running.is_some())
             }
-            MenuTarget::StashList => {
-                let busy = self.git.branch.running.is_some();
-                crate::app::git::branch::stash_menu(&self.git.stashes, busy)
-            }
             MenuTarget::CommitButton => self.commit_button_menu(),
             MenuTarget::LastCommit => self.last_commit_menu(),
             MenuTarget::TreeTools => self.tree_tools_menu(),
@@ -726,9 +722,7 @@ impl App {
                 (self.git.branches.clone(), self.git.stashes.clone())
             }
             MenuTarget::GraphCompare => (self.git.branches.clone(), Vec::new()),
-            MenuTarget::StashRow(_) | MenuTarget::StashList => {
-                (Vec::new(), self.git.stashes.clone())
-            }
+            MenuTarget::StashRow(_) => (Vec::new(), self.git.stashes.clone()),
             MenuTarget::FormBase => (self.git.branches.clone(), Vec::new()),
             _ => Default::default(),
         };

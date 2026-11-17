@@ -862,8 +862,6 @@ pub enum MenuTarget {
     RebaseAction(usize),
     /// 提交视图里第几条储藏的菜单：应用、应用并删除、删除。
     StashRow(usize),
-    /// 提交视图里储藏太多时「还有 N 条」弹出的菜单：每条储藏一个子菜单。
-    StashList,
     /// 状态栏的位置菜单：弹出时的各个位置，菜单项按下标对应。
     StatusPlaces(Vec<Place>),
     /// 日志标题栏的「作者」下拉。

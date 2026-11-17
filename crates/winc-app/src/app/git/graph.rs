@@ -1,17 +1,21 @@
-//! 提交视图底部的提交图：最近若干个提交连成的图，点一行打开该提交。
+//! 提交视图底部的提交图：当前分支最近若干个提交连成的图，点一行打开该提交。
 //!
 //! 与 Git 日志标签里的提交图用的是同一套车道算法（[`winc_core::graph`]），这里只取最近
-//! [`GRAPH_COMMITS`] 个提交，一次读完，不随日志标签滚动、筛选。`HEAD`、分支或点击刷新后重新
-//! 读取（见 [`App::reload_graph`]）；读取期间旧内容留着，避免图闪一下。
+//! [`GRAPH_COMMITS`] 个提交，一次读完，不随日志标签滚动、筛选。读的是当前分支和对比的基准
+//! （见 [`App::graph_refs`]），别的分支的提交不在图里。`HEAD`、分支或点击刷新后重新读取（见
+//! [`App::reload_graph`]）；读取期间旧内容留着，避免图闪一下。
 //!
-//! 一屏放不下时上下滚动：滚轮、拖动右边细条（[`graph_rows`] 的右端），或者按住一行直接拖。
+//! 一屏放不下时上下滚动：滚轮、拖动右边细条（[`graph_rows`] 的右端），或者按住一行、按住空
+//! 白处直接拖。图占多高可以按住上沿的分隔线上下调整（见 [`App::drag_graph_resize`]），调过
+//! 的高度记在状态文件里。
 //!
-//! 标题行还写着与一个基准（默认是当前分支的上游）的对比：领先、落后多少个提交，以及哪些行
-//! 是基准没有的（见 [`GraphCompare`]）。基准可以从标题行的对比控件换成任意本地分支或远程分支
-//! （见 [`App::graph_compare_base`]）。
+//! 标题行还写着与一个基准（默认是当前分支在远程上的那一份）的对比：领先、落后多少个提交，以
+//! 及哪些行是基准没有的（见 [`GraphCompare`]）。基准可以从标题行的对比控件换成任意本地分支
+//! 或远程分支（见 [`App::graph_compare_base`]）。
 
 use std::collections::HashSet;
 
+use crate::app::git::commit::DRAG_SLOP;
 use winc_core::graph::{Graph, GraphRow};
 use winc_editor::git::{Commit, Divergence, LogQuery};
 use winc_i18n::t;
@@ -23,8 +27,9 @@ use crate::app::{App, CommitTarget, Drag, Rect, UserEvent};
 
 /// 提交视图里的提交图取多少个提交（个）。
 ///
-/// 侧栏的图是给「最近做了什么」看的，与日志标签不同，不必读很深；一屏放不下时可以滚动。
-pub(crate) const GRAPH_COMMITS: usize = 60;
+/// 读的只是当前分支（和对比的基准），一屏放不下时上下滚动或把图拉高，所以取深一些也不会让
+/// 读取变慢；更早的历史仍然到日志标签里看。
+pub(crate) const GRAPH_COMMITS: usize = 200;
 
 /// 提交视图里的提交图。
 #[derive(Debug, Default)]
@@ -35,6 +40,9 @@ pub(crate) struct GraphPart {
     pub rows: Vec<GraphRow>,
     /// 列表滚动了多少（逻辑像素）。
     pub scroll: f32,
+    /// 图占多高（逻辑像素）；`None` 时按改动列表与储藏之间的空间过半决定（见
+    /// [`Self::graph_section_height`]）。拖过上沿的分隔线以后就是拖出来的高度。
+    pub height: Option<f32>,
     /// 正在读取。
     pub loading: bool,
     /// 读取失败的原因。
@@ -113,8 +121,9 @@ impl App {
     /// 正在读取时不再发出请求：当前这一批读完后按那时的 `HEAD` 再读一次。对比与图一起读取（见
     /// [`Self::reload_compare`]）：图的基准取自同一时刻的分支列表。
     ///
-    /// 读的是全部分支的最近 [`GRAPH_COMMITS`] 个提交，分支很多时当前分支更早的提交可能不在这
-    /// 一段里；侧栏只看最近做了什么，要看得更远就打开日志标签。
+    /// 读的是当前分支和对比的基准（见 [`Self::graph_refs`]）最近 [`GRAPH_COMMITS`] 个提交：
+    /// 本地和线上两边都在图里，领先、落后的箭头才标得出来；别的分支的提交不混进来。要看得更远
+    /// 就打开日志标签。
     pub(in crate::app) fn reload_graph(&mut self) {
         let Some(root) = self.git.root.clone() else {
             self.git.graph = GraphPart::default();
@@ -128,10 +137,14 @@ impl App {
         let head = self.git.status.as_ref().and_then(|s| s.oid.clone());
         self.git.graph.head = Some(head.unwrap_or_default());
         let generation = self.git.graph.begin();
+        let query = LogQuery {
+            branches: self.graph_refs(),
+            ..LogQuery::default()
+        };
         let sender = self.git.log.results.0.clone();
         self.spawn_git(UserEvent::GitLog, move |tool| {
             let read = |git: winc_editor::git::Git| {
-                let mut stream = git.log_stream(&root, &LogQuery::default())?;
+                let mut stream = git.log_stream(&root, &query)?;
                 stream.next(GRAPH_COMMITS)
             };
             let result = tool.map_err(|e| unusable(&e)).and_then(read);
@@ -181,13 +194,48 @@ impl App {
         self.show_log_commit(&oid, false);
     }
 
-    /// 当前分支的上游（`origin/dev` 这样）：自动对比用的就是它。
+    /// 提交图读哪些引用：当前分支，加上对比的基准。
     ///
-    /// 游离的 `HEAD`、分支还没发布时返回 `None`。
+    /// 基准那一侧独有的提交（还没拉下来的）也在图里，行前的向下箭头才有对应的行；没有基准时只
+    /// 读当前分支。游离的 `HEAD`、还没有任何分支时按 `HEAD` 读，仍然是签出的那一段历史。
+    pub(crate) fn graph_refs(&self) -> Vec<String> {
+        let mut refs: Vec<String> = Vec::new();
+        if let Some(current) = self.git.branches.iter().find(|b| b.current) {
+            refs.push(current.name.clone());
+        }
+        if let Some(base) = self.graph_compare_base()
+            && !refs.contains(&base)
+        {
+            refs.push(base);
+        }
+        if refs.is_empty() {
+            refs.push("HEAD".to_owned());
+        }
+        refs
+    }
+
+    /// 自动对比的基准：当前分支在远程上的那一份（`origin/dev` 这样）。
+    ///
+    /// 先看分支配置的上游；没有配置上游、但远程上有同名分支时（`git push` 之后没有跟踪上的、
+    /// 从别的机器克隆后手动建的本地分支）也拿它比，本地与线上差多少照样看得出来。两边都没有时
+    /// 返回 `None`，图里不显示对比。
     pub(crate) fn graph_upstream(&self) -> Option<String> {
-        (self.git.branches.iter())
-            .find(|b| b.current)
-            .and_then(|b| b.upstream.clone())
+        let current = self.git.branches.iter().find(|b| b.current)?;
+        if let Some(upstream) = &current.upstream {
+            return Some(upstream.clone());
+        }
+        // 没有上游：同名分支在某个远程上就用它，远程的顺序按 `git remote` 的顺序。
+        let branch = current.name.as_str();
+        self.git
+            .remotes
+            .iter()
+            .map(|remote| format!("{remote}/{branch}"))
+            .find(|name| {
+                self.git
+                    .branches
+                    .iter()
+                    .any(|b| b.remote && &b.name == name)
+            })
     }
 
     /// 对比用的基准：手动选的，否则是当前分支的上游（见 [`Self::graph_upstream`]）。
@@ -296,18 +344,65 @@ impl App {
             return;
         }
         self.git.graph.base = base;
-        self.reload_compare();
+        // 图里读的引用跟着变（见 [`Self::graph_refs`]）：新的基准独有、当前分支没有的提交要
+        // 出现在图里，换掉以后重新读一遍。
+        self.reload_graph();
         self.request_redraw();
     }
 
-    /// 提交图内容的高度下界、上界，以及改动列表至少留多高（逻辑像素）。
+    /// 提交图占的高度（逻辑像素）：拖过就是拖出来的高度，没拖过时是 [`GRAPH_HEIGHT`]。
     ///
     /// 侧栏太矮时不显示提交图，改动列表优先。
     pub(crate) fn graph_section_height(&self, room: f32) -> Option<f32> {
         if self.git.graph.is_empty() || room < GRAPH_MIN_ROOM + GRAPH_MIN {
             return None;
         }
-        Some(GRAPH_HEIGHT.min(room - GRAPH_MIN_ROOM))
+        let want = self.git.graph.height.unwrap_or(GRAPH_HEIGHT);
+        Some(want.clamp(GRAPH_MIN, room - GRAPH_MIN_ROOM))
+    }
+
+    /// 启动时按状态文件恢复提交图的高度。
+    pub(crate) fn restore_graph_height(&mut self) {
+        self.git.graph.height = self.state.graph_height;
+    }
+
+    /// 拖动结束：把提交图的高度记进状态文件，下次启动沿用。
+    pub(in crate::app) fn remember_graph_height(&mut self) {
+        let height = self.git.graph.height.map(|height| height.round());
+        self.update_state(|state| state.graph_height = height);
+    }
+
+    /// 正在拖动提交图的上沿调整高度。
+    pub(crate) fn graph_resizing(&self) -> bool {
+        matches!(self.pointer.drag, Drag::GraphResize { .. })
+    }
+
+    /// 按住提交图的上沿开始调整高度。
+    pub(in crate::app) fn begin_graph_resize(&mut self) {
+        let current = self.commit_parts().graph.map_or(0.0, |area| area.h);
+        self.settle_glides();
+        self.pointer.drag = Drag::GraphResize {
+            start_y: self.pointer.mouse.1,
+            height: current,
+        };
+    }
+
+    /// 拖动提交图的上沿：往上拉图变高，往下拉图变矮，两端有界（改动列表至少留
+    /// [`GRAPH_MIN_ROOM`]，图自己至少 [`GRAPH_MIN`]）。
+    pub(in crate::app) fn drag_graph_resize(&mut self, start_y: f32, height: f32, y: f32) {
+        let parts = self.commit_parts();
+        let Some(graph) = parts.graph else {
+            return;
+        };
+        // 改动列表和提交图共用的那段空间：上沿上下移动时，列表按剩下的高度重排。
+        let room = graph.y + graph.h - parts.list.y;
+        let limit = (room - GRAPH_MIN_ROOM).max(GRAPH_MIN);
+        let height = (height - (y - start_y)).clamp(GRAPH_MIN, limit);
+        if self.git.graph.height == Some(height) {
+            return;
+        }
+        self.git.graph.height = Some(height);
+        self.request_redraw();
     }
 
     /// 提交图最多能滚动多远（逻辑像素）：行数乘以行高，减去 `rows`（[`graph_rows`] 的结果）
@@ -319,7 +414,7 @@ impl App {
 
     /// 在提交图上按下第 `row` 行：开始上下拖动，内容跟着指针走。
     ///
-    /// 拖动也从行上开始，按下时不打开提交；松开时移动不到 [`GRAPH_DRAG_SLOP`] 才当点击处理
+    /// 拖动也从行上开始，按下时不打开提交；松开时移动不到 [`DRAG_SLOP`] 才当点击处理
     /// （见 [`Self::release_graph_pan`]）。
     pub(in crate::app) fn begin_graph_pan(&mut self, row: Option<usize>) {
         self.settle_glides();
@@ -340,12 +435,12 @@ impl App {
         self.request_redraw();
     }
 
-    /// 松开提交图上的拖动：移动不到 [`GRAPH_DRAG_SLOP`] 时按点击处理，打开按下的那一行。
+    /// 松开提交图上的拖动：移动不到 [`DRAG_SLOP`] 时按点击处理，打开按下的那一行。
     ///
     /// 拖过一段距离时停在这里，不回到整行：与滚轮一样按像素滚动，行可以停在屏幕中间。
     pub(in crate::app) fn release_graph_pan(&mut self, start: (f32, f32), row: Option<usize>) {
         let (_, y) = self.pointer.mouse;
-        if (y - start.1).abs() > GRAPH_DRAG_SLOP {
+        if (y - start.1).abs() > DRAG_SLOP {
             return;
         }
         if let Some(row) = row {
@@ -433,18 +528,20 @@ impl App {
     }
 }
 
-/// 提交图占的高度（逻辑像素）：一行标题加八行提交。
+/// 没有调整过时提交图占的高度（逻辑像素）：一行标题加十三行提交，一屏能看到半个月的工作。
 ///
-/// 固定高度而不是按比例：提交信息框长高、储藏展开时改动列表照常伸缩，提交图不跟着变，
-/// 列表里哪一行在什么位置也就不会跳。
-const GRAPH_HEIGHT: f32 = 184.0;
+/// 固定高度而不是按比例：提交信息框长高、储藏展开时改动列表照常伸缩，提交图不跟着变，列表里
+/// 哪一行在什么位置也就不会跳。拖过上沿的分隔线以后按拖出来的高度（见
+/// [`App::graph_section_height`]）。
+const GRAPH_HEIGHT: f32 = 300.0;
+/// 提交图上沿可以用来拖动的那一段的高度（逻辑像素）：分隔线本身只有一像素，光标停在附近就能
+/// 按下去。
+pub(crate) const GRAPH_GRIP: f32 = 6.0;
 /// 改动列表至少留这么高，放不下提交图时（窗口很矮）不显示提交图（逻辑像素）。
 const GRAPH_MIN_ROOM: f32 = 140.0;
 /// 提交图自己至少要这么高才显示（逻辑像素）：再矮就只剩标题，不如不显示。
-const GRAPH_MIN: f32 = 120.0;
+pub(crate) const GRAPH_MIN: f32 = 120.0;
 /// 提交图顶部标题行的高度（逻辑像素）。
 pub(crate) const GRAPH_HEADER: f32 = 24.0;
 /// 提交图一行的行高（逻辑像素）。
 pub(crate) const GRAPH_ROW: f32 = 20.0;
-/// 按下一行后移动不到这么多，松开时算点击（逻辑像素）。
-const GRAPH_DRAG_SLOP: f32 = 3.0;

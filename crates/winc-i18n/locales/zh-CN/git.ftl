@@ -58,7 +58,6 @@ git-graph-compare-auto-none = 自动（没有上游分支）
 git-graph-compare-log = 在日志中比较改动的文件
 git-stash-group = 储藏
 git-stash-more-files = 还有 { $count } 个文件
-git-stash-more = 另有 { $count } 个储藏…
 git-stash-no-files = 此储藏中无可显示的更改
 git-stash-apply = 应用
 git-stash-pop = 应用并删除

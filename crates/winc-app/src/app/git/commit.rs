@@ -17,7 +17,10 @@ pub use ignore::IgnoreKind;
 mod list;
 pub(in crate::app::git) use list::rows_of;
 mod stash;
-pub(crate) use stash::{STASH_GAP, StashLine, StashView};
+/// 储藏一组最多露出几行；测试里按它算出一组的高度。
+#[cfg(test)]
+pub(crate) use stash::STASH_ROWS;
+pub(crate) use stash::{STASH_GAP, StashLine, StashView, stash_body};
 mod last;
 mod menu;
 mod others;
@@ -513,8 +516,6 @@ pub enum CommitTarget {
     StashApply(usize),
     /// 悬停储藏那一行时右端的「⋯」：应用、应用并删除、删除。
     StashMenu(usize),
-    /// 储藏太多时最后一行的「还有 N 条」：弹出全部储藏的菜单。
-    StashMore,
     /// 目录那一行：收起或展开。
     ///
     /// 参数是它在绘制时的行号（[`App::commit_rows`] 的下标）。
@@ -564,12 +565,19 @@ pub enum CommitTarget {
     GraphPush,
     /// 提交图标题行的对比控件：弹出换基准的菜单。
     GraphCompare,
+    /// 提交图上沿的分隔线：按住上下拖动，调整图占的高度。
+    GraphDivider,
+    /// 提交图里的空白处（最后一行下面的部分）：按住同样能上下拖动，不用先找一行。
+    GraphBlank,
     /// 固定在列表顶部的组或目录：列表先滚到它真正那一行停在固定的位置（画面不动），再收起或
     /// 展开。
     ///
     /// 参数是它在各行里的下标和固定在第几层。
     Sticky(usize, usize),
 }
+
+/// 按下后上下移动不到这么多像素，松开时算点击而不是拖动（逻辑像素）：提交图和储藏列表都是这样。
+pub(crate) const DRAG_SLOP: f32 = 3.0;
 
 /// 提交视图各组里文件的排序方式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -872,6 +880,9 @@ pub(crate) struct CommitState {
     pub(crate) stash_files_folded: bool,
     /// 上一帧储藏一组的终点高度（逻辑像素），见 [`App::track_stash_height`]。
     pub(crate) stash_settled: f32,
+    /// 储藏一组滚动了多少（逻辑像素）：条数超过一组露得下的行数时上下滚动，见
+    /// [`App::stash_scroll_max`]。
+    pub(crate) stash_scroll: f32,
     /// 储藏的预览标签：和改动列表的预览标签分开，那个标签跟着工作区里的文件刷新。
     pub(crate) stash_preview: Option<DocumentId>,
     /// 是否为只读的浏览列表：列出历史提交中改动的文件（见 [`App::with_log_list`]），没有勾选框、
@@ -1015,6 +1026,7 @@ impl Default for CommitState {
             stash_view: None,
             stash_files_folded: false,
             stash_settled: 0.0,
+            stash_scroll: 0.0,
             stash_preview: None,
             browse: false,
             push_after: false,

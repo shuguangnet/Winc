@@ -285,13 +285,6 @@ pub(crate) fn stash_ops(index: usize, busy: bool) -> Vec<MenuEntry> {
     ops
 }
 
-/// 全部储藏的菜单，每条一个子菜单（见 [`stash_ops`]）：提交视图里储藏多到列不下时弹出。
-pub(crate) fn stash_menu(stashes: &[Stash], busy: bool) -> Vec<MenuEntry> {
-    (stashes.iter().enumerate())
-        .map(|(i, stash)| MenuEntry::Submenu(stash_title(stash), stash_ops(i, busy)))
-        .collect()
-}
-
 /// 分支选择器里第 `index` 个分支的操作菜单：按 `BranchOp::GROUPS` 分组，组之间有分隔线。
 ///
 /// `branches` 是本地分支在前、远程分支在后的列表，当前分支只能重命名：从当前分支新建分支、工作树

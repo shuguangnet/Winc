@@ -117,6 +117,7 @@ impl App {
             ScrollTarget::Picker => PICKER_ROW,
             ScrollTarget::Commit => COMMIT_ROW,
             ScrollTarget::Graph => crate::app::git::graph::GRAPH_ROW,
+            ScrollTarget::Stash => crate::app::git::commit::COMMIT_ROW,
             ScrollTarget::Markdown | ScrollTarget::Pdf | ScrollTarget::LogDetails => {
                 self.fonts.line_height
             }

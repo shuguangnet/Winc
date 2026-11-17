@@ -12,7 +12,7 @@
 use winc_editor::git::Ref;
 
 use super::*;
-use crate::app::git::graph::{GRAPH_HEADER, GRAPH_ROW};
+use crate::app::git::graph::{GRAPH_GRIP, GRAPH_HEADER, GRAPH_ROW};
 use crate::view::git::log::badges::{badges, badges_width, draw_badges, fit_badges};
 use crate::view::git::log::graph::lane_edge;
 use crate::view::git::log::{
@@ -60,6 +60,17 @@ pub(super) fn draw_graph(
         0.0,
         clip,
     );
+    // 上沿可以按住上下拉，调整图占的高度：分隔线一像素，光标停在附近也算。悬停、拖动时把分隔线
+    // 描成强调色，看得出这里能拉。
+    let pulling =
+        app.pointer.hover == Hover::Commit(CommitTarget::GraphDivider) || app.graph_resizing();
+    if pulling {
+        frame.rect_clipped(Rect::new(area.x, area.y, area.w, 1.0), p.accent, 0.0, clip);
+    }
+    hits.push((
+        Rect::new(area.x, area.y, area.w, GRAPH_GRIP),
+        CommitTarget::GraphDivider,
+    ));
     let size = app.fonts.ui_small;
     let head = Rect::new(area.x, area.y, area.w, GRAPH_HEADER);
     let title = t!("git-graph-title");
@@ -238,6 +249,10 @@ pub(super) fn draw_graph(
             );
         }
         hits.push((row_rect, CommitTarget::GraphRow(i)));
+    }
+    // 最后一行下面的空白处也能按住拖动；排在行后面，行本身仍然优先。
+    if rows_area.h > 0.0 {
+        hits.push((rows_area, CommitTarget::GraphBlank));
     }
 }
 

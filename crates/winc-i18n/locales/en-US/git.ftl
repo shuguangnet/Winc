@@ -61,10 +61,6 @@ git-stash-more-files = { $count ->
     [one] { $count } more file
    *[other] { $count } more files
 }
-git-stash-more = { $count ->
-    [one] 1 more stash…
-   *[other] { $count } more stashes…
-}
 git-stash-no-files = This stash has no changes to show
 git-stash-apply = Apply
 git-stash-pop = Pop

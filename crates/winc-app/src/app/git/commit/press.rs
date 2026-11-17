@@ -43,12 +43,14 @@ impl App {
         }
         match target {
             CommitTarget::GraphRow(index) => self.begin_graph_pan(Some(index)),
+            // 空白处按下也能拖：不用先找一行才开始滚。
+            CommitTarget::GraphBlank => self.begin_graph_pan(None),
+            CommitTarget::GraphDivider => self.begin_graph_resize(),
             CommitTarget::Stashes
             | CommitTarget::Stash(_)
             | CommitTarget::StashFile(_)
             | CommitTarget::StashApply(_)
-            | CommitTarget::StashMenu(_)
-            | CommitTarget::StashMore => self.press_commit_stash(target),
+            | CommitTarget::StashMenu(_) => self.press_commit_stash(target),
             CommitTarget::Group(_)
             | CommitTarget::GroupCheck(_)
             | CommitTarget::GroupRevert(_)
@@ -288,8 +290,20 @@ impl App {
         self.request_redraw();
     }
 
+    /// 鼠标在提交视图里按下了 `target`：储藏的行和文件可以先按住上下拖（条数多时在组内滚动），
+    /// 松开时没动过才按点击处理（见 [`Self::release_stash_pan`]）。
+    pub(in crate::app) fn press_commit_down(&mut self, target: CommitTarget) {
+        let pan = matches!(target, CommitTarget::Stash(_) | CommitTarget::StashFile(_))
+            && !self.git.commit.browse
+            && self.git.commit.hits_generation == self.git.generation;
+        if pan {
+            return self.begin_stash_pan(Some(target));
+        }
+        self.press_commit(target);
+    }
+
     /// 处理贮藏列表中的目标：展开、查看、应用和菜单。
-    fn press_commit_stash(&mut self, target: CommitTarget) {
+    pub(in crate::app) fn press_commit_stash(&mut self, target: CommitTarget) {
         match target {
             CommitTarget::Stashes => self.toggle_stashes(),
             CommitTarget::Stash(i) => self.show_stash(i),
@@ -306,14 +320,6 @@ impl App {
                     return;
                 };
                 self.open_context_menu(MenuTarget::StashRow(i), menu_below(rect));
-            }
-            CommitTarget::StashMore => {
-                let Some(&(rect, _)) =
-                    (self.hits.commit.iter()).find(|(_, t)| *t == CommitTarget::StashMore)
-                else {
-                    return;
-                };
-                self.open_context_menu(MenuTarget::StashList, (rect.x + 8.0, rect.bottom()));
             }
             // 其余目标由 [`Self::press_commit`] 交给别的函数。
             _ => {}

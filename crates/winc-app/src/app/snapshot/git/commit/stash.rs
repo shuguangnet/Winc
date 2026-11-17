@@ -2,8 +2,11 @@
 
 use super::*;
 
+use crate::app::Drag;
+use crate::app::git::commit::STASH_ROWS;
+
 /// 截图：改动列表下面展开的储藏一组（`commit-stashes`），鼠标停在第一条上（「应用」和「⋯」），
-/// 储藏超过五条时最后一行是「还有 N 条」。
+/// 储藏六条、一组露出五行，右端有滚动条。
 #[test]
 #[ignore = "截图，手动运行"]
 fn shoot_commit_stashes() {
@@ -36,6 +39,9 @@ fn shoot_commit_stashes() {
         .unwrap();
     app.on_mouse_move(row.x + 20.0, row.y + row.h / 2.0);
     shoot(&mut app, "commit-stashes");
+    // 往下滚一行：右端出现细条，最上面那条滚出去，露出原本在下面的第六条。
+    app.git.commit.stash_scroll = COMMIT_ROW;
+    shoot(&mut app, "commit-stashes-scrolled");
     // 打开第一条储藏：它的文件列在下面，正在查看的文件处于选中状态。
     std::fs::write(root.join("notes.txt"), "draft\n").unwrap();
     git_in(&root, &["stash", "push", "-q", "-u", "-m", "带一个新文件"]);
@@ -176,5 +182,140 @@ fn the_stash_group_opens_like_a_drawer() {
     paint(&mut app);
     assert!(has(&app, CommitTarget::Stash(0)));
     assert_eq!(app.stash_chevron(), 1.0);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 储藏多于一组露得下的行数时在组内滚动，而不是最后一行换成「还有 N 条」的菜单：滚轮滚的是储藏
+/// 一组（不是上面的改动列表），滚出范围的行不再响应点击。
+#[test]
+fn many_stashes_scroll_inside_the_group() {
+    let Some((mut app, root)) = git_app("git-commit-stash-scroll", false) else {
+        return;
+    };
+    git_in(&root, &["add", "-A"]);
+    git_in(&root, &["commit", "-q", "-m", "base"]);
+    for i in 0..8 {
+        std::fs::write(root.join("src/main.rs"), format!("fn main() {{ {i}; }}\n")).unwrap();
+        git_in(&root, &["stash", "push", "-q", "-m", &format!("第 {i} 条")]);
+    }
+    std::fs::write(root.join("src/main.rs"), "fn main() { now(); }\n").unwrap();
+    app.git_refresh();
+    app.run_action(Action::ShowCommit);
+    app.press_commit(CommitTarget::Stashes);
+    paint(&mut app);
+
+    // 八条都列在下面，一组只露出五行，其余滚动才看得到。
+    assert_eq!(app.git.stashes.len(), 8);
+    assert_eq!(app.stash_lines().len(), 8);
+    assert_eq!(app.stash_visible_rows(), STASH_ROWS);
+    assert_eq!(app.stash_scroll_max(), 3.0 * COMMIT_ROW);
+    let rows = app.stash_rows_area().expect("展开的储藏一组");
+    assert_eq!(rows.h, STASH_ROWS as f32 * COMMIT_ROW);
+    let has = |app: &App, target| (app.hits.commit.iter()).any(|(_, t)| *t == target);
+    assert!(has(&app, CommitTarget::Stash(4)));
+    assert!(!has(&app, CommitTarget::Stash(5)), "露不下的行不响应点击");
+
+    // 滚轮落在储藏一组上时滚的是它，上面的改动列表不动。
+    let (x, y) = (rows.x + 30.0, rows.y + 20.0);
+    app.pointer.mouse = (x, y);
+    assert_eq!(app.scroll_target_at(x, y), ScrollTarget::Stash);
+    // 右边细条：悬停、按住它同样能滚（拖动以后细条才一直显示）。
+    let (bar_x, bar_y) = (rows.right() - 3.0, rows.y + 20.0);
+    app.on_mouse_move(bar_x, bar_y);
+    assert_eq!(app.pointer.hover, Hover::Scrollbar(Scrollbar::Stash));
+    app.on_mouse_down(MouseButton::Left);
+    assert!(
+        matches!(
+            app.pointer.drag,
+            Drag::Scrollbar {
+                bar: Scrollbar::Stash,
+                ..
+            }
+        ),
+        "按在储藏一组的细条上拖动的是它"
+    );
+    app.on_mouse_move(bar_x, bar_y + 6.0);
+    app.on_mouse_up(MouseButton::Left);
+    assert!(
+        app.git.commit.stash_scroll > 0.0,
+        "拖动细条把储藏一组往下滚"
+    );
+    let changes = app.git.commit.scroll;
+    app.on_wheel(MouseScrollDelta::LineDelta(0.0, -1.0));
+    paint(&mut app);
+    assert!(app.git.commit.stash_scroll > 0.0);
+    for _ in 0..40 {
+        app.on_wheel(MouseScrollDelta::LineDelta(0.0, -5.0));
+    }
+    paint(&mut app);
+    assert_eq!(app.git.commit.stash_scroll, app.stash_scroll_max());
+    assert_eq!(app.git.commit.scroll, changes, "改动列表的滚动位置不变");
+    assert!(has(&app, CommitTarget::Stash(7)), "滚到底能看到最后一条");
+    assert!(!has(&app, CommitTarget::Stash(0)));
+
+    // 往回滚过头停在最前面，第一条又露出来。
+    for _ in 0..40 {
+        app.on_wheel(MouseScrollDelta::LineDelta(0.0, 5.0));
+    }
+    paint(&mut app);
+    assert_eq!(app.git.commit.stash_scroll, 0.0);
+    assert!(has(&app, CommitTarget::Stash(0)));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 按住储藏的一行上下拖就滚动，不用拖右边的细条；松开时没移动过才算点击，仍然打开这条储藏。
+#[test]
+fn a_stash_row_can_be_dragged_to_scroll_and_still_clicks() {
+    let Some((mut app, root)) = git_app("git-commit-stash-pan", false) else {
+        return;
+    };
+    git_in(&root, &["add", "-A"]);
+    git_in(&root, &["commit", "-q", "-m", "base"]);
+    for i in 0..8 {
+        std::fs::write(root.join("src/main.rs"), format!("fn main() {{ {i}; }}\n")).unwrap();
+        git_in(&root, &["stash", "push", "-q", "-m", &format!("第 {i} 条")]);
+    }
+    std::fs::write(root.join("src/main.rs"), "fn main() { now(); }\n").unwrap();
+    app.git_refresh();
+    app.run_action(Action::ShowCommit);
+    app.press_commit(CommitTarget::Stashes);
+    paint(&mut app);
+    let (row, _) = *(app.hits.commit.iter())
+        .find(|(_, t)| *t == CommitTarget::Stash(1))
+        .unwrap();
+    let (x, y) = (row.x + 40.0, row.y + row.h / 2.0);
+    app.on_mouse_move(x, y);
+    app.on_mouse_down(MouseButton::Left);
+    assert!(
+        matches!(app.pointer.drag, Drag::StashPan { .. }),
+        "按住一行开始拖动，不马上打开储藏"
+    );
+    assert!(app.git.commit.stash_view.is_none());
+    // 往上拖两行：内容跟着走两行，松开停在新的位置。
+    app.on_mouse_move(x, y - 2.0 * COMMIT_ROW);
+    assert_eq!(app.git.commit.stash_scroll, 2.0 * COMMIT_ROW);
+    app.on_mouse_up(MouseButton::Left);
+    assert_eq!(app.git.commit.stash_scroll, 2.0 * COMMIT_ROW);
+    assert!(
+        app.git.commit.stash_view.is_none(),
+        "拖动过就不算点击，不打开储藏"
+    );
+
+    // 拖动不改变选中的那条储藏：没移动过就按下、松开，仍然是点击。
+    paint(&mut app);
+    let (row, _) = *(app.hits.commit.iter())
+        .find(|(_, t)| *t == CommitTarget::Stash(2))
+        .unwrap();
+    let (x, y) = (row.x + 40.0, row.y + row.h / 2.0);
+    app.on_mouse_move(x, y);
+    app.on_mouse_down(MouseButton::Left);
+    app.on_mouse_up(MouseButton::Left);
+    let view = app.git.commit.stash_view.clone().expect("点开储藏");
+    assert_eq!(view.at, 0);
+    assert!(
+        app.editor
+            .active()
+            .is_some_and(|doc| doc.name().contains("stash@{"))
+    );
     let _ = std::fs::remove_dir_all(&root);
 }

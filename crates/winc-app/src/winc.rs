@@ -755,6 +755,7 @@ impl Winc {
             .commit
             .set_staging(app.config.git_staging_area == Some(true));
         app.restore_panel_width();
+        app.restore_graph_height();
         app.editor.diff_unified = app.config.diff_inline == Some(true);
         app.apply_preview_state();
         app.store.state_path = template.state_path;

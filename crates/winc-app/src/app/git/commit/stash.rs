@@ -6,15 +6,29 @@
 //! 悬停时右端是「应用」和「⋯」（应用、应用并删除、删除），右键同样是这个菜单。点击一条储藏时在
 //! 单独的预览标签里打开它的第一个改动文件，同时在这一行下面列出它改动的文件，点击其中一个即在
 //! 预览标签里查看；差异标签里的上一个、下一个文件同样在这些文件之间切换。储藏时一起收进去的
-//! 未跟踪文件排在后面。直接列出的条数有上限，再多时最后一行是「还有 N 条」，点击后弹出全部储藏
-//! 的菜单。
+//! 未跟踪文件排在后面。
+//!
+//! 一组最多露出 [`STASH_ROWS`] 行，再多时在组内上下滚动：滚轮、拖动右边细条，或者按住一行、
+//! 按住行下面的空白直接拖（见 [`App::begin_stash_pan`]）。这样条数再多也不挤改动列表，不必先
+//! 从菜单里挑选。
 
 use winc_editor::DocumentId;
 use winc_editor::git::{CommitFile, Stash};
 
 use super::*;
 
-/// 储藏一组展开时最多占几行（行），连同「还有 N 条」：再多会把上面的改动列表挤得太矮。
+/// 储藏一组里露出各行的范围：标题下面到这一组的下沿，下面留出与上沿相同的空隙。
+pub(crate) fn stash_body(area: Rect) -> Rect {
+    let top = area.y + STASH_GAP + COMMIT_ROW;
+    Rect::new(
+        area.x,
+        top,
+        area.w,
+        (area.bottom() - top - STASH_GAP).max(0.0),
+    )
+}
+
+/// 储藏一组展开时最多露出几行（行）：再多就把上面的改动列表挤得太矮，改为在组内滚动。
 pub(crate) const STASH_ROWS: usize = 5;
 
 /// 正在查看的储藏下面最多列出的文件行数（行），包括「还有 N 个文件」：再多时上方的改动列表
@@ -30,8 +44,6 @@ pub(crate) enum StashLine {
     File(usize),
     /// 正在看的储藏里没有列出的文件个数。
     MoreFiles(usize),
-    /// 没有列出的储藏条数。
-    MoreStashes(usize),
 }
 
 /// 储藏一组上下各留的空隙（逻辑像素）：列表间隔（`SIDEBAR_LIST_GAP`）的一半。这一组上下都是
@@ -58,22 +70,13 @@ pub(crate) struct StashView {
 pub(super) type StashFiles = Result<Vec<(CommitFile, Option<String>, String)>, String>;
 
 impl App {
-    /// 储藏一组展开时直接列出的储藏：最多 [`STASH_ROWS`] 行；再多时留出最后一行写「还有 N 条」。
-    pub(crate) fn shown_stashes(&self) -> &[Stash] {
-        let stashes = self.git.stashes.as_slice();
-        if stashes.len() > STASH_ROWS {
-            &stashes[..STASH_ROWS - 1]
-        } else {
-            stashes
-        }
-    }
-
-    /// 储藏一组展开时标题下面的各行：各条储藏，正在看的那条下面是它的文件，最后是「还有 N 条」。
+    /// 储藏一组展开时标题下面的各行：各条储藏，正在看的那条下面是它的文件。
+    ///
+    /// 列出全部储藏，超出 [`STASH_ROWS`] 的部分靠滚动看到（见 [`App::stash_scroll_max`]）。
     pub(crate) fn stash_lines(&self) -> Vec<StashLine> {
-        let shown = self.shown_stashes();
         let open = self.listed_stash_view();
         let mut lines = Vec::new();
-        for (i, stash) in shown.iter().enumerate() {
+        for (i, stash) in self.git.stashes.iter().enumerate() {
             lines.push(StashLine::Stash(i));
             let Some(view) = open.filter(|view| view.oid == stash.oid) else {
                 continue;
@@ -88,11 +91,54 @@ impl App {
             lines.extend((start..start + room).map(StashLine::File));
             lines.push(StashLine::MoreFiles(count - room));
         }
-        let rest = self.git.stashes.len() - shown.len();
-        if rest > 0 {
-            lines.push(StashLine::MoreStashes(rest));
-        }
         lines
+    }
+
+    /// 储藏一组里露出各行的范围（标题下面那一块）；储藏一组没有显示时为 `None`。
+    pub(crate) fn stash_rows_area(&self) -> Option<Rect> {
+        self.commit_parts().stashes.map(stash_body)
+    }
+
+    /// 储藏一组展开时露得下的行数（行）：[`App::stash_open_rows`] 与 [`STASH_ROWS`] 里小的那个。
+    pub(crate) fn stash_visible_rows(&self) -> usize {
+        self.stash_open_rows().min(STASH_ROWS)
+    }
+
+    /// 储藏一组最多能滚动多远（逻辑像素）：露不下的行数乘以行高。
+    pub(crate) fn stash_scroll_max(&self) -> f32 {
+        let hidden = self
+            .stash_open_rows()
+            .saturating_sub(self.stash_visible_rows());
+        hidden as f32 * COMMIT_ROW
+    }
+
+    /// 在储藏一组里按下：开始上下拖动，内容跟着指针走；松开时没移动过才按点击处理
+    /// （见 [`Self::release_stash_pan`]）。
+    pub(in crate::app) fn begin_stash_pan(&mut self, target: Option<CommitTarget>) {
+        self.settle_glides();
+        self.pointer.drag = crate::app::Drag::StashPan {
+            start_y: self.pointer.mouse.1,
+            scroll: self.git.commit.stash_scroll,
+            target,
+        };
+    }
+
+    /// 拖动储藏一组：指针移动多少，各行就跟着走多少，限制在两端之间。
+    pub(in crate::app) fn drag_stash_pan(&mut self, start_y: f32, scroll: f32, y: f32) {
+        let max = self.stash_scroll_max();
+        self.git.commit.stash_scroll = (scroll - (y - start_y)).clamp(0.0, max);
+        self.request_redraw();
+    }
+
+    /// 松开储藏一组里的拖动：移动不到 [`DRAG_SLOP`] 时按点击处理。
+    pub(in crate::app) fn release_stash_pan(&mut self, start_y: f32, target: Option<CommitTarget>) {
+        let y = self.pointer.mouse.1;
+        if (y - start_y).abs() > DRAG_SLOP {
+            return;
+        }
+        if let Some(target) = target {
+            self.press_commit_stash(target);
+        }
     }
 
     /// 储藏一组展开时，标题下面的行数（[`App::stash_lines`]）。
@@ -148,7 +194,7 @@ impl App {
             return 0.0;
         }
         if self.git.commit.stash_open {
-            STASH_CLOSED + self.stash_open_rows() as f32 * COMMIT_ROW
+            STASH_CLOSED + self.stash_visible_rows() as f32 * COMMIT_ROW
         } else {
             STASH_CLOSED
         }

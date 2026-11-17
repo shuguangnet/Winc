@@ -98,6 +98,7 @@ fn sample() -> State {
         vim_searches: vec!["\\<词\\>".into()],
         stay_outside_applications: true,
         panel_width: Some(360.0),
+        graph_height: Some(300.0),
         preview_mode: Some("split".into()),
         version: Some("0.1.626".into()),
         setup_pending: true,

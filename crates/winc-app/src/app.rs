@@ -46,7 +46,7 @@ pub(crate) use git::changes::{ChangeTarget, MARK_W, mark_x, ruler_rows};
 pub(crate) use git::commit::{
     COMMIT_ROW, CommitGroup, CommitLabels, CommitName, CommitOverflow, CommitParts, CommitRow,
     CommitRows, CommitScope, CommitSort, CommitTarget, MESSAGE_LINE, MESSAGE_PAD, OtherGroup,
-    OtherRow, STASH_GAP, StashLine, StashView, SyncState,
+    OtherRow, STASH_GAP, StashLine, StashView, SyncState, stash_body,
 };
 pub(crate) use input::context_menu::{
     CHECK_COLUMN, ICON_COLUMN, MenuIcon, POPUP_PAD, POPUP_TEXT_X, PopupLevel, PopupMenu, PopupRow,
@@ -693,6 +693,22 @@ enum Drag {
     LogDivider {
         start_x: f32,
         start_width: f32,
+    },
+    /// 上下拖动提交图的上沿，调整图占的高度（`App::drag_graph_resize`）。
+    ///
+    /// `start_y` 是按下时的纵坐标，`height` 是按下时图的高度。
+    GraphResize {
+        start_y: f32,
+        height: f32,
+    },
+    /// 上下拖动储藏一组里的行（`App::drag_stash_pan`）。
+    ///
+    /// `start_y` 是按下时的纵坐标，`scroll` 是按下时内容的滚动位置，`target` 是按下的那一行；
+    /// 松开时没移动过就按点击处理。
+    StashPan {
+        start_y: f32,
+        scroll: f32,
+        target: Option<CommitTarget>,
     },
     /// 上下拖动提交视图底部的提交图（`App::drag_graph`）。
     ///

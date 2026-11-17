@@ -313,7 +313,7 @@ impl App {
             },
             MenuTarget::CommitMore => self.run_commit_more_command(command),
             // 按弹出菜单时记下的那份储藏找：菜单开着的时候储藏的编号可能已经变了。
-            MenuTarget::StashRow(_) | MenuTarget::StashList => {
+            MenuTarget::StashRow(_) => {
                 if let MenuCommand::GitStashOp(op, i) = command
                     && let Some(stash) = menu.stashes.get(i).cloned()
                 {

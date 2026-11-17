@@ -389,6 +389,7 @@ fn hovering_a_long_change_name_shows_it_in_full_with_its_buttons_after_it() {
         return;
     }
     app.run_action(Action::ShowCommit);
+    shrink_graph(&mut app);
     paint(&mut app);
     let rows = app.commit_rows();
     let status = app.git.status.clone().unwrap();
@@ -479,6 +480,7 @@ fn a_long_change_name_slides_out_and_back_like_the_file_tree() {
     }
     app.git.commit.names.animate_without_window = true;
     app.run_action(Action::ShowCommit);
+    shrink_graph(&mut app);
     paint(&mut app);
     let status = app.git.status.clone().unwrap();
     let entry = (status.entries.iter())
@@ -817,6 +819,7 @@ fn a_clean_tree_hides_the_commit_card_and_offers_the_next_step() {
         return;
     };
     app.run_action(Action::ShowCommit);
+    shrink_graph(&mut app);
     paint(&mut app);
     assert!(app.commit_parts().card.is_some());
     assert_eq!(app.focus, Focus::CommitMessage);
@@ -875,6 +878,7 @@ fn the_full_name_row_covers_the_scrollbar_like_the_file_tree() {
         return;
     }
     app.run_action(Action::ShowCommit);
+    shrink_graph(&mut app);
     paint(&mut app);
     let status = app.git.status.clone().unwrap();
     let rows = app.commit_rows();
@@ -925,6 +929,7 @@ fn the_full_name_row_covers_the_splitter_like_the_file_tree() {
         return;
     }
     app.run_action(Action::ShowCommit);
+    shrink_graph(&mut app);
     paint(&mut app);
     let status = app.git.status.clone().unwrap();
     let rows = app.commit_rows();

@@ -307,7 +307,7 @@ impl App {
                 return false;
             }
             if let Some(target) = hit(&self.hits.commit, x, y) {
-                self.with_log_list(|app| app.press_commit(target));
+                self.with_log_list(|app| app.press_commit_down(target));
             }
             self.request_redraw();
             return true;
@@ -334,7 +334,7 @@ impl App {
                 self.focus = focus;
                 self.click_field(x, y);
             } else if let Some(target) = hit(&self.hits.commit, x, y) {
-                self.press_commit(target);
+                self.press_commit_down(target);
             }
             self.request_redraw();
             return true;

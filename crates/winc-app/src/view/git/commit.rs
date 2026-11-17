@@ -152,7 +152,23 @@ pub(in crate::view) fn draw_commit(
     );
     draw_context(app, frame, &parts, &mut hits);
     draw_banner(app, frame, &parts, &mut hits);
+    // 储藏一组：先按此刻的滚动上限收紧位置（储藏删掉、组收起后不会停在空白处），各行画完再把
+    // 滚动条叠在上面。
+    let stash_bar = if app.git.commit.stash_open {
+        app.stash_rows_area()
+    } else {
+        None
+    };
+    if stash_bar.is_some() {
+        let max = app.stash_scroll_max();
+        app.git.commit.stash_scroll = app.git.commit.stash_scroll.min(max);
+    }
     draw_stashes(app, frame, &parts, &mut hits);
+    if let Some(rows) = stash_bar {
+        let content = app.stash_scroll_max() + rows.h;
+        let scroll = app.git.commit.stash_scroll;
+        draw_scrollbar(app, frame, ScrollArea::Stash, 0, rows, scroll, content);
+    }
     // 提交图：先按此刻的高度收紧滚动位置（提交变少、视图变高后不会留在空白处），画完行再把
     // 滚动条叠在上面；滚动条贴在行区域右边，标题行和上沿的分隔线上没有。
     let graph_bar = parts.graph.map(crate::app::git::graph::graph_rows);

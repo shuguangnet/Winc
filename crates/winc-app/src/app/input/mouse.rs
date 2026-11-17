@@ -87,6 +87,17 @@ impl App {
         if let Drag::GraphPan { start, row, .. } = self.pointer.drag {
             self.release_graph_pan(start, row);
         }
+        // 储藏一组里按下后没拖动过：算点击，看这一条储藏的改动。
+        if let Drag::StashPan {
+            start_y, target, ..
+        } = self.pointer.drag
+        {
+            self.release_stash_pan(start_y, target);
+        }
+        // 拉过提交图的上沿：把新的高度记进状态文件，下次启动沿用。
+        if matches!(self.pointer.drag, Drag::GraphResize { .. }) {
+            self.remember_graph_height();
+        }
         self.pointer.drag = Drag::None;
         // 拖动分隔条期间不重新断行（`sync_wrap`）；松开后重绘，重绘前的布局按最终宽度断行。
         if was_divider {

@@ -48,6 +48,12 @@ fn long_name_repo(name: &str) -> Option<(PathBuf, String)> {
     Some((dir, long))
 }
 
+/// 只关心改动列表几何的用例先把提交图收到最小，让列表拿到最多空间：提交图自己的几何另有
+/// 用例（见 `graph` 模块）。
+fn shrink_graph(app: &mut App) {
+    app.git.graph.height = Some(crate::app::git::graph::GRAPH_MIN);
+}
+
 #[test]
 fn right_clicking_a_changed_file_offers_diff_open_and_rollback() {
     use crate::app::input::context_menu::{MenuCommand, MenuTarget};

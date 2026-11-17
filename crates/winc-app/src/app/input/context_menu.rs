@@ -313,8 +313,12 @@ pub enum MenuCommand {
     LogColumn(crate::app::git::log::LogColumn),
     /// 日志的作者筛选：只看自己（仓库配置的 `user.email`）的提交。
     LogAuthorMe,
+    /// 日志的作者筛选：输入作者名字或邮箱的一部分。
+    LogAuthorOther,
     /// 日志的日期筛选：只看最近几天的提交，0 是全部日期。
     LogSince(u32),
+    /// 日志的日期筛选：输入其他时间（`git log --since` 认识的样子）。
+    LogSinceOther,
     /// 日志的路径筛选：0 是全部路径，`i + 1` 是路径菜单里第 `i` 个路径（勾上或取消）。
     LogPath(usize),
     /// 日志的路径筛选：输入其他路径。
@@ -618,6 +622,8 @@ impl MenuCommand {
             MenuCommand::LogSince(0) => t!("menu-log-all-dates"),
             MenuCommand::LogPath(0) => t!("menu-log-all-paths"),
             MenuCommand::LogPathOther => t!("menu-log-other-path"),
+            MenuCommand::LogSinceOther => t!("menu-log-other-date"),
+            MenuCommand::LogAuthorOther => t!("menu-log-other-author"),
             MenuCommand::LogAuthorMe => t!("menu-log-author-me"),
             MenuCommand::LogColumn(column) => column.label(),
             MenuCommand::LogSince(_) | MenuCommand::LogPath(_) => "",

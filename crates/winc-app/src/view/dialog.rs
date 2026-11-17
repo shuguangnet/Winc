@@ -96,7 +96,9 @@ fn draw_card(app: &mut App, frame: &mut Frame<'_>, layout: &DialogLayout) {
         | FormKind::Connect
         | FormKind::GoToRevision
         | FormKind::CompareRevision { .. }
-        | FormKind::LogPath => {
+        | FormKind::LogPath
+        | FormKind::LogAuthor
+        | FormKind::LogSince => {
             return draw_question(app, frame, layout);
         }
         FormKind::Clone => return draw_clone(app, frame, layout),

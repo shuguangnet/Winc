@@ -247,11 +247,12 @@ pub(super) fn draw_branches(
                 let tag = app.git.tags.get(*index).map_or("", String::as_str);
                 name(frame, text, tag, long);
             }
-            BranchRow::Create(_) => {}
+            // 「新建分支」和「按输入的修订筛选」都只在选择器里，面板里不画。
+            BranchRow::Create(_) | BranchRow::Revision(_) => {}
         }
         // 「新建分支」是分支选择器里的行，面板里不画它，也不记下点击范围：否则鼠标停在空行的
         // 位置会亮起一块没有内容的底色。
-        if fold.is_none() && !matches!(row, BranchRow::Create(_)) {
+        if fold.is_none() && !matches!(row, BranchRow::Create(_) | BranchRow::Revision(_)) {
             hits.push((band.intersect(body), target));
         }
     }

@@ -76,11 +76,15 @@ impl App {
                     self.toggle_log_column(column);
                 }
             }
-            MenuTarget::LogDate => {
-                if let MenuCommand::LogSince(days) = command {
-                    self.change_log_query(|q| q.since_days = (days > 0).then_some(days));
-                }
-            }
+            MenuTarget::LogDate => match command {
+                MenuCommand::LogSince(days) => self.change_log_query(|q| {
+                    q.since_days = (days > 0).then_some(days);
+                    // 「全部日期」或最近几天：自定义的时间不再留着。
+                    q.since = None;
+                }),
+                MenuCommand::LogSinceOther => self.open_log_since_dialog(),
+                _ => {}
+            },
             MenuTarget::LogPath => match command {
                 MenuCommand::LogPath(0) => self.change_log_query(|q| q.paths.clear()),
                 MenuCommand::LogPath(i) => {
@@ -94,6 +98,9 @@ impl App {
             MenuTarget::LogAuthor if command == MenuCommand::LogAuthorMe => {
                 let me = self.git.my_email.clone();
                 self.toggle_log_author(me);
+            }
+            MenuTarget::LogAuthor if command == MenuCommand::LogAuthorOther => {
+                self.open_log_author_dialog();
             }
             // 作者可以选几位：选一位加上或去掉它，「全部作者」清空。
             MenuTarget::LogAuthor => {

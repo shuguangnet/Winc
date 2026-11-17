@@ -149,6 +149,9 @@ pub enum BranchRow {
     },
     /// 新建名字是查询文字的分支。
     Create(String),
+    /// 日志的分支筛选里，按输入的修订（提交号、`HEAD~3`、`main..dev` 等）筛选：查询文字不是
+    /// 已有的分支或标签名字时才有这一行。
+    Revision(String),
 }
 
 impl BranchRow {
@@ -921,7 +924,13 @@ impl App {
         let rows = rows
             .into_iter()
             .filter(|r| !matches!(r, BranchRow::Create(_)));
-        all.into_iter().chain(rows).collect()
+        // 输入的名字不是已有的分支或标签：日志可以按任意修订筛选（提交号、标签、`HEAD~3`、
+        // `main..dev`），最后加上这一行，选中后按它筛选。
+        let text = self.overlays.picker.input.text().trim();
+        let known = self.git.branches.iter().any(|b| b.name == text)
+            || self.git.tags.iter().any(|tag| tag == text);
+        let revision = (!query.is_empty() && !known).then(|| BranchRow::Revision(text.to_owned()));
+        all.into_iter().chain(rows).chain(revision).collect()
     }
 
     fn set_branch_rows(&mut self, rows: Vec<BranchRow>) {
@@ -966,6 +975,12 @@ impl App {
                 self.change_log_query(|q| q.branches = branch.into_iter().collect());
                 return;
             }
+            if let Some(BranchRow::Revision(revision)) = &row {
+                let revision = revision.clone();
+                self.close_picker();
+                self.change_log_query(|q| q.branches = vec![revision]);
+                return;
+            }
             if matches!(row, Some(BranchRow::Create(_))) {
                 return;
             }
@@ -981,7 +996,8 @@ impl App {
             Some(BranchRow::Folder { remote, path, .. }) => self.toggle_branch_folder(remote, path),
             Some(BranchRow::Branch { index, .. }) => self.pick_branch(index),
             Some(BranchRow::Create(name)) => self.create_branch_from_picker(name, None),
-            Some(BranchRow::All) | None => {}
+            // 按修订筛选在日志里处理（见上），分支选择器里没有这一行。
+            Some(BranchRow::Revision(_)) | Some(BranchRow::All) | None => {}
         }
     }
 

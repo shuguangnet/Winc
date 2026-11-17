@@ -45,6 +45,10 @@ pub(crate) enum FormKind {
     CompareRevision { commit: String },
     /// 按路径筛选 Git 日志：输入相对仓库根目录的路径或通配。
     LogPath,
+    /// 按作者筛选 Git 日志：输入作者名字或邮箱的一部分。
+    LogAuthor,
+    /// 按时间筛选 Git 日志：输入 `git log --since` 认识的时间。
+    LogSince,
     /// 交互式变基。
     Rebase(Box<RebaseForm>),
     /// 连接远端主机：主机、端口，见 [`crate::app::remote`]。
@@ -95,6 +99,8 @@ impl FormKind {
             FormKind::GoToRevision => Some(QuestionView::go_to_revision()),
             FormKind::CompareRevision { commit } => Some(QuestionView::compare_revision(commit)),
             FormKind::LogPath => Some(QuestionView::log_path()),
+            FormKind::LogAuthor => Some(QuestionView::log_author()),
+            FormKind::LogSince => Some(QuestionView::log_since()),
             FormKind::Worktree
             | FormKind::Branch { .. }
             | FormKind::Clone
@@ -365,12 +371,16 @@ impl App {
                     dir: None,
                 }
             }
-            FormKind::LogPath => {
-                let path = dialog.name.text().trim();
+            FormKind::LogPath | FormKind::LogAuthor | FormKind::LogSince => {
+                let text = dialog.name.text().trim();
                 FormPlan {
                     problem: None,
-                    confirm: t!("git-log-path-button"),
-                    enabled: !path.is_empty(),
+                    confirm: match &dialog.kind {
+                        FormKind::LogAuthor => t!("git-log-author-button"),
+                        FormKind::LogSince => t!("git-log-since-button"),
+                        _ => t!("git-log-path-button"),
+                    },
+                    enabled: !text.is_empty(),
                     base: String::new(),
                     base_enabled: false,
                     dir: None,
@@ -547,13 +557,34 @@ impl App {
             self.compare_log_with_revision(commit, revision);
             return;
         }
-        if matches!(dialog.kind, FormKind::LogPath) {
-            // 写成相对仓库根目录的样子：开头的 `./`、`/` 和末尾的 `/` 去掉。
-            let text = dialog.name.text().trim();
-            let path = text.trim_start_matches("./").trim_matches('/').to_owned();
+        // 日志的筛选条件：输入的路径、作者、时间分别加到当前的筛选上。
+        if matches!(
+            dialog.kind,
+            FormKind::LogPath | FormKind::LogAuthor | FormKind::LogSince
+        ) {
+            let text = dialog.name.text().trim().to_owned();
+            let kind = dialog.kind.clone();
             self.close_form_dialog();
-            if !path.is_empty() {
-                self.toggle_log_path(path);
+            match kind {
+                // 路径写成相对仓库根目录的样子：开头的 `./`、`/` 和末尾的 `/` 去掉。
+                FormKind::LogPath => {
+                    let path = text.trim_start_matches("./").trim_matches('/').to_owned();
+                    if !path.is_empty() {
+                        self.toggle_log_path(path);
+                    }
+                }
+                // 输入的作者加到筛选里，已经有了就不重复加。
+                FormKind::LogAuthor => self.change_log_query(|q| {
+                    if !text.is_empty() && !q.authors.contains(&text) {
+                        q.authors.push(text.clone());
+                    }
+                }),
+                // 自定义的时间与「最近几天」只用一个：填了时间就不再按天数筛。
+                FormKind::LogSince => self.change_log_query(|q| {
+                    q.since = (!text.is_empty()).then(|| text.clone());
+                    q.since_days = None;
+                }),
+                _ => {}
             }
             return;
         }
@@ -579,7 +610,9 @@ impl App {
             | FormKind::Connect
             | FormKind::GoToRevision
             | FormKind::CompareRevision { .. }
-            | FormKind::LogPath => {}
+            | FormKind::LogPath
+            | FormKind::LogAuthor
+            | FormKind::LogSince => {}
             FormKind::Clone => self.submit_clone(),
             FormKind::Push(form) => {
                 let remote = dialog.base.clone().unwrap_or_else(|| form.remote.clone());

@@ -563,6 +563,7 @@ git-log-filter-placeholder-key = Filter by message or hash ({ $key })
 git-log-all-branches = All Branches
 git-log-filter-all = All
 git-log-filter-branch = Branch
+git-log-branch-filter = Filter branches
 git-log-branch-picker-placeholder = Search branches by name
 git-log-filter-author = Author
 git-log-filter-file = File { $path }

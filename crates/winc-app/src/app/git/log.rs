@@ -192,6 +192,8 @@ pub enum LogTarget {
     FilesLayout,
     /// 标题栏最左边的按钮：显示、隐藏分支面板。
     BranchesToggle,
+    /// 分支面板顶部的搜索框：键入文字筛选面板里的分支。
+    BranchFilter,
     /// 标题栏右边的「⋯」：选择显示哪几列。
     Columns,
     /// 作者一列的左边缘：左右拖动改宽度，双击恢复默认宽度。
@@ -444,11 +446,15 @@ pub(crate) struct LogState {
     pub branches_max: f32,
     /// 分支面板里正在展开、收起的组或目录。
     pub(crate) branch_fold: Option<PanelFold>,
+    /// 分支面板顶部的搜索框：按名字筛选面板里的各行（与分支选择器的搜索相同）。
+    ///
+    /// 所有日志标签共用，与面板的滚动位置相同。
+    pub(crate) branch_filter: TextField,
     /// 标题栏各个筛选下拉的宽度过渡：换了筛选条件、文字变长变短时宽度缓动，旧文字淡出、新文字
     /// 淡入，与状态栏右侧各项相同。
     pub(crate) pills: crate::app::StatusMotion<LogPill>,
     /// 分支面板各行的缓存（见 [`App::log_branch_rows`]）：排它们用的分支、最近的分支、收起的
-    /// 组和目录、标签，以及排好的各行。
+    /// 组和目录、标签、搜索文字，以及排好的各行。
     #[allow(clippy::type_complexity, reason = "缓存键就是这几项，单独起名反而难懂")]
     pub(super) branch_rows: std::cell::RefCell<
         Option<(
@@ -457,6 +463,7 @@ pub(crate) struct LogState {
                 Vec<String>,
                 HashSet<(bool, String)>,
                 Vec<String>,
+                String,
             ),
             Vec<BranchRow>,
         )>,
@@ -563,6 +570,7 @@ impl Default for LogState {
             branches_scroll: 0.0,
             branches_max: 0.0,
             branch_fold: None,
+            branch_filter: TextField::default(),
             branches_motion: None,
             branch_rows: Default::default(),
             pills: Default::default(),
@@ -1022,6 +1030,7 @@ impl App {
             }
             LogTarget::FilesLayout => self.toggle_commit_layout(),
             LogTarget::BranchesToggle => self.toggle_log_branches(),
+            LogTarget::BranchFilter => self.press_log_branch_filter(),
             // 拖动由 `mouse.rs` 开始处理。
             LogTarget::AuthorEdge => {}
             LogTarget::Columns => {

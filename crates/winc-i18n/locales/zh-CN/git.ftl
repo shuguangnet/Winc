@@ -450,6 +450,7 @@ git-log-filter-placeholder-key = 按说明或提交号筛选（{ $key }）
 git-log-all-branches = 全部分支
 git-log-filter-all = 全部
 git-log-filter-branch = 分支
+git-log-branch-filter = 筛选分支
 git-log-branch-picker-placeholder = 搜索分支名
 git-log-filter-author = 作者
 git-log-filter-file = 文件 { $path }

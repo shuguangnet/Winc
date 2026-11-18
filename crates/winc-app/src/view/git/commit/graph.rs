@@ -6,8 +6,9 @@
 //!
 //! 标题行右端是获取、拉取、推送三个按钮和对比控件：对比控件写着基准的名字和领先、落后的个
 //! 数（默认与上游比，见 [`App::graph_compare_base`]），点它换基准。对比进行时，基准缺少的提
-//! 交在说明前标一个向上的箭头，基准独有的提交标一个向下的箭头；行尾有引用的行画日志页同款
-//! 的引用徽章，这时不画作者。
+//! 交在说明前标一个向上的箭头，基准独有的提交标一个向下的箭头；本地独有的提交（还没推送）
+//! 圆点和连着的线涂新增色，基准独有的（还没拉下来）涂强调色，三种标记同一组颜色，一条线上
+//! 哪段只在本地、哪段在线上一眼可辨；行尾有引用的行画日志页同款的引用徽章，这时不画作者。
 
 use winc_editor::git::Ref;
 
@@ -140,6 +141,11 @@ pub(super) fn draw_graph(
         }
         let mid = top + GRAPH_ROW / 2.0;
         let ink = |color: u8| lane_color(p, color);
+        // 与基准对比时，本地独有的提交（还没推送）用新增色、基准独有的（还没拉下来）用强调色，
+        // 与标题行对比控件的个数、说明前的箭头同一组颜色：一条线上哪段只在本地、哪段在线上
+        // 一眼可辨。
+        let side = graph.compare.as_ref().and_then(|c| c.side(&commit.oid));
+        let state_ink = |ahead: bool| if ahead { p.git_added } else { p.accent };
         // 上半行、下半行的线。淡色与行底色混好再画，圆头不会在行的交界处叠出深色。
         let bg = if band.is_some() {
             crate::view::workspace::panel::over(p.editor_bg, p.hover)
@@ -148,11 +154,20 @@ pub(super) fn draw_graph(
         };
         for (segments, above) in [(&row.up, true), (&row.down, false)] {
             for s in segments {
-                let color = ink(s.color);
-                let color = if s.line == row.line {
-                    color
+                // 连着圆点的那几段属于这一行的提交，随它着色；别的线只是路过，保持车道色。
+                let touches = if above {
+                    s.to == row.lane
                 } else {
-                    crate::view::workspace::panel::over(bg, color.alpha(color.a * GRAPH_FADED))
+                    s.from == row.lane
+                };
+                let base = match side.filter(|_| touches) {
+                    Some(ahead) => state_ink(ahead),
+                    None => ink(s.color),
+                };
+                let color = if s.line == row.line {
+                    base
+                } else {
+                    crate::view::workspace::panel::over(bg, base.alpha(base.a * GRAPH_FADED))
                 };
                 let (top_y, bottom_y) = if above {
                     (top, mid)
@@ -185,7 +200,7 @@ pub(super) fn draw_graph(
             3.25
         };
         let dot = Rect::new(cx - r, mid - r, 2.0 * r, 2.0 * r);
-        frame.rect_clipped(dot, ink(row.color), r, clip);
+        frame.rect_clipped(dot, side.map_or_else(|| ink(row.color), state_ink), r, clip);
         if head_commit {
             let hole = r - GRAPH_LINE;
             frame.rect_clipped(
@@ -197,7 +212,6 @@ pub(super) fn draw_graph(
         }
         // 领先（基准缺少的提交）标向上的箭头，落后（基准独有的提交）标向下的箭头。
         if let Some(room) = mark {
-            let side = graph.compare.as_ref().and_then(|c| c.side(&commit.oid));
             let center = (text_x - room / 2.0, mid);
             match side {
                 Some(ahead) if ahead => icons::push_small(frame, center, p.git_added, clip),

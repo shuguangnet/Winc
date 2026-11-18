@@ -327,6 +327,21 @@ impl App {
                     self.run_stash_op(op, stash);
                 }
             }
+            // 储藏下面的一个文件：文件本身、取它用的版本都在弹出菜单时记下了，不再看现在的列表。
+            MenuTarget::StashFile {
+                at,
+                path,
+                from,
+                deleted,
+            } => match command {
+                MenuCommand::GitShowDiff => self.open_stash_file(at),
+                MenuCommand::GitStashTakeFile(_) => {
+                    self.confirm_take_stash_file(path, from, deleted);
+                }
+                MenuCommand::CopyPath => self.copy_path(&path, false),
+                MenuCommand::CopyRelativePath => self.copy_path(&path, true),
+                _ => {}
+            },
             MenuTarget::CommitButton => self.run_commit_button_command(command),
             MenuTarget::LastCommit => self.run_last_commit_command(command),
             MenuTarget::TabList => {

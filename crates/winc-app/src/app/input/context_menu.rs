@@ -367,6 +367,8 @@ pub enum MenuCommand {
     GitStash,
     /// 提交视图「⋯」：对第几条储藏做的事。
     GitStashOp(crate::app::git::branch::StashOp, usize),
+    /// 储藏下面列出的一个文件：只取它（`true` 表示储藏里删掉了它，取出就是把工作区里的它删掉）。
+    GitStashTakeFile(bool),
     /// 提交视图的「⋯」里的一条 Git 命令：与命令面板中的同名命令相同，标题去掉前面的「Git：」。
     GitAction(Action),
     /// 提交视图的「⋯」：提交，与提交按钮相同。
@@ -618,6 +620,8 @@ impl MenuCommand {
                 _ => "",
             },
             MenuCommand::GitStashOp(op, _) => op.label(),
+            MenuCommand::GitStashTakeFile(true) => t!("menu-git-stash-take-deletion"),
+            MenuCommand::GitStashTakeFile(false) => t!("menu-git-stash-take-file"),
             MenuCommand::LogAuthor(0) => t!("menu-log-all-authors"),
             MenuCommand::LogSince(0) => t!("menu-log-all-dates"),
             MenuCommand::LogPath(0) => t!("menu-log-all-paths"),
@@ -868,6 +872,15 @@ pub enum MenuTarget {
     RebaseAction(usize),
     /// 提交视图里第几条储藏的菜单：应用、应用并删除、删除。
     StashRow(usize),
+    /// 提交视图里正在查看的储藏下面列出的一个文件：它在那段储藏里的序号（`StashView::files`
+    /// 的下标）、路径、取它用的版本（储藏本身，或收着未跟踪文件的第三个父提交），以及储藏里
+    /// 是否删掉了它。
+    StashFile {
+        at: usize,
+        path: PathBuf,
+        from: String,
+        deleted: bool,
+    },
     /// 状态栏的位置菜单：弹出时的各个位置，菜单项按下标对应。
     StatusPlaces(Vec<Place>),
     /// 日志标题栏的「作者」下拉。

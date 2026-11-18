@@ -244,6 +244,9 @@ pub enum UserEvent {
     GitCommit,
     /// 确认框中确认回滚参数中的文件。
     GitRollback(Vec<PathBuf>),
+    /// 确认框中确认把储藏里的一个文件取到工作区：取它用的版本（储藏本身，或收着未跟踪文件的
+    /// 第三个父提交）、路径，以及储藏里是不是删掉了它。
+    GitTakeFile(String, PathBuf, bool),
     /// 确认框中确认中止进行中的合并、变基等操作。
     GitAbort,
     /// 确认框里选了跳过：跳过变基、拣选等操作停着的这个提交。

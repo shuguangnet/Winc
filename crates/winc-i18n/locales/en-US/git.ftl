@@ -69,6 +69,12 @@ git-stash-drop-confirm = Drop stash “{ $name }”?
 git-stash-gone = This stash no longer exists
 git-stash-drop-confirm-detail = The changes in this stash can’t be recovered after it’s dropped.
 git-stash-drop-confirm-button = Drop
+git-stash-take-file-confirm = Take “{ $name }” out of this stash?
+git-stash-take-file-confirm-detail = The file in the working tree is replaced by the stashed version, so uncommitted changes to it are lost. The stash itself stays as it is.
+git-stash-take-file-confirm-button = Take
+git-stash-take-deletion-confirm = This stash deleted “{ $name }”. Remove the file as well?
+git-stash-take-deletion-confirm-detail = The file is removed from the working tree and the removal is staged, so uncommitted changes to it are lost. The stash itself stays as it is.
+git-stash-take-deletion-confirm-button = Remove
 
 ## Background Git operations: what is running, and messages when it finishes
 
@@ -79,6 +85,7 @@ git-op-sync = syncing
 git-op-stash = stashing changes
 git-op-stash-apply = applying stash “{ $name }”
 git-op-stash-pop = popping stash “{ $name }”
+git-op-stash-take-file = taking “{ $name }” out of the stash
 git-op-continue-merge = continuing the merge
 git-op-continue-rebase = continuing the rebase
 git-op-continue-cherry-pick = continuing the cherry-pick

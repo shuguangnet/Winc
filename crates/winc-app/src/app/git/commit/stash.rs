@@ -262,8 +262,80 @@ impl App {
         self.open_stash_file(0);
     }
 
+    /// 储藏一组下面列出的一个文件的菜单里选了「只取这个文件」：先确认（会盖掉工作区里这个文件
+    /// 尚未提交的改动），确认以后把它从储藏里取到工作区。
+    pub(in crate::app) fn confirm_take_stash_file(
+        &mut self,
+        path: PathBuf,
+        from: String,
+        deleted: bool,
+    ) {
+        let name = winc_editor::display_name(&path).into_owned();
+        let message = if deleted {
+            t!("git-stash-take-deletion-confirm", name = name.as_str())
+        } else {
+            t!("git-stash-take-file-confirm", name = name.as_str())
+        };
+        if self.window.handle.is_some() {
+            let (detail, button) = if deleted {
+                (
+                    t!("git-stash-take-deletion-confirm-detail"),
+                    t!("git-stash-take-deletion-confirm-button"),
+                )
+            } else {
+                (
+                    t!("git-stash-take-file-confirm-detail"),
+                    t!("git-stash-take-file-confirm-button"),
+                )
+            };
+            self.show_confirm(&message, detail, button, move |ok| {
+                ok.then(|| UserEvent::GitTakeFile(from.clone(), path.clone(), deleted))
+            });
+            return;
+        }
+        // 没有窗口（测试中）时直接取出。
+        self.take_stash_file(from, path, deleted);
+    }
+
+    /// 把储藏里的 `path` 取到工作区和暂存区（`deleted` 时是把它从两处一并删掉），完成后重新读取
+    /// 状态。储藏本身不变，其余的文件也不动。
+    pub(in crate::app) fn take_stash_file(&mut self, from: String, path: PathBuf, deleted: bool) {
+        let name = winc_editor::display_name(&path).into_owned();
+        let what = t!("git-op-stash-take-file", name = name.as_str());
+        self.git_operate(what, move |git, root| {
+            git.take_file(root, &from, &path, deleted)
+        });
+    }
+
+    /// 右键点在提交视图的储藏一组里：点在一条储藏上时是它的菜单，点在它下面列出的一个文件上时是
+    /// 那个文件的菜单。
+    pub(in crate::app) fn stash_context_target(&self, x: f32, y: f32) -> Option<MenuTarget> {
+        if !self.commit_shown() || self.git.commit.hits_generation != self.git.generation {
+            return None;
+        }
+        match crate::layout::hit(&self.hits.commit, x, y)? {
+            CommitTarget::Stash(i) | CommitTarget::StashApply(i) | CommitTarget::StashMenu(i) => {
+                Some(MenuTarget::StashRow(i))
+            }
+            CommitTarget::StashFile(at) => self.stash_file_target(at),
+            _ => None,
+        }
+    }
+
+    /// 储藏一组里第 `at` 个文件的菜单目标：路径、取它用的版本，以及它在储藏里是不是被删掉了。
+    fn stash_file_target(&self, at: usize) -> Option<MenuTarget> {
+        let view = self.listed_stash_view()?;
+        let (file, _, from) = view.files.get(at)?;
+        Some(MenuTarget::StashFile {
+            at,
+            path: file.path.clone(),
+            from: from.clone(),
+            deleted: file.change == winc_editor::git::Change::Deleted,
+        })
+    }
+
     /// 在储藏的预览标签里打开正在看的储藏的第 `at` 个文件。
-    pub(super) fn open_stash_file(&mut self, at: usize) {
+    pub(in crate::app) fn open_stash_file(&mut self, at: usize) {
         let Some(view) = self.git.commit.stash_view.as_mut() else {
             return;
         };

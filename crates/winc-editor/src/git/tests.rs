@@ -1023,6 +1023,76 @@ fn undoing_a_commit_keeps_its_changes_staged() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// 从储藏里取出一个文件：只改这一个文件，内容进工作区和暂存区；储藏里删掉了它的，取出就是
+/// 把工作区里的这个文件也删掉。储藏本身不变。
+#[test]
+fn taking_one_file_out_of_a_stash_touches_only_that_file() {
+    let Some(git) = real_git() else {
+        return;
+    };
+    let dir = crate::test_util::scratch("git-take-file");
+    let root = winc_config::files::canonicalize(&dir).unwrap();
+    let sh = |args: &[&str]| {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(["-c", "commit.gpgsign=false"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let (a, b) = (root.join("a.rs"), root.join("b.rs"));
+    sh(&["init", "-q", "-b", "main"]);
+    std::fs::write(&a, "one\n").unwrap();
+    std::fs::write(&b, "one\n").unwrap();
+    git.stage(&root, &[a.clone(), b.clone()]).unwrap();
+    git.commit(&root, "first", false, false).unwrap();
+    std::fs::write(&a, "two\n").unwrap();
+    sh(&["rm", "-q", "--", "b.rs"]);
+    sh(&["stash", "push", "-q", "-u", "-m", "试一下"]);
+    // 储藏以后工作区里两个文件都没有改动（删掉的那个也回来了）：取出的内容只可能来自储藏。
+    std::fs::write(&a, "three\n").unwrap();
+    assert!(b.exists());
+    let stash = git.stashes(&root, &Cancel::default()).unwrap()[0].clone();
+
+    git.take_file(&root, &stash.oid, &a, false).unwrap();
+    assert_eq!(std::fs::read_to_string(&a).unwrap(), "two\n");
+    assert_eq!(sh(&["diff", "--cached", "--name-only"]), "a.rs\n");
+    // 另一个文件没有动。
+    assert!(b.exists());
+    assert_eq!(std::fs::read_to_string(&b).unwrap(), "one\n");
+
+    // 储藏里删掉了 b.rs：它的「新」版本里没有这个文件，取出就是把删除也取到工作区和暂存区。
+    git.take_file(&root, &stash.oid, &b, true).unwrap();
+    assert!(!b.exists());
+    assert_eq!(sh(&["diff", "--cached", "--name-only"]), "a.rs\nb.rs\n");
+    // 已经不在时同样算取出成功。
+    git.take_file(&root, &stash.oid, &b, true).unwrap();
+    // 储藏还在，可以再应用一次。
+    let mut count = git.stashes(&root, &Cancel::default()).unwrap().len();
+    assert_eq!(count, 1);
+
+    // 储藏里新加的文件（未被跟踪）在第三个父提交里，取出以后是已暂存的新文件。
+    let c = root.join("c.rs");
+    std::fs::write(&c, "new\n").unwrap();
+    sh(&["stash", "push", "-q", "-u", "-m", "未跟踪"]);
+    assert!(!c.exists());
+    let untracked = sh(&["rev-parse", "stash@{0}^3"]).trim().to_owned();
+    git.take_file(&root, &untracked, &c, false).unwrap();
+    assert_eq!(std::fs::read_to_string(&c).unwrap(), "new\n");
+    assert!(
+        sh(&["diff", "--cached", "--name-only"])
+            .lines()
+            .any(|line| line == "c.rs")
+    );
+    count = git.stashes(&root, &Cancel::default()).unwrap().len();
+    assert_eq!(count, 2);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn recent_branches_keep_the_latest_switch_of_each_branch() {
     let output = "checkout: moving from main to feature/login\n\

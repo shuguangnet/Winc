@@ -285,6 +285,21 @@ pub(crate) fn stash_ops(index: usize, busy: bool) -> Vec<MenuEntry> {
     ops
 }
 
+/// 储藏一组下面列出的一个文件的菜单：显示它在储藏里的差异、只取它（`deleted` 时是只删它），
+/// 分隔线，复制路径、复制相对路径。
+///
+/// 储藏是旧版本，取出会盖掉工作区里这个文件尚未提交的改动，因此那一项执行前还要再确认一次
+/// （见 [`App::confirm_take_stash_file`]）。
+pub(crate) fn stash_file_menu(deleted: bool, busy: bool) -> Vec<MenuEntry> {
+    vec![
+        MenuEntry::Item(MenuCommand::GitShowDiff, true),
+        MenuEntry::Item(MenuCommand::GitStashTakeFile(deleted), !busy),
+        MenuEntry::Separator,
+        MenuEntry::Item(MenuCommand::CopyPath, true),
+        MenuEntry::Item(MenuCommand::CopyRelativePath, true),
+    ]
+}
+
 /// 分支选择器里第 `index` 个分支的操作菜单：按 `BranchOp::GROUPS` 分组，组之间有分隔线。
 ///
 /// `branches` 是本地分支在前、远程分支在后的列表，当前分支只能重命名：从当前分支新建分支、工作树

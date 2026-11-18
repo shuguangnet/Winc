@@ -49,6 +49,15 @@ fn shoot_commit_stashes() {
     paint(&mut app);
     app.press_commit(CommitTarget::Stash(0));
     shoot(&mut app, "commit-stash-files");
+    // 右键点列出的第一个文件：菜单里除了「显示差异」，还有只取这一个文件的「只取这个文件」。
+    let place = {
+        let (row, _) = *(app.hits.commit.iter())
+            .find(|(_, t)| matches!(t, CommitTarget::StashFile(_)))
+            .unwrap();
+        (row.x + 20.0, row.y + row.h / 2.0)
+    };
+    right_click(&mut app, place);
+    shoot(&mut app, "commit-stash-file-menu");
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -317,5 +326,122 @@ fn a_stash_row_can_be_dragged_to_scroll_and_still_clicks() {
             .active()
             .is_some_and(|doc| doc.name().contains("stash@{"))
     );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 储藏下面列出的一个文件可以只取它：右键菜单里「只取这个文件」把它从储藏放回工作区和暂存区，
+/// 其余文件不动，储藏还在；储藏里删掉了它的那一项是「只删这个文件」，取出就是把工作区里的它
+/// 删掉。
+#[test]
+fn a_file_can_be_taken_out_of_a_stash_on_its_own() {
+    let Some((mut app, root)) = git_app("git-commit-stash-take-file", false) else {
+        return;
+    };
+    std::fs::write(root.join("notes.txt"), "draft\n").unwrap();
+    git_in(&root, &["add", "-A"]);
+    git_in(&root, &["commit", "-q", "-m", "base"]);
+    // 一个改内容、一个删掉，一起收进储藏：工作区里两个文件都回到提交时的样子。
+    std::fs::write(root.join("src/main.rs"), "fn main() { stashed(); }\n").unwrap();
+    std::fs::remove_file(root.join("notes.txt")).unwrap();
+    git_in(&root, &["stash", "push", "-q", "-m", "试一下"]);
+    assert!(root.join("notes.txt").exists());
+    std::fs::write(root.join("src/main.rs"), "fn main() { now(); }\n").unwrap();
+    app.git_refresh();
+    app.run_action(Action::ShowCommit);
+    app.press_commit(CommitTarget::Stashes);
+    paint(&mut app);
+    app.press_commit(CommitTarget::Stash(0));
+    paint(&mut app);
+
+    let stash = app.git.stashes[0].clone();
+    let at_of = |app: &App, name: &str| -> usize {
+        (app.git.commit.stash_view.as_ref().unwrap().files.iter())
+            .position(|(file, ..)| winc_editor::display_name(&file.path) == name)
+            .unwrap()
+    };
+    let place_of = |app: &App, at: usize| -> (f32, f32) {
+        let (row, _) = *(app.hits.commit.iter())
+            .find(|(_, t)| *t == CommitTarget::StashFile(at))
+            .unwrap();
+        (row.x + 20.0, row.y + row.h / 2.0)
+    };
+    let (modified, removed) = (at_of(&app, "main.rs"), at_of(&app, "notes.txt"));
+    assert_eq!(
+        app.git.commit.stash_view.as_ref().unwrap().files[removed]
+            .0
+            .change,
+        winc_editor::git::Change::Deleted
+    );
+
+    // 右键点改过内容的那个文件：菜单是这个文件的，菜单项按储藏里怎么变的写。
+    let place = place_of(&app, modified);
+    right_click(&mut app, place);
+    let target = app
+        .overlays
+        .context_menu
+        .as_ref()
+        .map(|menu| menu.target.clone());
+    assert!(
+        matches!(
+            target,
+            Some(MenuTarget::StashFile {
+                deleted: false,
+                ref path,
+                ..
+            }) if *path == root.join("src/main.rs")
+        ),
+        "{target:?}"
+    );
+    let commands: Vec<_> = (menu_commands(&app).into_iter())
+        .map(|(command, _)| command)
+        .collect();
+    assert_eq!(
+        commands,
+        [
+            MenuCommand::GitShowDiff,
+            MenuCommand::GitStashTakeFile(false),
+            MenuCommand::CopyPath,
+            MenuCommand::CopyRelativePath,
+        ]
+    );
+
+    // 只取这一个文件：内容是储藏里的，储藏里被删掉的另一个文件没有跟着回来，储藏也还在。
+    app.run_menu_command(MenuCommand::GitStashTakeFile(false));
+    app.poll_branch_ops();
+    assert_eq!(
+        std::fs::read_to_string(root.join("src/main.rs")).unwrap(),
+        "fn main() { stashed(); }\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("notes.txt")).unwrap(),
+        "draft\n"
+    );
+    assert_eq!(app.git.stashes.len(), 1, "储藏还在");
+    assert_eq!(app.git.stashes[0].oid, stash.oid);
+
+    // 储藏里删掉了的那个文件：菜单写成「只删这个文件」，取出就是把它从工作区删掉。
+    if app.git.commit.stash_files_folded {
+        app.press_commit(CommitTarget::Stash(0));
+    }
+    paint(&mut app);
+    let place = place_of(&app, at_of(&app, "notes.txt"));
+    right_click(&mut app, place);
+    let target = app
+        .overlays
+        .context_menu
+        .as_ref()
+        .map(|menu| menu.target.clone());
+    assert!(
+        matches!(target, Some(MenuTarget::StashFile { deleted: true, .. })),
+        "{target:?}"
+    );
+    assert_eq!(
+        MenuCommand::GitStashTakeFile(true).label(),
+        winc_i18n::t!("menu-git-stash-take-deletion")
+    );
+    app.run_menu_command(MenuCommand::GitStashTakeFile(true));
+    app.poll_branch_ops();
+    assert!(!root.join("notes.txt").exists());
+    assert_eq!(app.git.stashes.len(), 1, "储藏还在");
     let _ = std::fs::remove_dir_all(&root);
 }

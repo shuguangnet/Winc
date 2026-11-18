@@ -339,6 +339,39 @@ impl Git {
         self.operate(root, &["stash", verb, "--end-of-options", &stash.name])
     }
 
+    /// 把版本 `from`（一条储藏，或收着未跟踪文件的那个提交）中的 `path` 取到工作区和暂存区：
+    /// `git restore --source=<from> --staged --worktree -- <path>`。
+    ///
+    /// 只动这一个文件，储藏本身不变。`deleted` 表示储藏里删掉了这个文件：此时不能从 `from` 取，
+    /// 改为把它从暂存区和工作区一并删掉（已经不在时什么也不做）。
+    ///
+    /// # Errors
+    ///
+    /// 仓库不受信任、`git` 报错时返回说明。
+    pub fn take_file(
+        &self,
+        root: &Path,
+        from: &str,
+        path: &Path,
+        deleted: bool,
+    ) -> Result<String, String> {
+        let relative = slash_path(root, path)?;
+        let args: Vec<OsString> = if deleted {
+            ["rm", "--quiet", "--force", "--ignore-unmatch", "--"]
+                .map(OsString::from)
+                .into_iter()
+                .chain([relative])
+                .collect()
+        } else {
+            ["restore", "--source", from, "--staged", "--worktree", "--"]
+                .map(OsString::from)
+                .into_iter()
+                .chain([relative])
+                .collect()
+        };
+        self.operate(root, &args)
+    }
+
     /// 逐行追溯：返回每一行最后是哪次提交改的。
     ///
     /// `contents` 是编辑器里该文件当前的内容（含未保存的修改），改过还没提交的行算「未提交」。

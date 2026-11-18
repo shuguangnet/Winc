@@ -66,6 +66,12 @@ git-stash-drop-confirm = 要删除储藏「{ $name }」吗？
 git-stash-gone = 此储藏已不存在
 git-stash-drop-confirm-detail = 删除后，此储藏中的更改将无法恢复。
 git-stash-drop-confirm-button = 删除
+git-stash-take-file-confirm = 要取出储藏里的「{ $name }」吗？
+git-stash-take-file-confirm-detail = 工作区里的这个文件会被储藏里的版本覆盖，它尚未提交的改动会丢失。储藏本身不变。
+git-stash-take-file-confirm-button = 取出
+git-stash-take-deletion-confirm = 储藏里删掉了「{ $name }」，要一并删掉工作区里的它吗？
+git-stash-take-deletion-confirm-detail = 工作区里的这个文件会被删掉，删除进入暂存区；它尚未提交的改动会丢失。储藏本身不变。
+git-stash-take-deletion-confirm-button = 删除
 
 ## 后台的 Git 操作：做的是什么，以及做完后的提示
 
@@ -76,6 +82,7 @@ git-op-sync = 同步
 git-op-stash = 储藏更改
 git-op-stash-apply = 应用储藏「{ $name }」
 git-op-stash-pop = 应用并删除储藏「{ $name }」
+git-op-stash-take-file = 取出储藏里的「{ $name }」
 git-op-continue-merge = 继续合并
 git-op-continue-rebase = 继续变基
 git-op-continue-cherry-pick = 继续拣选

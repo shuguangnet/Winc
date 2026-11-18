@@ -89,34 +89,78 @@ impl App {
     /// 没变时直接用上次排好的。
     pub(crate) fn log_branch_rows(&self) -> Vec<BranchRow> {
         let git = &self.git;
+        let text = git.log.branch_filter.text().to_owned();
         let mut cache = self.git.log.branch_rows.borrow_mut();
         // 和上次的直接比较，不先复制一份：复制几千个分支和重排差不多一样费时。
-        if let Some(((b, r, f, t), rows)) = cache.as_ref()
+        if let Some(((b, r, f, t, q), rows)) = cache.as_ref()
             && *b == git.branches
             && *r == git.recent_branches
             && *f == git.branch_folders
             && *t == git.tags
+            && *q == text
         {
             return rows.clone();
         }
+        let needle = crate::app::input::palette::needle(&text);
         let list = BranchList {
             branches: &git.branches,
             recent: &git.recent_branches,
-            query: &[],
-            text: "",
+            query: &needle,
+            text: &text,
             toggled: &git.branch_folders,
             tags: &git.tags,
         };
-        let mut rows = vec![BranchRow::All];
+        // 搜索时没有「全部分支」：它不匹配键入的文字，而按下「清除筛选」会清掉面板的搜索。
+        let mut rows = Vec::new();
+        if text.is_empty() {
+            rows.push(BranchRow::All);
+        }
         rows.extend(without_recent(branch_rows(&list)));
         let key = (
             git.branches.clone(),
             git.recent_branches.clone(),
             git.branch_folders.clone(),
             git.tags.clone(),
+            text,
         );
         *cache = Some((key, rows.clone()));
         rows
+    }
+
+    /// 点了分支面板顶部的搜索框：以后键入的文字进这个框（见 `Focus::LogBranchFilter`）。
+    pub(super) fn press_log_branch_filter(&mut self) {
+        self.focus = Focus::LogBranchFilter;
+        let (x, y) = self.pointer.mouse;
+        self.click_field(x, y);
+    }
+
+    /// 分支面板的搜索文字变了：各行重排，面板回到顶部。
+    pub(in crate::app) fn log_branch_filter_changed(&mut self) {
+        self.git.log.branches_scroll = 0.0;
+        self.git.log.branch_rows.borrow_mut().take();
+        self.request_redraw();
+    }
+
+    /// 分支面板搜索框的按键：`Esc` 先清掉键入的文字、再离开搜索框，`↩` `↓` 回到列表。
+    pub(in crate::app) fn on_key_log_branch_filter(
+        &mut self,
+        event: &winit::event::KeyEvent,
+        base: &str,
+        cmd: bool,
+    ) {
+        match &event.logical_key {
+            Key::Named(NamedKey::Escape) if !self.git.log.branch_filter.text().is_empty() => {
+                self.edit_field(|f| {
+                    f.set_text("");
+                    true
+                });
+            }
+            Key::Named(NamedKey::Escape | NamedKey::Enter | NamedKey::ArrowDown) => {
+                self.focus = Focus::Editor;
+                self.request_redraw();
+            }
+            _ => self.on_key_field(event, base, cmd),
+        }
     }
 
     /// 分支面板第 `i` 行的分支（`GitState::branches` 里的）；不是分支的行为 `None`。
@@ -163,6 +207,10 @@ impl App {
     pub(super) fn toggle_log_branches(&mut self) {
         let from = self.log_branches_shown();
         let shown = !self.state.log_branches.unwrap_or(true);
+        // 收起面板时搜索框也一起消失：焦点回到列表，键入的文字不会在看不见的地方筛选。
+        if !shown && self.focus == Focus::LogBranchFilter {
+            self.focus = Focus::Editor;
+        }
         self.update_state(|state| state.log_branches = Some(shown));
         let clock = self.clock(crate::app::animation::SIDEBAR_ANIMATION);
         self.git.log.branches_motion = clock.map(|clock| (from, clock));

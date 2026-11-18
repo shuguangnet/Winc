@@ -4,11 +4,11 @@
 //! 交互逻辑位于 `crate::app::git::log`。列表每个提交占一行，行高等于编辑区的行高（逻辑像素），
 //! 滚动使用文档的通用逻辑；详情一栏单独滚动。
 
-mod badges;
+pub(in crate::view::git) mod badges;
 mod branches;
 mod details;
 mod files;
-mod graph;
+pub(in crate::view::git) mod graph;
 
 use badges::*;
 use branches::*;
@@ -40,11 +40,11 @@ use crate::view::*;
 use winc_editor::git::LogQuery;
 
 /// 提交图中相邻两条车道的间距（逻辑像素）。
-const LANE: f32 = 12.0;
+pub(in crate::view::git) const LANE: f32 = 12.0;
 /// 提交图线条的粗细（逻辑像素）。
 ///
 /// 取自调参：多条车道并排时仍可区分，在浅色底上走向清晰，且不比说明文字的笔画更重。
-const GRAPH_LINE: f32 = 1.5;
+pub(in crate::view::git) const GRAPH_LINE: f32 = 1.5;
 /// 换车道的线在拐弯处的圆角半径（逻辑像素）。
 const CORNER: f32 = 6.0;
 /// 拐弯处圆弧的折线近似段数（段）：段数越多越圆滑，绘制开销也越大。
@@ -52,21 +52,21 @@ const CORNER_STEPS: usize = 6;
 /// 选中提交时，不在选中提交所在线上的线和圆点保留的不透明度（0 到 1）。
 ///
 /// 取自调参：淡化后仍可辨认走向和颜色，同时选中的线更突出。
-const GRAPH_FADED: f32 = 0.55;
+pub(in crate::view::git) const GRAPH_FADED: f32 = 0.55;
 /// 提交图最多绘制的车道数（条）：超出的车道压缩在最右侧，避免提交说明的可用宽度被占满。
-const MAX_LANES: usize = 10;
+pub(in crate::view::git) const MAX_LANES: usize = 10;
 /// 时间一列的宽度（逻辑像素）。
 const DATE_W: f32 = 104.0;
 /// 单个引用徽章的最大宽度（逻辑像素）；更长的名字从末尾截短，详情中显示全名。
 const BADGE_MAX: f32 = 140.0;
 /// 截短后徽章的最小宽度（逻辑像素）；更窄时无法辨认引用名，改为计入「+N」。
-const BADGE_MIN: f32 = 64.0;
+pub(in crate::view::git) const BADGE_MIN: f32 = 64.0;
 /// 一行中引用徽章占说明区宽度的最大比例（0 到 1）。
 ///
 /// 多个分支、远程分支、标签指向同一提交时，说明仍保留足够的宽度；放不下的徽章合并为「+N」。
 const BADGE_SHARE: f32 = 0.45;
 /// 相邻两个徽章之间、徽章与说明之间的间隔（逻辑像素）。
-const BADGE_GAP: f32 = 6.0;
+pub(in crate::view::git) const BADGE_GAP: f32 = 6.0;
 /// 提交图各颜色序号对应的调色板下标。
 ///
 /// 相邻序号的色相相差较大（蓝、绿、红、紫等），并排的车道不会使用红、橙、黄等相近色；
@@ -115,6 +115,10 @@ pub(in crate::view) fn draw_log(app: &mut App, frame: &mut Frame<'_>, index: usi
     app.sync_log_filter();
     let search = draw_search(app, frame, &parts);
     hits.push((search, LogTarget::Search));
+    // 分支面板顶部的搜索框同样要更新排版状态（供点击、拖选使用），也在这一段绘制。
+    if let Some(rect) = branches::branch_field(&parts) {
+        branches::draw_branch_field(app, frame, rect, &mut hits);
+    }
     let pills = match app.editor.documents[index].log.as_deref() {
         Some(view) => log_pills(app, frame, &view.query),
         None => Vec::new(),
@@ -142,6 +146,10 @@ pub(in crate::view) fn draw_log(app: &mut App, frame: &mut Frame<'_>, index: usi
                 (&mut hits, &mut long_files, &mut runs),
             )
         });
+    }
+    // 打开「查找文件」时详情底部是搜索框，不是提示行（见 `files::draw_file_filter`）。
+    if app.git.log.find_files {
+        draw_file_filter(app, frame, &parts, &mut hits);
     }
     // 详情一栏的最大滚动位置：内容下方留 16 逻辑像素，使底部的提示行（高 30 逻辑像素）不遮挡
     // 最后一行内容。
@@ -386,7 +394,10 @@ fn pill_info(pill: LogPill, query: &LogQuery) -> (LogTarget, &'static str, bool)
     let (name, on) = match pill {
         LogPill::Branch => (t!("git-log-filter-branch"), !query.branches.is_empty()),
         LogPill::Author => (t!("git-log-filter-author"), !query.authors.is_empty()),
-        LogPill::Date => (t!("git-log-filter-date"), query.since_days.is_some()),
+        LogPill::Date => (
+            t!("git-log-filter-date"),
+            query.since_days.is_some() || query.since.is_some(),
+        ),
         LogPill::Path => (t!("git-log-filter-path"), !query.paths.is_empty()),
     };
     (pill.target(), name, on)
@@ -412,7 +423,12 @@ fn log_pills(app: &App, frame: &mut Frame<'_>, query: &LogQuery) -> Vec<StatusEn
             [one] => one.clone(),
             many => t!("git-log-filter-authors", count = many.len()),
         },
-        LogPill::Date => query.since_days.map_or(all.to_owned(), since_label),
+        // 日期：常用的几天按天写，自己填的按原样写。
+        LogPill::Date => match (query.since_days, query.since.as_deref()) {
+            (Some(days), _) => since_label(days),
+            (None, Some(since)) => since.to_owned(),
+            (None, None) => all.to_owned(),
+        },
         LogPill::Path => match query.paths.as_slice() {
             [] => all.to_owned(),
             [one] => one.clone(),
@@ -851,7 +867,7 @@ fn matches(text: &str, needle: &str) -> Vec<Range<usize>> {
 }
 
 /// 返回提交图第 `color` 种颜色（[`GraphRow::color`]、[`winc_core::graph::Segment::color`]）的线色。
-fn lane_color(p: &Palette, color: u8) -> Color {
+pub(in crate::view::git) fn lane_color(p: &Palette, color: u8) -> Color {
     let i = LANE_ORDER[color as usize % LANE_ORDER.len()];
     p.badges[i % p.badges.len()].0
 }

@@ -75,10 +75,14 @@ impl App {
         Some(view.commits.get(row)?.oid.clone())
     }
 
-    /// 当前日志标签里提交号是 `oid` 的提交。
+    /// 当前日志标签里提交号是 `oid` 的提交；日志里没有（例如提交图里点开的提交）时回退到
+    /// 提交图的提交列表里找。
     pub(in crate::app) fn log_commit(&self, oid: &str) -> Option<Commit> {
-        let view = self.editor.active()?.log.as_deref()?;
-        view.commits.iter().find(|c| c.oid == oid).cloned()
+        self.editor
+            .active()
+            .and_then(|d| d.log.as_deref())
+            .and_then(|v| v.commits.iter().find(|c| c.oid == oid).cloned())
+            .or_else(|| self.graph_commit(oid))
     }
 
     /// 当前分支名；分离的 `HEAD` 时是「HEAD」。
@@ -172,6 +176,7 @@ impl App {
                 self.set_clipboard(tag, false);
             }
             MenuCommand::LogGoTo => self.open_go_to_revision(),
+            MenuCommand::LogCompareRevision => self.open_compare_revision(oid),
             MenuCommand::LogCopyPatch => self.copy_log_patch(oid),
             MenuCommand::LogCopyMessage => {
                 let message = self
@@ -291,7 +296,12 @@ impl App {
 }
 
 /// 文件 `path` 在版本 `rev` 里与工作区里的并排差异：左边是该版本，右边是磁盘上的内容。
-fn local_diff(git: &Git, root: &Path, rev: &str, path: &Path) -> Result<DiffView, String> {
+pub(in crate::app) fn local_diff(
+    git: &Git,
+    root: &Path,
+    rev: &str,
+    path: &Path,
+) -> Result<DiffView, String> {
     let name = winc_editor::display_name(path).into_owned();
     let failed = |e: String| t!("git-read-file-failed", name = name.as_str(), error = e);
     let old = git

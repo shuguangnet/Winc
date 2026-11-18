@@ -13,6 +13,17 @@ impl App {
                         self.notify(t!("git-go-to-failed", revision = revision, error = error));
                     }
                 },
+                Loaded::Graph { generation, result } => self.graph_arrived(generation, result),
+                Loaded::GraphCompare {
+                    generation,
+                    base,
+                    result,
+                } => self.graph_compare_arrived(generation, base, result),
+                Loaded::GraphFiles {
+                    generation,
+                    oid,
+                    result,
+                } => self.graph_files_arrived(generation, oid, result),
                 Loaded::Commits {
                     doc,
                     generation,
@@ -125,6 +136,36 @@ impl App {
                             compare.files = Some(Vec::new());
                             compare.error = Some(e);
                         }
+                    }
+                }
+                Loaded::CompareRevision {
+                    doc,
+                    request,
+                    revision,
+                    result,
+                } => {
+                    let Some(view) = self
+                        .editor
+                        .document_mut(doc)
+                        .and_then(|d| d.log.as_deref_mut())
+                        .filter(|view| view.compare_request == request)
+                    else {
+                        continue;
+                    };
+                    // 无法解析或读取失败时只提示原因，日志保持原样。
+                    match result {
+                        Ok(compare) => {
+                            view.compare_request += 1;
+                            view.compare = Some(compare);
+                            view.details_scroll = 0.0;
+                            self.git.log.file = None;
+                            self.git.log.waiting = None;
+                        }
+                        Err(error) => self.notify(t!(
+                            "git-compare-failed",
+                            revision = revision,
+                            error = error
+                        )),
                     }
                 }
                 Loaded::Diff { request, .. } if request != self.git.log.diff_request => {}

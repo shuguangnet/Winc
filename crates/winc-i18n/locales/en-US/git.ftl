@@ -1,6 +1,7 @@
 ## Git command line: locating, running and reading output
 
-git-unavailable-not-installed = Git not found
+git-unavailable-not-installed = Git not found. Install Git, or set the Git program in Settings
+git-unavailable-not-found = The configured Git program “{ $program }” was not found. Check the Git program in Settings
 git-unavailable-no-developer-tools = Command Line Developer Tools aren’t installed
 git-version-too-old = Git { $version } is too old; some operations need { $minimum } or later
 git-status-unreadable = Couldn’t read the output of git status
@@ -43,14 +44,24 @@ git-branch-force-delete-confirm = Branch “{ $name }” isn’t fully merged. D
 git-branch-force-delete-confirm-detail = Commits that exist only on this branch may be lost.
 git-branch-force-delete-confirm-button = Delete Anyway
 git-branch-compare-with-current = Compare with Current Branch
+git-graph-title = Commits
+git-graph-fetch-tip = Fetch remote updates without merging them
+git-graph-pull-tip = Pull commits from “{ $upstream }”
+git-graph-push-tip = Push the commits “{ $upstream }” is missing
+git-graph-no-upstream = This branch has no upstream yet. Pushing publishes it
+git-graph-compare-tip = Against “{ $base }”: { $ahead } ahead, { $behind } behind; ahead commits are green, behind are blue. Click to change the base
+git-graph-compare-same = Against “{ $base }”: both sides match. Click to change the base
+git-graph-compare-auto = Automatic (upstream { $upstream })
+git-graph-compare = Compare
+git-graph-compare-none = Choose a base to compare with
+git-graph-no-remote = This repository has no remote
+git-graph-compare-auto-none = Automatic (no upstream branch)
+git-graph-compare-log = Compare the Changed Files in the Log
+git-graph-files-loading = Loading the changed files…
 git-stash-group = Stashes
 git-stash-more-files = { $count ->
     [one] { $count } more file
    *[other] { $count } more files
-}
-git-stash-more = { $count ->
-    [one] 1 more stash…
-   *[other] { $count } more stashes…
 }
 git-stash-no-files = This stash has no changes to show
 git-stash-apply = Apply
@@ -60,6 +71,12 @@ git-stash-drop-confirm = Drop stash “{ $name }”?
 git-stash-gone = This stash no longer exists
 git-stash-drop-confirm-detail = The changes in this stash can’t be recovered after it’s dropped.
 git-stash-drop-confirm-button = Drop
+git-stash-take-file-confirm = Take “{ $name }” out of this stash?
+git-stash-take-file-confirm-detail = The file in the working tree is replaced by the stashed version, so uncommitted changes to it are lost. The stash itself stays as it is.
+git-stash-take-file-confirm-button = Take
+git-stash-take-deletion-confirm = This stash deleted “{ $name }”. Remove the file as well?
+git-stash-take-deletion-confirm-detail = The file is removed from the working tree and the removal is staged, so uncommitted changes to it are lost. The stash itself stays as it is.
+git-stash-take-deletion-confirm-button = Remove
 
 ## Background Git operations: what is running, and messages when it finishes
 
@@ -70,6 +87,7 @@ git-op-sync = syncing
 git-op-stash = stashing changes
 git-op-stash-apply = applying stash “{ $name }”
 git-op-stash-pop = popping stash “{ $name }”
+git-op-stash-take-file = taking “{ $name }” out of the stash
 git-op-continue-merge = continuing the merge
 git-op-continue-rebase = continuing the rebase
 git-op-continue-cherry-pick = continuing the cherry-pick
@@ -141,6 +159,7 @@ git-question-origin = Asked by
 git-question-account = Account
 git-question-username = Username
 git-question-password = Password
+git-question-remember = Remember password
 git-question-password-placeholder = Password or access token
 git-question-key = Key
 git-question-passphrase = Passphrase
@@ -164,18 +183,30 @@ git-op-failed = Error { $what }: { $error }
 git-op-failed-in = Error { $what } in “{ $name }”: { $error }
 
 ## Worktrees
+git-worktree-group = Worktrees
+git-worktree-more = { $count ->
+    [one] 1 more worktree…
+   *[other] { $count } more worktrees…
+}
+git-worktree-merged = Merged
 git-worktree-detached = { $oid } (detached HEAD)
 git-worktree-missing = Folder no longer exists
 git-worktree-copied-ignored = { $count ->
     [one] Copied { $count } ignored file
    *[other] Copied { $count } ignored files
 }
+git-worktree-open-ask = Open worktree “{ $name }” in which window?
+git-worktree-open-ask-detail = Opening it in this window closes the current tabs and terminals and replaces them with the worktree’s.
+git-worktree-open-new-window = New Window
+git-worktree-open-this-window = This Window
+git-worktree-open-remember = Don’t ask again
 git-worktree-open-elsewhere = Worktree “{ $name }” is open in another window
 git-worktree-open-elsewhere-detail = Close that window first, then remove this worktree.
 git-worktree-switch-to-window = Switch to Window
 git-worktree-close-window-first = Close the window showing worktree “{ $name }” first, then remove the worktree
 git-worktree-remove-confirm = Remove worktree “{ $name }”?
 git-worktree-remove-confirm-detail = The worktree folder will be moved to the { common-trash }, where you can restore it.
+git-worktree-remove-confirm-detail-remote = The worktree folder on the remote host will be deleted and can’t be restored.
 git-worktree-remove-unreachable = { $count ->
     [one] { $count } commit on the detached HEAD doesn’t belong to any branch and can’t be recovered after removal. To keep it, create a branch for it in this worktree first.
    *[other] { $count } commits on the detached HEAD don’t belong to any branch and can’t be recovered after removal. To keep them, create a branch for them in this worktree first.
@@ -226,6 +257,14 @@ git-log-path-title = Filter by Path
 git-log-path-label = Path
 git-log-path-placeholder = Relative to the repository root, e.g. src/app or *.rs
 git-log-path-button = Filter
+git-log-author-title = Filter by Author
+git-log-author-label = Author
+git-log-author-placeholder = Part of a name or an email address, e.g. 张伟 or @example.com
+git-log-author-button = Filter
+git-log-since-title = Filter by Date
+git-log-since-label = Since
+git-log-since-placeholder = 2024-01-01, 3 weeks ago, last monday
+git-log-since-button = Filter
 git-log-filter-date = Date
 git-log-filter-path = Path
 git-log-filter-branches = { $count } branches
@@ -238,10 +277,16 @@ git-go-to-button = Go
 git-go-to-invalid = Hashes, branch names and tag names contain no spaces and don’t start with “-”
 git-go-to-unresolved = No matching commit, branch or tag
 git-go-to-failed = Couldn’t go to “{ $revision }”: { $error }
+git-compare-revision-title = Compare with Revision
+git-compare-commit = Commit
+git-compare-with = Compare with
+git-compare-button = Compare
+git-compare-failed = Couldn’t compare with “{ $revision }”: { $error }
 git-compare-old = Old
 git-compare-new = New
 git-compare-no-differences = No differences between the two versions
 git-compare-comparing = Comparing…
+git-compare-bad-base = Cannot compare with “{ $base }”
 git-log-hint-select-file = Select File
 git-log-hint-open-diff = Open Diff
 git-log-hint-return = Back
@@ -394,6 +439,7 @@ git-abort-confirm-button = Abort { $operation }
 git-rollback-confirm-one = Roll back changes to “{ $name }”?
 git-rollback-confirm-many = Roll back changes to { $count } files?
 git-rollback-confirm-detail = Tracked files are restored to the last commit, and untracked files are moved to the { common-trash }.
+git-rollback-confirm-detail-remote = Tracked files are restored to the last commit, and untracked files are deleted and can’t be restored.
 git-rollback-confirm-button = Roll Back
 git-rollback-file-failed = Couldn’t roll back “{ $name }”: { $error }
 git-rollback-done = { $count ->
@@ -441,7 +487,8 @@ git-trust-allow = Trust
 git-commit-view-problem = { $problem }. Click Refresh to try again
 git-commit-view-loading = Reading repository status…
 git-commit-view-empty = Nothing to Commit
-git-commit-repository-clean = No changes
+git-commit-repository-current = Current
+git-commit-group-quiet = Repositories Without Changes
 git-commit-empty-in-sync = Up to date with the upstream branch
 git-commit-empty-ahead = { $count ->
     [one] 1 commit ahead of the upstream branch
@@ -467,20 +514,16 @@ git-branch-picker-new = New Branch
 git-branch-picker-new-worktree = New Worktree
 git-branch-picker-create-row = Create branch “{ $name }”
 git-branch-picker-current = Current
-git-location-picker-placeholder = Search repositories and worktrees
-git-location-picker-empty = No matching repositories or worktrees
+git-location-picker-placeholder = Search repositories
+git-location-picker-empty = No matching repositories
 git-worktree-picker-placeholder = Search worktrees
 git-worktree-picker-empty = No matching worktrees
 git-location-main-worktree = Main worktree
 git-location-only-one = This folder has only one repository and worktree
+git-location-this-window = Open in This Window
 git-location-new-window = Open in New Window
 git-location-remove = Remove Worktree…
 git-location-prune = Prune Stale Worktrees
-git-location-new-worktree-in = New Worktree in “{ $repository }”
-git-location-count = { $count ->
-    [one] 1 worktree
-   *[other] { $count } worktrees
-}
 git-tip-other-worktrees = { $count ->
     [one] 1 other worktree has uncommitted changes
    *[other] { $count } other worktrees have uncommitted changes
@@ -544,7 +587,9 @@ git-log-filter-placeholder-key = Filter by message or hash ({ $key })
 git-log-all-branches = All Branches
 git-log-filter-all = All
 git-log-filter-branch = Branch
-git-log-branch-picker-placeholder = Search branches by name
+git-log-branch-filter = Filter branches
+git-log-branch-picker-placeholder = Search branches, tags or type a revision such as HEAD~3
+git-log-branch-revision-row = Filter by “{ $name }”
 git-log-filter-author = Author
 git-log-filter-file = File { $path }
 git-log-clear-filter = Clear Filter
@@ -746,6 +791,9 @@ git-log-files-changed = { $count ->
     [one] { $count } file changed
    *[other] { $count } files changed
 }
+git-log-files-changed-of = { $shown } of { $total } files
+git-log-files-no-match = No matching files
+git-log-find-file = Find file
 git-log-file-binary = Binary
 
 ## Blame

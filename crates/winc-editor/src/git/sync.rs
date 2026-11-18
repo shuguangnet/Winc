@@ -43,6 +43,27 @@ pub enum Outgoing<'a> {
     },
 }
 
+/// [`Git::compare`] 的结果：`HEAD` 与基准各自多出的提交。
+///
+/// 提交号只用于标出提交视图里哪些行是本地独有、哪些是基准独有，因此每边最多
+/// [`COMPARE_LIMIT`] 个；两边各有多少以 `ahead_count`、`behind_count` 为准。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Divergence {
+    /// 基准缺少的提交（`HEAD` 独有），最新的在前。
+    pub ahead: Vec<String>,
+    /// `HEAD` 缺少的提交（基准独有），最新的在前。
+    pub behind: Vec<String>,
+    /// 领先的提交数，可能多于 `ahead` 中的个数。
+    pub ahead_count: usize,
+    /// 落后的提交数，可能多于 `behind` 中的个数。
+    pub behind_count: usize,
+}
+
+/// [`Git::compare`] 每边最多返回多少个提交号。
+///
+/// 提交视图里的提交图只画最近几十行，不必把几千个提交号搬回来；多出的部分只计入个数。
+pub const COMPARE_LIMIT: usize = 500;
+
 /// 各项操作所需的最低 `git` 版本：`switch`、`restore` 与 `--end-of-options` 自该版本起齐备。
 pub const MINIMUM_VERSION: (u32, u32) = (2, 24);
 
@@ -195,6 +216,41 @@ impl Git {
         let stdout = self.run(&mut command, STATUS_TIMEOUT, &cancel)?;
         let subjects = String::from_utf8_lossy(&stdout);
         Ok((subjects.lines().map(str::to_owned).collect(), total))
+    }
+
+    /// 比较 `HEAD` 与基准 `base`：返回各自多出的提交及两边的个数。
+    ///
+    /// `base` 是分支名、`origin/main` 这样的远程分支名或标签名：提交视图里对比的两个版本都是
+    /// 引用，不是提交号。读的是本地的引用，不访问远程——要看远程的最新状态先获取。
+    ///
+    /// # Errors
+    ///
+    /// `base` 为空或以 `-` 开头（会被 `git` 当成选项）、引用不存在、`git` 运行失败时返回原因。
+    pub fn compare(&self, root: &Path, base: &str) -> Result<Divergence, String> {
+        if base.is_empty() || base.starts_with('-') {
+            return Err(winc_i18n::t!("git-compare-bad-base", base = base).to_owned());
+        }
+        let cancel = Cancel::default();
+        let (ahead, behind) = (format!("{base}..HEAD"), format!("HEAD..{base}"));
+        Ok(Divergence {
+            // 先取个数：个数不受 [`COMPARE_LIMIT`] 限制，标记与提示都以它为准。
+            ahead_count: self.count(root, &ahead, &cancel)?,
+            behind_count: self.count(root, &behind, &cancel)?,
+            ahead: self.oids(root, &ahead, &cancel)?,
+            behind: self.oids(root, &behind, &cancel)?,
+        })
+    }
+
+    /// 返回 `range` 里的提交号，最新的在前，最多 [`COMPARE_LIMIT`] 个。
+    fn oids(&self, root: &Path, range: &str, cancel: &Cancel) -> Result<Vec<String>, String> {
+        let mut command = self.command(root);
+        let limit = format!("--max-count={COMPARE_LIMIT}");
+        command.args(["rev-list", &limit, range]);
+        let stdout = self.run(&mut command, STATUS_TIMEOUT, cancel)?;
+        Ok(String::from_utf8_lossy(&stdout)
+            .lines()
+            .map(str::to_owned)
+            .collect())
     }
 
     /// 返回 `root` 所在系统中 `git` 的主、次版本号；读不出时为 `None`。

@@ -46,7 +46,7 @@ pub(crate) use git::changes::{ChangeTarget, MARK_W, mark_x, ruler_rows};
 pub(crate) use git::commit::{
     COMMIT_ROW, CommitGroup, CommitLabels, CommitName, CommitOverflow, CommitParts, CommitRow,
     CommitRows, CommitScope, CommitSort, CommitTarget, MESSAGE_LINE, MESSAGE_PAD, OtherGroup,
-    OtherRow, STASH_GAP, StashLine, StashView, SyncState,
+    OtherRow, STASH_GAP, StashLine, StashView, SyncState, WorktreeLine, stash_body,
 };
 pub(crate) use input::context_menu::{
     CHECK_COLUMN, ICON_COLUMN, MenuIcon, POPUP_PAD, POPUP_TEXT_X, PopupLevel, PopupMenu, PopupRow,
@@ -54,7 +54,7 @@ pub(crate) use input::context_menu::{
 };
 pub use input::context_menu::{ContextMenu, MenuButton, MenuCommand};
 pub use input::palette::palette;
-pub(crate) use lifecycle::alert::{AlertButton, AlertKey, AlertPart, AlertParts};
+pub(crate) use lifecycle::alert::{AlertButton, AlertKey, AlertPart, AlertParts, InAppAlert};
 use lifecycle::appearance::{forced_theme, unusable_font};
 pub(crate) use lifecycle::backup::{restore_at_launch, restore_tabs};
 pub use lifecycle::closing::{CloseRequest, SaveChoice, SavePrompt};
@@ -64,6 +64,7 @@ pub(crate) use lifecycle::title_bar::resize_cursor;
 pub(crate) use lifecycle::wallpaper::Layer as WallpaperLayer;
 use lifecycle::window::frame_interval;
 pub(crate) use scroll::ScrollTarget;
+pub(crate) use settings::shortcuts::KeyEdit;
 pub use settings::{DialogCache, SettingsState};
 pub(crate) use status::language_picker::LanguageRow;
 pub use status::motion::{StatusEntry, StatusKey, StatusMotion, StatusRow};
@@ -78,7 +79,7 @@ pub use workspace::picker::{
     PICKER_ICON_X, PICKER_MAX_ROWS, PICKER_PAD, PICKER_ROW, PICKER_TEXT_X, PLACES_FOOTER,
     PlacesGhost,
 };
-pub(crate) use workspace::recent::{Parent, folder_label, parents};
+pub(crate) use workspace::recent::{Parent, parents};
 pub use workspace::session::StartAction;
 pub use workspace::tab_drag::{TabDrag, TabSlide};
 pub use workspace::tool_fold::ToolFold;
@@ -209,11 +210,12 @@ pub enum UserEvent {
     ///
     /// 由应用层决定切换到哪个窗口或新建窗口，并经通道答复是否接收；该事件不会分发到窗口。
     Launched(crate::instance::Launch, std::sync::mpsc::Sender<bool>),
-    /// 系统交来要打开的文件和目录（拖到程序坞图标上、文件管理器中的「打开方式」）。
+    /// 系统交来要打开的文件和目录（拖到程序坞图标上、文件管理器中的「打开方式」、
+    /// `winc://` 链接）。
     ///
     /// 处理方式同 [`UserEvent::Launched`]：由应用层决定在哪个窗口打开。
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    Opened(Vec<PathBuf>),
+    Opened(Vec<crate::cli::Target>),
     /// 程序坞菜单中选择了「新建窗口」。
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     NewWindow,
@@ -244,6 +246,9 @@ pub enum UserEvent {
     GitCommit,
     /// 确认框中确认回滚参数中的文件。
     GitRollback(Vec<PathBuf>),
+    /// 确认框中确认把储藏里的一个文件取到工作区：取它用的版本（储藏本身，或收着未跟踪文件的
+    /// 第三个父提交）、路径，以及储藏里是不是删掉了它。
+    GitTakeFile(String, PathBuf, bool),
     /// 确认框中确认中止进行中的合并、变基等操作。
     GitAbort,
     /// 确认框里选了跳过：跳过变基、拣选等操作停着的这个提交。
@@ -300,6 +305,8 @@ pub enum UserEvent {
     TerminalClose(u16),
     /// 确认框中确认重新启动参数所指的终端标签（伪终端已断开，其中的程序可能仍在运行）。
     TerminalRestart(u16),
+    /// 提示框中回答了是否为终端加载第一个参数所指的 Python 环境。
+    PythonEnvironment(PathBuf, bool),
     /// 需要授权的 `winc` 命令安装或卸载已结束。
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     ShellCommandDone(crate::shell_command::Done),
@@ -307,12 +314,21 @@ pub enum UserEvent {
     TerminalShells(Vec<terminal::shells::ShellChoice>),
     /// 退出或关闭窗口前的确认结果（终端中有程序在运行）：用户确认时为真，取消时为假。
     TerminalQuit(bool),
+    /// 关闭前确认（`confirm_close`）的结果：用户确认时为真，取消时为假。
+    CloseConfirmed(bool),
     /// 确认框中确认把文字粘贴到指定的终端标签（多行文字，且程序未开启括号粘贴）。
     TerminalPaste(u16, String),
     /// 确认框中确认日志中对一个提交的操作（签出该提交、硬重置）。
     GitLogConfirmed(git::log::LogConfirmed),
     /// 确认框中确认移除参数所指的工作树；第二个参数是一并删除的分支（勾选「同时删除分支」时）。
     GitRemoveWorktree(PathBuf, Option<String>),
+    /// 提示框中选定了打开工作树的方式：目录、是否在新窗口、是否记住。
+    GitOpenWorktree(PathBuf, bool, bool),
+    /// 拖放结束后询问拖入的目录怎样处理：目录，以及落在文件树上时的目标目录。
+    FolderDropAsk(PathBuf, Option<PathBuf>),
+    /// 对拖入目录的询问的答复：目录、文件树上的目标目录、是否加为附加目录（否则按落点处理）、
+    /// 是否记住这个选择。
+    FolderDropped(PathBuf, Option<PathBuf>, bool, bool),
     /// 后台已计算完一个文档的逐行追溯。
     GitBlame,
     /// 后台已检查或重读被其他程序修改的文件。
@@ -404,6 +420,10 @@ pub enum Focus {
     Outline,
     /// 日志标签标题栏的筛选输入框。
     LogFilter,
+    /// 日志左侧分支面板顶部的搜索框。
+    LogBranchFilter,
+    /// 日志详情里「查找文件」的搜索框。
+    LogFileFilter,
     /// 功能对话框（新建工作树）里的输入框。
     Dialog,
 }
@@ -594,6 +614,8 @@ impl Hover {
                     CommitTarget::Log
                         | CommitTarget::Sync
                         | CommitTarget::Location
+                        | CommitTarget::WorktreeNew
+                        | CommitTarget::WorktreeMenu(_)
                         | CommitTarget::Refresh
                         | CommitTarget::More
                         | CommitTarget::Commit
@@ -604,6 +626,10 @@ impl Hover {
                         | CommitTarget::Check(_)
                         | CommitTarget::StageFile(..)
                         | CommitTarget::GroupStage(_)
+                        | CommitTarget::GraphFetch
+                        | CommitTarget::GraphPull
+                        | CommitTarget::GraphPush
+                        | CommitTarget::GraphCompare
                 )
                 | Hover::Diff(
                     DiffTarget::Previous
@@ -683,6 +709,31 @@ enum Drag {
     LogDivider {
         start_x: f32,
         start_width: f32,
+    },
+    /// 上下拖动提交图的上沿，调整图占的高度（`App::drag_graph_resize`）。
+    ///
+    /// `start_y` 是按下时的纵坐标，`height` 是按下时图的高度。
+    GraphResize {
+        start_y: f32,
+        height: f32,
+    },
+    /// 上下拖动储藏一组里的行（`App::drag_stash_pan`）。
+    ///
+    /// `start_y` 是按下时的纵坐标，`scroll` 是按下时内容的滚动位置，`target` 是按下的那一行；
+    /// 松开时没移动过就按点击处理。
+    StashPan {
+        start_y: f32,
+        scroll: f32,
+        target: Option<CommitTarget>,
+    },
+    /// 上下拖动提交视图底部的提交图（`App::drag_graph`）。
+    ///
+    /// `start` 是按下时的坐标，`scroll` 是按下时内容的滚动位置，`row` 是按下的那一行（空白处
+    /// 为 `None`）；松开时没移动过就打开这一行。
+    GraphPan {
+        start: (f32, f32),
+        scroll: f32,
+        row: Option<usize>,
     },
     /// 拖动日志列表里作者一列的左边缘：按下时的横坐标、作者一列当时的宽度。
     LogColumn {
@@ -877,6 +928,10 @@ pub struct App {
     pub(crate) history: workspace::History,
     /// 两段组合键（如 `⌘K ⌘S`）的第一段，正在等待第二段。
     pub(crate) pending_chord: Option<crate::keymap::Stroke>,
+    /// 单按修饰键的状态，用于连按两下修饰键的快捷键。
+    pub(crate) taps: input::tap::Taps,
+    /// 「首次设置」中快捷键一页的状态。
+    pub(crate) setup: setup::SetupKeys,
 
     /// 设置浮层：当前页、分类和各输入框。
     pub settings: SettingsState,
@@ -901,6 +956,8 @@ pub struct App {
     // 状态栏消息和悬停提示
     /// 文件已从磁盘删除、自动保存因此未写入且已提示过用户的文档；失去焦点时不再重复提示。
     deleted_told: HashSet<DocumentId>,
+    /// 自动保存的时机：焦点是否离开编辑区，停止输入后何时保存。
+    auto_save_watch: workspace::files::AutoSaveWatch,
     /// 右上角提示条的状态。
     pub notice: lifecycle::notice::Notice,
 
@@ -1068,10 +1125,21 @@ impl App {
             return;
         }
 
-        // 鼠标移到预览的标题指示条上时，标题列表展开并淡入。
-        let toc = |h: Hover| matches!(h, Hover::MarkdownToc(_));
-        if toc(hover) && !toc(self.pointer.hover) {
-            self.preview.markdown.toc_fade = self.clock(animation::TOC_FADE);
+        // 鼠标进入标题指示条时开始计时，满 `TOC_HOVER_DELAY` 后由 `tick` 展开标题列表；
+        // 在指示条与列表之间移动不重新计时。
+        let toc = |h: Hover| {
+            matches!(
+                h,
+                Hover::MarkdownToc(_) | Hover::Scrollbar(Scrollbar::MarkdownToc)
+            )
+        };
+        if toc(hover) != toc(self.pointer.hover) {
+            // 鼠标离开时收起已展开的列表。
+            if self.preview.markdown.toc_shown {
+                self.preview.markdown.toc_close = self.clock(animation::TOC_FADE);
+            }
+            self.preview.markdown.toc_rest = toc(hover).then(Instant::now);
+            self.preview.markdown.toc_shown = false;
         }
         self.pointer.hover = hover;
         self.overlays.tooltip.since = hover.has_tooltip().then(Instant::now);

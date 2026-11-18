@@ -13,6 +13,7 @@ mod askpass;
 mod bench;
 mod cli;
 mod crash;
+mod credentials;
 mod field;
 mod frame_log;
 mod icons;
@@ -114,8 +115,9 @@ pub fn run() {
 
     // 配置必须在加载字体之前读出，第一帧即使用用户指定的字体和字号。读入配置时的问题按系统语言
     // 描述（语言已在处理参数之前设定），界面语言随后按配置设定。
-    let (config, problems) = Config::load();
+    let (config, mut problems) = Config::load();
     set_locale(config.language.unwrap_or_default().resolve());
+    problems.extend(keymap::install_from(&config));
     for problem in &problems {
         eprintln!("winc: {problem}");
     }
@@ -220,10 +222,10 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     if !silent {
         let proxy = event_loop.create_proxy();
-        macos::on_open_files(move |paths| {
+        macos::on_open_files(move |targets| {
             let _ = proxy.send_event(Envelope {
                 to: winc::Recipient::Active,
-                event: app::UserEvent::Opened(paths),
+                event: app::UserEvent::Opened(targets),
             });
         });
     }
@@ -251,6 +253,7 @@ pub fn run() {
     app.editor.diff_unified = app.config.diff_inline == Some(true);
     app.state = state;
     app.restore_panel_width();
+    app.restore_graph_height();
     app.apply_preview_state();
     // 临时打开（`--wait`、`-`）时不记录现场、不加入最近列表、不备份，下次启动的状态不受影响。
     if args.one_off() {

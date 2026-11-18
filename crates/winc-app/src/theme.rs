@@ -357,10 +357,10 @@ const fn mix(fg: Color, bg: Color, t: f32) -> Color {
 ///
 /// 四档比例依次用于行、行内改动的字、边线和行号栏标记；深色主题叠得浓一些，否则在深色底上
 /// 看不出来。比例取自调参，按两种配色下改动可见程度相当校准。
-/// 深色主题下差异里删除的颜色：比编辑区底色亮、不带色相的灰。
-const DELETED_DARK: Color = palettes::hex(0x9DA1A8);
-/// 浅色主题下差异里删除的颜色：比编辑区底色暗、不带色相的灰。
-const DELETED_LIGHT: Color = palettes::hex(0x70737D);
+/// 深色主题下差异里删除的颜色：红。删除与新增用红绿对照，和大多数编辑器的差异视图一致。
+const DELETED_DARK: Color = palettes::hex(0xE06C75);
+/// 浅色主题下差异里删除的颜色：红。
+const DELETED_LIGHT: Color = palettes::hex(0xD1483F);
 
 const fn shade(mark: Color, card: Color, dark: bool) -> DiffShade {
     let t = if dark {
@@ -462,7 +462,7 @@ impl Palette {
             git_conflict: t.git[3],
             diff_modified: shade(t.git[0], t.card, dark),
             diff_added: shade(t.git[1], t.card, dark),
-            // 删除用中性灰，不随主题的 Git 状态色变红：红色留给合并冲突。
+            // 删除与新增一红一绿：改动是「拿掉了什么」还是「加了什么」，一眼分得开。
             diff_deleted: shade(
                 if dark { DELETED_DARK } else { DELETED_LIGHT },
                 t.card,
@@ -553,6 +553,7 @@ impl Palette {
             TokenKind::Link => self.syntax_function,
             TokenKind::Inserted => self.syntax_string,
             TokenKind::Deleted => self.error,
+            TokenKind::Warning => self.warning,
         }
     }
 
@@ -744,6 +745,11 @@ pub const SPIN_SPEED: f32 = 1.25;
 ///
 /// 与 macOS 的悬停提示一致：指针停留约 0.5 s 后出现，扫过按钮时不弹出。
 pub const TOOLTIP_DELAY: Duration = Duration::from_millis(500);
+/// 鼠标在 Markdown 预览的标题指示条上停留至标题列表展开的时长（毫秒）。
+///
+/// 取自调参：短于 [`TOOLTIP_DELAY`]，展开前的等待几乎不可察觉；长于鼠标横向移过指示条（宽约 34
+/// 逻辑像素）所需的时间，移过时列表不展开。
+pub const TOC_HOVER_DELAY: Duration = Duration::from_millis(200);
 /// 悬停提示的最大宽度（逻辑像素，含内边距）。
 ///
 /// 较长的路径和说明在此宽度内折行，提示保持易读的行长，也不会横跨整个窗口；窗口更窄时以窗口
@@ -839,12 +845,20 @@ pub const DIALOG_BUTTON_W: f32 = 72.0;
 /// 「位置」右端选目录按钮（一个目录图标）的宽度。
 pub const DIALOG_CHANGE_W: f32 = 28.0;
 
-/// 「快捷键」页顶部搜索框的高度（逻辑像素），与分类栏顶部的搜索框相同。
-pub const KEYS_SEARCH_H: f32 = SETTINGS_CONTROL_H;
+/// 「快捷键」页标题行中搜索框的宽度（逻辑像素）。
+pub const KEYS_SEARCH_W: f32 = 240.0;
 /// 搜索框右端「录制按键」按钮的边长（逻辑像素）：上下各离搜索框边缘 3。
-pub const KEYS_RECORD: f32 = KEYS_SEARCH_H - 6.0;
+pub const KEYS_RECORD: f32 = SETTINGS_CONTROL_H - 6.0;
 /// 「快捷键」页列表一行的高度（逻辑像素）。
 pub const KEYS_ROW: f32 = 34.0;
+/// 「快捷键」页「键位方案」下拉值的宽度（逻辑像素），放得下界面字号的「IntelliJ IDEA」和箭头。
+pub const KEYS_KEYMAP_W: f32 = 170.0;
+/// 「快捷键」页修改快捷键时录入框的最小宽度（逻辑像素），与设置页中字体输入框相同。
+pub const KEYS_FIELD_W: f32 = 160.0;
+/// 「快捷键」页修改快捷键时录入框和键帽的高度（逻辑像素）。
+pub const KEYS_FIELD_H: f32 = 26.0;
+/// 「快捷键」页中正在修改快捷键的一行展开后的高度（逻辑像素）：名称、键帽和按钮、说明各一行。
+pub const KEYS_EDIT_H: f32 = 108.0;
 
 /// 快速打开面板的宽度（逻辑像素）；列表中要放下「路径 + 文件名」，比查找条宽。
 pub const PICKER_WIDTH: f32 = 560.0;

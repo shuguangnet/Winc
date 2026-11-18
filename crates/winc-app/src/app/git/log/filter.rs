@@ -43,6 +43,11 @@ impl LogPill {
 /// 日期菜单里「最近几天」的几项（天）：最近 24 小时、一周、30 天、一年。自选日期区间要用日历
 /// 选择，这里以这几项常用的范围代替。
 const LOG_SINCE_DAYS: [u32; 4] = [1, 7, 30, 365];
+/// 作者菜单最多列出几位作者（位）。
+///
+/// 超出时菜单在窗口里滚动（见 `App::log_filter_menu`），键入文字筛选更快；上限只为限制大仓库中
+/// 一次弹出的行数，取自调参。
+const AUTHOR_MENU_MAX: usize = 200;
 
 /// 「最近 `days` 天」在日期菜单和标题栏里的写法。
 pub(crate) fn since_label(days: u32) -> String {
@@ -54,8 +59,8 @@ pub(crate) fn since_label(days: u32) -> String {
 }
 
 impl App {
-    /// 标题栏「日期」「路径」「作者」下拉弹出的菜单：最上面是不筛选的一项，下面是各个选项；路径
-    /// 菜单最后是「其他路径…」。
+    /// 标题栏「日期」「路径」「作者」下拉弹出的菜单：最上面是不筛选的一项，下面是各个选项，
+    /// 最后是「其他…」——不在列出的选项里时自己输入。
     pub(in crate::app) fn log_filter_menu(&self, target: &MenuTarget) -> Vec<MenuEntry> {
         let item = |command| MenuEntry::Item(command, true);
         let (all, rest): (MenuCommand, Vec<MenuCommand>) = match target {
@@ -83,14 +88,20 @@ impl App {
         if *target == MenuTarget::LogAuthor && !self.git.my_email.is_empty() {
             menu.push(item(MenuCommand::LogAuthorMe));
         }
-        menu.push(MenuEntry::Separator);
-        let listed = !rest.is_empty();
-        menu.extend(rest.into_iter().map(item));
-        if *target == MenuTarget::LogPath {
-            if listed {
-                menu.push(MenuEntry::Separator);
-            }
-            menu.push(item(MenuCommand::LogPathOther));
+        if !rest.is_empty() {
+            menu.push(MenuEntry::Separator);
+            menu.extend(rest.into_iter().map(item));
+        }
+        // 路径、作者、日期菜单最后是「其他…」：不在列出的选项里时自己输入。
+        let other = match target {
+            MenuTarget::LogPath => Some(MenuCommand::LogPathOther),
+            MenuTarget::LogAuthor => Some(MenuCommand::LogAuthorOther),
+            MenuTarget::LogDate => Some(MenuCommand::LogSinceOther),
+            _ => None,
+        };
+        if let Some(other) = other {
+            menu.push(MenuEntry::Separator);
+            menu.push(item(other));
         }
         menu
     }
@@ -115,6 +126,9 @@ impl App {
         match command {
             MenuCommand::LogSince(days) => {
                 Some(query.is_some_and(|q| q.since_days.unwrap_or(0) == days))
+            }
+            MenuCommand::LogSinceOther => {
+                Some(query.is_some_and(|q| q.since.as_ref().is_some_and(|s| !s.trim().is_empty())))
             }
             MenuCommand::LogAuthorMe => {
                 let me = self.git.my_email.as_str();
@@ -162,6 +176,26 @@ impl App {
         use crate::app::git::form::FormKind;
         self.show_form_dialog(
             FormKind::LogPath,
+            TextField::default(),
+            crate::layout::DialogPart::Branch,
+        );
+    }
+
+    /// 打开输入其他作者的对话框（作者菜单的「其他作者…」）。
+    pub(in crate::app) fn open_log_author_dialog(&mut self) {
+        use crate::app::git::form::FormKind;
+        self.show_form_dialog(
+            FormKind::LogAuthor,
+            TextField::default(),
+            crate::layout::DialogPart::Branch,
+        );
+    }
+
+    /// 打开输入其他时间的对话框（日期菜单的「其他时间…」）。
+    pub(in crate::app) fn open_log_since_dialog(&mut self) {
+        use crate::app::git::form::FormKind;
+        self.show_form_dialog(
+            FormKind::LogSince,
             TextField::default(),
             crate::layout::DialogPart::Branch,
         );
@@ -255,6 +289,7 @@ impl App {
         let (index, new) = self.editor.show_log(&title);
         let id = self.editor.documents[index].id;
         if new {
+            self.reset_log_find_files();
             if let Some(view) = self.editor.documents[index].log.as_deref_mut() {
                 view.query.path = Some(path);
                 view.query.lines = lines;
@@ -346,40 +381,48 @@ impl App {
         }
     }
 
-    /// 作者菜单里列的作者：已经取回来的提交里的作者，按提交数从多到少，最多 30 个
-    /// （经验值：再长菜单就超出窗口高度）。
+    /// 作者菜单里列的作者，按提交数从多到少。
     ///
-    /// 已经按作者筛选时取回来的只剩这几位的提交：沿用这个标签上次弹出时的名单，才能再加别的
-    /// 作者。
+    /// 先列出已经取回来的提交里的作者；再加上仓库状态里读到的作者（最近
+    /// [`crate::app::git::commit::AUTHOR_COMMITS`] 个提交，不含仓库配置的邮箱），后者与当前的
+    /// 筛选条件无关，因此先按路径、日期筛选过、再想换一位作者时，名单不会只剩筛出来的那几位。
+    ///
+    /// 两项来源里一位作者可能写成「名字 <邮箱>」，菜单里只写名字（菜单项的变化会改变筛选，见
+    /// [`App::toggle_log_author`]）；按作者筛选时，选上的几位排在最前面，便于打勾、取消。
+    /// 名单最多 [`AUTHOR_MENU_MAX`] 位：再长菜单在窗口里滚动，键入文字筛选更方便。
     pub(super) fn log_authors(&self) -> Vec<String> {
-        let Some(doc) = self.editor.active() else {
+        let Some(view) = self.editor.active().and_then(|d| d.log.as_deref()) else {
             return Vec::new();
         };
-        let Some(view) = doc.log.as_deref() else {
-            return Vec::new();
-        };
-        let same = self.git.log.authors_of == Some(doc.id);
-        if !view.query.authors.is_empty() && same && !self.git.log.authors.is_empty() {
-            let mut list = self.git.log.authors.clone();
-            for author in &view.query.authors {
-                if !list.contains(author) && *author != self.git.my_email {
-                    list.insert(0, author.clone());
-                }
-            }
-            return list;
-        }
         let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
         for commit in &view.commits {
             *counts.entry(commit.author.as_str()).or_default() += 1;
         }
         let mut authors: Vec<(&str, usize)> = counts.into_iter().collect();
         authors.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
-        // 当前按作者筛选时，列表里只剩这几位作者：也列出来，以便打勾、取消。
         let mut list: Vec<String> = authors
             .into_iter()
-            .take(30)
+            .take(AUTHOR_MENU_MAX)
             .map(|(a, _)| a.to_owned())
             .collect();
+        let mut named: Vec<&str> = self
+            .git
+            .log
+            .authors
+            .iter()
+            .map(|author| author.rsplit_once(" <").map_or(author.as_str(), |a| a.0))
+            .filter(|name| !name.is_empty())
+            .collect();
+        named.sort_unstable();
+        named.dedup();
+        for name in named {
+            if list.len() >= AUTHOR_MENU_MAX {
+                break;
+            }
+            if !list.iter().any(|a| a == name) {
+                list.push(name.to_owned());
+            }
+        }
         for author in view.query.authors.iter().rev() {
             if !list.contains(author) && *author != self.git.my_email {
                 list.insert(0, author.clone());

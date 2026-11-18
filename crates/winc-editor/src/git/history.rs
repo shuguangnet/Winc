@@ -66,8 +66,13 @@ impl Git {
         if query.rewrites_parents() {
             command.arg("--parents");
         }
+        // 日期筛选：常用的是「最近几天」，否则用「其他时间…」填的原文，`git` 自己认。
         if let Some(days) = query.since_days {
             command.arg(format!("--since={days}.days.ago"));
+        } else if let Some(since) = query.since.as_deref().map(str::trim)
+            && !since.is_empty()
+        {
+            command.arg(format!("--since={since}"));
         }
         command.arg(LOG_DATE).arg(LOG_FORMAT);
         // 按行范围查找时文件写在 `-L` 里，不能再写路径；`-s` 不输出每个提交改了这段的哪些地方。
@@ -261,10 +266,41 @@ impl Git {
             return Ok(true);
         }
         // 分离的 `HEAD` 不是引用，单独判断。
+        Ok(self.is_ancestor(root, oid, "HEAD", cancel))
+    }
+
+    /// 提交 `ancestor` 是否为 `descendant` 的祖先（或同一个提交）；查询失败时视为不是。
+    ///
+    /// 两者须为完整的提交号或 `HEAD`：不以 `-` 开头，不会被当成选项。
+    pub fn is_ancestor(
+        &self,
+        root: &Path,
+        ancestor: &str,
+        descendant: &str,
+        cancel: &Cancel,
+    ) -> bool {
         let mut command = self.command(root);
-        // 完整的十六进制提交号不以 `-` 开头，不会被当成选项。
-        command.args(["merge-base", "--is-ancestor", oid, "HEAD"]);
-        Ok(self.run(&mut command, SHOW_TIMEOUT, cancel).is_ok())
+        command.args(["merge-base", "--is-ancestor", ancestor, descendant]);
+        self.run(&mut command, SHOW_TIMEOUT, cancel).is_ok()
+    }
+
+    /// 返回 `tip` 相对 `base` 落后和领先的提交数；`git` 运行失败时返回 `None`。
+    ///
+    /// 两者须为完整的引用名、提交号或 `HEAD`：不以 `-` 开头，不会被当成选项。
+    pub fn divergence(
+        &self,
+        root: &Path,
+        base: &str,
+        tip: &str,
+        cancel: &Cancel,
+    ) -> Option<(u32, u32)> {
+        let mut command = self.command(root);
+        command.args(["rev-list", "--left-right", "--count"]);
+        command.arg(format!("{base}...{tip}"));
+        let stdout = self.run(&mut command, SHOW_TIMEOUT, cancel).ok()?;
+        let text = String::from_utf8_lossy(&stdout);
+        let mut counts = text.split_whitespace().map(str::parse::<u32>);
+        Some((counts.next()?.ok()?, counts.next()?.ok()?))
     }
 
     /// 储藏列表，最新的在前。
@@ -320,6 +356,39 @@ impl Git {
             return Err(winc_i18n::t!("git-stash-gone").to_owned());
         };
         self.operate(root, &["stash", verb, "--end-of-options", &stash.name])
+    }
+
+    /// 把版本 `from`（一条储藏，或收着未跟踪文件的那个提交）中的 `path` 取到工作区和暂存区：
+    /// `git restore --source=<from> --staged --worktree -- <path>`。
+    ///
+    /// 只动这一个文件，储藏本身不变。`deleted` 表示储藏里删掉了这个文件：此时不能从 `from` 取，
+    /// 改为把它从暂存区和工作区一并删掉（已经不在时什么也不做）。
+    ///
+    /// # Errors
+    ///
+    /// 仓库不受信任、`git` 报错时返回说明。
+    pub fn take_file(
+        &self,
+        root: &Path,
+        from: &str,
+        path: &Path,
+        deleted: bool,
+    ) -> Result<String, String> {
+        let relative = slash_path(root, path)?;
+        let args: Vec<OsString> = if deleted {
+            ["rm", "--quiet", "--force", "--ignore-unmatch", "--"]
+                .map(OsString::from)
+                .into_iter()
+                .chain([relative])
+                .collect()
+        } else {
+            ["restore", "--source", from, "--staged", "--worktree", "--"]
+                .map(OsString::from)
+                .into_iter()
+                .chain([relative])
+                .collect()
+        };
+        self.operate(root, &args)
     }
 
     /// 逐行追溯：返回每一行最后是哪次提交改的。

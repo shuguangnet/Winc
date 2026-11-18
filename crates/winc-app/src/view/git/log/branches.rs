@@ -22,6 +22,51 @@ pub(super) fn draw_branches_button(
     hits.push((button, LogTarget::BranchesToggle));
 }
 
+/// 分支面板顶部搜索框的位置（逻辑像素）；面板没有完全展开时没有它：打开、关闭途中面板很窄，
+/// 放不下搜索框，各行也按完整的宽度排、跟着右边缘滑进滑出。
+pub(super) fn branch_field(parts: &LogParts) -> Option<Rect> {
+    let area = parts.branches;
+    if area.w < BRANCHES_W - 1.0 {
+        return None;
+    }
+    // 与 `draw_branches` 中右对齐的 `slid` 相同。
+    let x = area.right() - (BRANCHES_W - 1.0) + 8.0;
+    Some(Rect::new(x, area.y + 6.0, BRANCHES_W - 1.0 - 16.0, 24.0))
+}
+
+/// 绘制分支面板顶部的搜索框（按分支名筛选面板里的各行）。
+pub(super) fn draw_branch_field(
+    app: &mut App,
+    frame: &mut Frame<'_>,
+    rect: Rect,
+    hits: &mut Vec<(Rect, LogTarget)>,
+) {
+    let p = app.palette;
+    let focused = app.focus == Focus::LogBranchFilter;
+    field_box(app, frame, rect, p.editor_bg, focused, false);
+    icons::magnifier(
+        frame,
+        (rect.x + 14.0, rect.y + rect.h / 2.0),
+        p.text_dim,
+        rect,
+    );
+    let area = Rect::new(rect.x + 26.0, rect.y, rect.w - 32.0, rect.h);
+    let mut field = std::mem::take(&mut app.git.log.branch_filter);
+    let caret = draw_bar_field(
+        app,
+        frame,
+        area,
+        &mut field,
+        t!("git-log-branch-filter"),
+        focused,
+    );
+    app.git.log.branch_filter = field;
+    if focused {
+        app.ime.cursor = caret;
+    }
+    hits.push((rect, LogTarget::BranchFilter));
+}
+
 /// 绘制分支面板，返回最大滚动距离（逻辑像素）；名字截短了的行记进 `long`。
 ///
 /// 各行的排法和画法与分支选择器相同：分组标题是折叠箭头、小号淡色的组名和右端的数量徽标，分支
@@ -56,9 +101,29 @@ pub(super) fn draw_branches(
     let fold = app.git.log.branch_fold.as_ref();
     let rows = fold.map_or_else(|| app.log_branch_rows(), |f| f.rows.clone());
     let filter = &view.query.branches;
-    let top = area.y + LOG_LIST_PAD - app.git.log.branches_scroll;
+    // 搜索框下面才是各行：滚动时上一行不会盖住搜索框。
+    let body = branch_field(parts).map_or(area, |field| {
+        let y = field.bottom() + 4.0;
+        Rect::new(area.x, y, area.w, (area.bottom() - y).max(0.0))
+    });
+    let top = body.y + LOG_LIST_PAD - app.git.log.branches_scroll;
+    // 没有匹配的分支时给一句提示：否则面板看起来像空了一块（排出的行只剩分支选择器里的「新建
+    // 分支」，面板不画它）。
+    let blank = rows.iter().all(|row| matches!(row, BranchRow::Create(_)));
+    if blank && !app.git.log.branch_filter.text().is_empty() {
+        let band = Rect::new(slid.x + 6.0, top, slid.w - 12.0, BRANCH_ROW);
+        ui_text_small(
+            frame,
+            app,
+            band.x + 14.0,
+            band,
+            t!("menu-filter-no-match"),
+            p.text_dim,
+            body,
+        );
+    }
     for (i, row) in rows.iter().enumerate() {
-        let (y, clip) = panel_slot(fold, (top, i), area);
+        let (y, clip) = panel_slot(fold, (top, i), body);
         let band = Rect::new(slid.x + 6.0, y, slid.w - 12.0, BRANCH_ROW);
         if clip.h <= 0.0 || band.bottom() < clip.y || band.y > clip.bottom() {
             continue;
@@ -182,14 +247,17 @@ pub(super) fn draw_branches(
                 let tag = app.git.tags.get(*index).map_or("", String::as_str);
                 name(frame, text, tag, long);
             }
-            BranchRow::Create(_) => {}
+            // 「新建分支」和「按输入的修订筛选」都只在选择器里，面板里不画。
+            BranchRow::Create(_) | BranchRow::Revision(_) => {}
         }
-        if fold.is_none() {
-            hits.push((band.intersect(area), target));
+        // 「新建分支」是分支选择器里的行，面板里不画它，也不记下点击范围：否则鼠标停在空行的
+        // 位置会亮起一块没有内容的底色。
+        if fold.is_none() && !matches!(row, BranchRow::Create(_) | BranchRow::Revision(_)) {
+            hits.push((band.intersect(body), target));
         }
     }
     let content = LOG_LIST_PAD + rows.len() as f32 * BRANCH_ROW + LOG_LIST_PAD;
-    (content - area.h).max(0.0)
+    (content - body.h).max(0.0)
 }
 
 /// 分支面板第 `i` 行的上沿和能画的范围：展开、收起途中子行位置不动、只露出已露出的一段，其后

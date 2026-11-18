@@ -30,6 +30,11 @@ impl App {
             match target {
                 CommitTarget::File(i) => self.browse_commit_file(i),
                 CommitTarget::Group(_) | CommitTarget::Dir(_) | CommitTarget::Sticky(..) => {}
+                // 提交图标题行上的按钮和对比只看仓库，不碰工作区，浏览历史时照样能用。
+                CommitTarget::GraphFetch
+                | CommitTarget::GraphPull
+                | CommitTarget::GraphPush
+                | CommitTarget::GraphCompare => {}
                 _ => return,
             }
             if matches!(target, CommitTarget::File(_)) {
@@ -37,12 +42,22 @@ impl App {
             }
         }
         match target {
+            CommitTarget::GraphRow(index) => self.begin_graph_pan(Some(index)),
+            // 展开的文件列表点一下就打开，不参与拖动。
+            CommitTarget::GraphFile(index) => self.press_graph_file(index),
+            // 空白处按下也能拖：不用先找一行才开始滚。
+            CommitTarget::GraphBlank => self.begin_graph_pan(None),
+            CommitTarget::GraphDivider => self.begin_graph_resize(),
             CommitTarget::Stashes
             | CommitTarget::Stash(_)
             | CommitTarget::StashFile(_)
             | CommitTarget::StashApply(_)
-            | CommitTarget::StashMenu(_)
-            | CommitTarget::StashMore => self.press_commit_stash(target),
+            | CommitTarget::StashMenu(_) => self.press_commit_stash(target),
+            CommitTarget::Worktrees
+            | CommitTarget::WorktreeNew
+            | CommitTarget::WorktreeRow(_)
+            | CommitTarget::WorktreeMenu(_)
+            | CommitTarget::WorktreeMore => self.press_commit_worktree(target),
             CommitTarget::Group(_)
             | CommitTarget::GroupCheck(_)
             | CommitTarget::GroupRevert(_)
@@ -62,7 +77,9 @@ impl App {
                 self.toggle_other_fold(Some(repo), Some(group))
             }
             CommitTarget::OtherFold(repo) => self.toggle_other_fold(Some(repo), None),
-            CommitTarget::CurrentRepository => self.toggle_other_fold(None, None),
+            CommitTarget::CurrentFold => self.toggle_other_fold(None, None),
+            CommitTarget::CurrentRepository => self.focus = Focus::CommitList,
+            CommitTarget::QuietRepositories => self.toggle_quiet_repositories(),
             CommitTarget::CurrentCheck => {
                 let entries = self.git.status.iter().flat_map(|s| &s.entries);
                 let paths: Vec<PathBuf> = entries.map(|e| e.path.clone()).collect();
@@ -96,6 +113,7 @@ impl App {
             CommitTarget::Refresh => {
                 self.git.commit.refreshed = Some(Instant::now());
                 self.git_refresh();
+                self.reload_graph();
             }
             CommitTarget::More => {
                 let rect = self.commit_parts().tools[2].0;
@@ -105,7 +123,19 @@ impl App {
                     menu_below(rect),
                 );
             }
-            CommitTarget::Location => self.open_worktree_picker(),
+            // 与「⋯」菜单、命令面板里的同名命令走同一条路：确认、进度、出错提示都一样。
+            CommitTarget::GraphFetch => self.run_branch_command(MenuCommand::GitFetch),
+            CommitTarget::GraphPull => self.run_branch_command(MenuCommand::GitPull),
+            CommitTarget::GraphPush => self.run_branch_command(MenuCommand::GitPush),
+            CommitTarget::GraphCompare => {
+                let Some(graph) = self.commit_parts().graph else {
+                    return;
+                };
+                // 菜单从对比控件的右端弹出，和标题行右端的工具按钮一样。
+                let at = (graph.right() - 8.0, graph.y + GRAPH_HEADER);
+                self.open_button_menu(MenuButton::GraphCompare, MenuTarget::GraphCompare, at);
+            }
+            CommitTarget::Location => self.open_places(true),
             CommitTarget::Branch => self.open_branch_picker(GitAnchor::Branch),
             CommitTarget::Sync => self.git_sync(),
             // 按住 ⌥ 时按钮写的是「提交并推送」（见 `App::commit_pushes`）。
@@ -216,7 +246,7 @@ impl App {
                 }
                 // 双击打开文件本身，单击选中并预览差异。
                 let (x, y) = self.pointer.mouse;
-                if self.click_count(x, y) >= 2 && winc_backend::fs::is_file(&path) {
+                if self.click_count(x, y) >= 2 && self.may_be_file(&path) {
                     self.open_path(&path);
                     self.focus = Focus::Editor;
                 } else {
@@ -238,7 +268,7 @@ impl App {
                 let Some(path) = self.commit_entry(i).map(|e| e.path.clone()) else {
                     return;
                 };
-                if winc_backend::fs::is_file(&path) {
+                if self.may_be_file(&path) {
                     self.open_path(&path);
                     self.focus = Focus::Editor;
                 } else {
@@ -269,8 +299,20 @@ impl App {
         self.request_redraw();
     }
 
+    /// 鼠标在提交视图里按下了 `target`：储藏的行和文件可以先按住上下拖（条数多时在组内滚动），
+    /// 松开时没动过才按点击处理（见 [`Self::release_stash_pan`]）。
+    pub(in crate::app) fn press_commit_down(&mut self, target: CommitTarget) {
+        let pan = matches!(target, CommitTarget::Stash(_) | CommitTarget::StashFile(_))
+            && !self.git.commit.browse
+            && self.git.commit.hits_generation == self.git.generation;
+        if pan {
+            return self.begin_stash_pan(Some(target));
+        }
+        self.press_commit(target);
+    }
+
     /// 处理贮藏列表中的目标：展开、查看、应用和菜单。
-    fn press_commit_stash(&mut self, target: CommitTarget) {
+    pub(in crate::app) fn press_commit_stash(&mut self, target: CommitTarget) {
         match target {
             CommitTarget::Stashes => self.toggle_stashes(),
             CommitTarget::Stash(i) => self.show_stash(i),
@@ -287,14 +329,6 @@ impl App {
                     return;
                 };
                 self.open_context_menu(MenuTarget::StashRow(i), menu_below(rect));
-            }
-            CommitTarget::StashMore => {
-                let Some(&(rect, _)) =
-                    (self.hits.commit.iter()).find(|(_, t)| *t == CommitTarget::StashMore)
-                else {
-                    return;
-                };
-                self.open_context_menu(MenuTarget::StashList, (rect.x + 8.0, rect.bottom()));
             }
             // 其余目标由 [`Self::press_commit`] 交给别的函数。
             _ => {}

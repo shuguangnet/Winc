@@ -39,6 +39,10 @@ pub(crate) enum ScrollArea {
     Panel,
     /// 提交视图的改动列表。
     Commit,
+    /// 提交视图底部的提交图。
+    Graph,
+    /// 提交视图里储藏一组展开时的各行。
+    Stash,
     /// 文件视图底部大纲的符号列表。
     Outline,
     /// Git 日志左侧的分支面板。
@@ -55,11 +59,17 @@ pub(crate) enum ScrollArea {
     Pdf,
     /// PDF 预览的缩略图栏。
     PdfStrip,
+    /// Markdown 预览左侧展开的标题列表。
+    MarkdownToc,
+    /// 表格预览的竖直滚动条。
+    Table,
+    /// 表格预览的水平滚动条。
+    TableHorizontal,
 }
 
 impl ScrollArea {
     /// 全部区域，遍历时用。
-    const ALL: [ScrollArea; 16] = [
+    const ALL: [ScrollArea; 21] = [
         ScrollArea::Editor,
         ScrollArea::EditorHorizontal,
         ScrollArea::DiffLeftHorizontal,
@@ -68,6 +78,8 @@ impl ScrollArea {
         ScrollArea::TreeHorizontal,
         ScrollArea::Panel,
         ScrollArea::Commit,
+        ScrollArea::Graph,
+        ScrollArea::Stash,
         ScrollArea::Outline,
         ScrollArea::LogBranches,
         ScrollArea::Settings,
@@ -76,6 +88,9 @@ impl ScrollArea {
         ScrollArea::MarkdownTable,
         ScrollArea::Pdf,
         ScrollArea::PdfStrip,
+        ScrollArea::MarkdownToc,
+        ScrollArea::Table,
+        ScrollArea::TableHorizontal,
     ];
 
     /// 该区域可以拖动的滚动条；不能拖动时为 `None`。
@@ -89,6 +104,8 @@ impl ScrollArea {
             ScrollArea::TreeHorizontal => Some(Scrollbar::TreeHorizontal),
             ScrollArea::Panel => Some(Scrollbar::Panel),
             ScrollArea::Commit => Some(Scrollbar::Commit),
+            ScrollArea::Graph => Some(Scrollbar::Graph),
+            ScrollArea::Stash => Some(Scrollbar::Stash),
             ScrollArea::Outline => Some(Scrollbar::Outline),
             ScrollArea::LogBranches => Some(Scrollbar::LogBranches),
             ScrollArea::Settings => Some(Scrollbar::Settings),
@@ -97,6 +114,9 @@ impl ScrollArea {
             ScrollArea::MarkdownTable => Some(Scrollbar::MarkdownTable),
             ScrollArea::Pdf => Some(Scrollbar::Pdf),
             ScrollArea::PdfStrip => Some(Scrollbar::PdfStrip),
+            ScrollArea::MarkdownToc => Some(Scrollbar::MarkdownToc),
+            ScrollArea::Table => Some(Scrollbar::Table),
+            ScrollArea::TableHorizontal => Some(Scrollbar::TableHorizontal),
         }
     }
 
@@ -108,6 +128,7 @@ impl ScrollArea {
                 | ScrollArea::DiffRightHorizontal
                 | ScrollArea::TreeHorizontal
                 | ScrollArea::MarkdownTable
+                | ScrollArea::TableHorizontal
         )
     }
 }
@@ -185,6 +206,7 @@ impl App {
     /// 开始绘制新的一帧：清除上一帧记下的可滚动区域，由本帧绘制的滚动条重新登记。
     pub(crate) fn begin_scrollbars(&mut self) {
         self.text_content_w = 0.0;
+        self.preview.markdown.catch_up.pending = false;
         for reveal in &mut self.scroll.bars.reveals {
             reveal.area = None;
         }

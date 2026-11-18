@@ -111,3 +111,39 @@ fn the_launcher_flag_is_recorded_and_dropped_when_relaunching() {
     );
     assert!(!args(&["a"]).unwrap().launcher);
 }
+
+/// `winc://file/<绝对路径>[:行[:列]]` 链接：百分号编码解码，忽略查询和片段，Windows 盘符路径去掉
+/// 开头的斜杠；没有盘符的 Windows 路径、编码不完整的链接报错，不当作文件名。
+#[test]
+fn winc_links_open_files_at_a_line() {
+    // 绝对路径：Windows 上带盘符，链接写作 `winc://file/C:/…`。
+    let (url, dir) = if cfg!(windows) {
+        ("winc://file/C:/no/such", "C:/no/such")
+    } else {
+        ("winc://file/no/such", "/no/such")
+    };
+    assert_eq!(
+        link(&format!("{url}/a%20b.rs:12:3?windowId=1#x")),
+        Some(at(&format!("{dir}/a b.rs"), Some(11), Some(2)))
+    );
+    let upper = url.replacen("winc", "WINC", 1);
+    assert_eq!(
+        link(&format!("{upper}/dir")),
+        Some(at(&format!("{dir}/dir"), None, None))
+    );
+    if cfg!(windows) {
+        assert_eq!(link("winc://file/no/drive"), None);
+    }
+    for bad in [
+        "winc://file".to_owned(),
+        "winc://open/no/such/a.rs".to_owned(),
+        format!("{url}/%e4"),
+        format!("{url}/%zz"),
+        "vscode://file/no/such/a.rs".to_owned(),
+    ] {
+        assert_eq!(link(&bad), None, "{bad}");
+    }
+    let parsed = args(&[&format!("{url}/a.rs:2")]).unwrap();
+    assert_eq!(parsed.targets, [at(&format!("{dir}/a.rs"), Some(1), None)]);
+    assert!(args(&[&format!("{url}/%zz")]).is_err());
+}

@@ -33,7 +33,11 @@ settings-editor-font = 字体
 settings-editor-size = 字号
 settings-tab-width = 制表符长度
 settings-auto-save = 自动保存
+settings-auto-save-off = 关闭
+settings-auto-save-focus = 切换时
+settings-auto-save-delay = 停止输入 1 秒后
 settings-hot-exit = 热退出
+settings-confirm-close = 关闭前确认
 settings-restore-folder = 恢复上次的目录
 settings-sticky-scroll = 粘滞滚动
 settings-vim-mode = Vim 模式（实验性）
@@ -85,6 +89,7 @@ settings-terminal-module = 终端
 settings-remote-module = SSH 远程（实验性）
 settings-terminal-shell = 默认 Shell
 settings-terminal-position = 面板位置
+settings-terminal-tab-position = 标签位置
 settings-terminal-font = 字体
 settings-terminal-size = 字号
 settings-terminal-copy-on-select = 选中时复制
@@ -93,20 +98,35 @@ settings-git-system-proxy = 使用系统代理
 settings-git-inline-blame = 当前行追溯
 settings-git-auto-fetch = 定时获取
 settings-git-tree = 树形显示更改
+settings-git-remember-credentials = 记住密码
 settings-git-confirm-push = 推送前确认
 settings-git-staging-area = 暂存区
 settings-terminal-prompt = Winc 提示符
 settings-terminal-shell-integration = Shell 集成
+settings-terminal-application-priority = 终端应用优先
 settings-terminal-option-as-meta = Meta 键
 settings-key-search = 搜索快捷键
 
 ## 设置项的说明。
 
-settings-auto-save-desc = 切换标签页或应用时自动保存修改
+settings-auto-save-desc = 切换标签页、终端或应用时保存修改
 settings-hot-exit-desc = 退出时不逐个确认保存，下次启动时恢复未保存的修改
+settings-confirm-close-desc = 关闭窗口或退出前先确认
 settings-restore-folder-desc = 启动时重新打开上次的目录和标签页
 settings-sticky-scroll-desc = 滚动时将当前所在的函数、类和标题固定在顶部
 settings-vim-mode-desc = 在编辑区使用 Vim 的模式与按键
+settings-git-path = Git 程序
+settings-git-path-auto = 自动查找
+settings-git-path-desc = Git 可执行文件的路径，留空时在 PATH 中查找
+settings-git-open-worktree = 打开工作树
+settings-git-open-worktree-ask = 每次询问
+settings-git-open-worktree-new = 新窗口
+settings-git-open-worktree-current = 当前窗口
+settings-git-open-worktree-desc = 点击工作树时在哪个窗口打开
+settings-drop-folder = 拖入目录
+settings-drop-folder-add = 添加到窗口
+settings-drop-folder-open = 不添加
+settings-drop-folder-desc = 不添加时，拖到编辑区打开，拖到文件树复制
 settings-vim-clipboard-desc = 复制、删除的文本何时写入系统剪贴板
 settings-vim-relative-number-desc = 当前行显示行号，其余各行显示与当前行的距离
 settings-vim-yank-highlight-desc = 复制后短暂高亮被复制的文本
@@ -160,6 +180,7 @@ settings-git-system-proxy-desc = Git 未配置代理时，联网操作使用系�
 settings-git-inline-blame-desc = 在光标所在行末尾显示最后一次修改的作者、时间和提交说明
 settings-git-auto-fetch-desc = 每 3 分钟在后台从远程仓库获取更新
 settings-git-tree-desc = 更改列表按目录分层显示，关闭后平铺列出
+settings-git-remember-credentials-desc = 把通过验证的 HTTPS 密码保存在系统钥匙串中，关闭时清除已保存的密码
 settings-git-confirm-push-desc = 推送前列出目标仓库和待推送的提交
 settings-git-staging-area-desc = 用暂存区选择要提交的更改，关闭后用勾选框选择
 settings-terminal-module-desc-key = 编辑区下方的终端面板（{ $key }），打开时启动一个辅助进程
@@ -167,11 +188,13 @@ settings-terminal-module-desc = 编辑区下方的终端面板，打开时启动
 settings-remote-module-desc = 通过 SSH 打开远程主机上的目录，连接期间在该主机上运行服务进程
 settings-terminal-copy-on-select-desc = 选中文字后自动复制到剪贴板
 settings-terminal-confirm-close-desc = 关闭仍有程序运行的标签页前先确认
+settings-terminal-shell-desc = 新终端使用的 Shell，路径含空格时加双引号
 settings-terminal-prompt-desc = 替换默认提示符，显示目录、Git 分支和退出状态
 settings-terminal-shell-integration-desc = { $platform ->
-    [windows] 将 WSL 中 zsh、bash、fish 的输出按命令分块，可折叠和跳转
-   *[other] 将 zsh、bash、fish 的输出按命令分块，可折叠和跳转
+    [windows] 按命令分块显示 WSL 输出，自动加载 Python 环境
+   *[other] 按命令分块显示输出，自动加载 Python 环境
 }
+settings-terminal-application-priority-desc = 将快捷键交给终端应用，保留终端管理和复制、粘贴
 settings-terminal-option-as-meta-desc = 按所选的 ⌥ 时发送 Esc 前缀，不输入特殊字符
 
 ## 设置项的值和提示。
@@ -186,9 +209,11 @@ settings-font-others = 其他字体
 settings-font-fallbacks = 后备字体
 settings-terminal-shell-default = 系统默认
 settings-terminal-shell-custom = 自定义命令…
-settings-terminal-shell-placeholder = 输入命令，含空格的路径加双引号
+settings-terminal-shell-placeholder = 输入命令
 settings-terminal-position-bottom = 底部
 settings-terminal-position-right = 右侧
+settings-terminal-tab-position-top = 顶部
+settings-terminal-tab-position-right = 右侧
 settings-terminal-font-default = 跟随编辑器
 settings-terminal-option-as-meta-left = 左侧 ⌥
 settings-terminal-option-as-meta-right = 右侧 ⌥
@@ -223,11 +248,29 @@ settings-theme-name-veil-umber = 檀幕
 
 ## 快捷键页。
 
-settings-keys-recording = 请按下要查找的快捷键，按 Esc 停止
-settings-keys-search-record = 输入命令名查找，按 { $key } 录制按键
-settings-keys-search = 输入命令名查找
+settings-keys-recording = 按下快捷键查找对应的命令
+settings-keys-search = 搜索命令
 settings-keys-no-command = 无命令使用此快捷键
 settings-keys-no-match = 无匹配的命令
+settings-keys-keymap = 键位方案
+settings-keys-imported = 已导入 { $name } 的快捷键
+settings-keys-imported-skipped = 已导入 { $name } 的快捷键，{ $count } 项无法对应，已跳过
+settings-keys-keymap-description = 快捷键的默认方案，也可以从本机的其他编辑器导入
+settings-keys-keymap-changed = 已修改 { $count } 个命令的快捷键
+settings-keys-edit = 编辑
+settings-keys-reset = 恢复默认
+settings-keys-save = 保存
+settings-keys-cancel = 取消
+settings-keys-edit-hint = 新的快捷键会加在已有的键之后
+settings-keys-conflict = 保存后 { $key } 将从{ $names }改给此命令
+settings-keys-takes-typing = 不带修饰键的 { $key } 会取代编辑区和输入框中的文字输入
+settings-keys-modified = 已修改
+settings-keys-press = 按下快捷键
+settings-keys-import-from = 从 { $name } 导入…
+keymap-import-read-failed = 无法读取「{ $path }」：{ $error }
+keymap-import-invalid = 「{ $path }」的格式不对
+keymap-import-unsupported = 不支持导入「{ $name }」键位方案
+keymap-import-missing = 找不到「{ $name }」键位方案
 
 ## 字号与配置文件。
 

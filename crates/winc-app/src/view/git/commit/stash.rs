@@ -2,9 +2,13 @@
 
 use super::*;
 
+use crate::app::stash_body;
+
 /// 绘制改动列表下面的储藏一组：上沿一条分隔线；标题是箭头、「储藏」和数量；展开时下面每条储藏一行，
 /// 右端淡色写储藏时的分支和时间，悬停时换成「应用」和「⋯」；正在预览标签里看的那一条底色同选中。
-/// 储藏太多时最后一行是「还有 N 条」。
+///
+/// 一组最多露出 [`STASH_ROWS`] 行，再多时各行按
+/// `stash_scroll` 上移，超出的部分由这一组的范围裁掉。
 pub(super) fn draw_stashes(
     app: &App,
     frame: &mut Frame<'_>,
@@ -23,9 +27,18 @@ pub(super) fn draw_stashes(
         clip,
     );
     let size = app.fonts.ui_small;
+    // 标题下面露出各行的范围：滚动的偏移按这一块裁，超出的行画了也看不见。
+    let body = stash_body(area);
+    let body_clip = clip.intersect(body);
+    let scroll = app.git.commit.stash_scroll;
     let band = |row: usize| {
         let y = area.y + crate::app::STASH_GAP + row as f32 * COMMIT_ROW;
         Rect::new(area.x + 8.0, y, area.w - 16.0, COMMIT_ROW)
+    };
+    // 标题下面的第 `row` 行（0 是第一条储藏），按滚动位置上下移动。
+    let row_band = |row: usize| {
+        let band = band(row + 1);
+        Rect::new(band.x, band.y - scroll, band.w, band.h)
     };
     let shade = |band: Rect| Rect::new(band.x, band.y + 1.0, band.w, band.h - 2.0);
 
@@ -50,8 +63,8 @@ pub(super) fn draw_stashes(
     draw_count_pill(app, frame, head, &app.git.stashes.len().to_string(), clip);
     hits.push((head, CommitTarget::Stashes));
     // 展开、收起的途中各行跟着标题移动，露出多少由一组的范围裁掉；这时行还没停稳，不响应点击。
-    let moving = app.git.commit.stash_motion.is_some();
-    if !app.git.commit.stash_open && !moving {
+    let moving = app.git.commit.stashes.motion.is_some();
+    if !app.git.commit.stashes.open && !moving {
         return;
     }
     let mut still = Vec::new();
@@ -65,30 +78,25 @@ pub(super) fn draw_stashes(
         .map(|view| view.oid.as_str());
     let listed = app.listed_stash_view();
     for (n, line) in app.stash_lines().into_iter().enumerate() {
-        let row = band(n + 1);
+        let row = row_band(n);
+        // 滚出这一组范围的行不用画，也不用记点击范围。
+        if row.intersect(body).h <= 0.0 {
+            continue;
+        }
+        let clipped = row.intersect(body);
         let i = match line {
             StashLine::Stash(i) => i,
             StashLine::File(at) => {
                 if let Some(view) = listed {
-                    draw_stash_file(app, frame, row, view, at, clip);
-                    hits.push((row, CommitTarget::StashFile(at)));
+                    draw_stash_file(app, frame, row, view, at, body_clip);
+                    hits.push((clipped, CommitTarget::StashFile(at)));
                 }
                 continue;
             }
             StashLine::MoreFiles(count) => {
                 let text = t!("git-stash-more-files", count = count);
                 let x = row.x + STASH_FILE;
-                ui_text_small(frame, app, x, row, &text, p.text_dim, clip);
-                continue;
-            }
-            StashLine::MoreStashes(rest) => {
-                if app.pointer.hover == Hover::Commit(CommitTarget::StashMore) {
-                    frame.rect_clipped(shade(row), p.hover, RADIUS_ROW, clip);
-                }
-                let text = t!("git-stash-more", count = rest);
-                let x = row.x + STASH_TITLE;
-                ui_text_small(frame, app, x, row, &text, p.text_muted, clip);
-                hits.push((row, CommitTarget::StashMore));
+                ui_text_small(frame, app, x, row, &text, p.text_dim, body_clip);
                 continue;
             }
         };
@@ -101,22 +109,22 @@ pub(super) fn draw_stashes(
         );
         let selected = viewing == Some(stash.oid.as_str());
         if let Some(color) = row_color(p, selected, false, hovered) {
-            frame.rect_clipped(shade(row), color, RADIUS_ROW, clip);
+            frame.rect_clipped(shade(row), color, RADIUS_ROW, body_clip);
         }
         // 右端：平时是分支和时间，悬停时换成「应用」和「⋯」。
         let mut right = row.right() - END_PAD;
         if hovered {
             let (_, more) = file_actions(row);
             let on = app.pointer.hover == Hover::Commit(CommitTarget::StashMenu(i));
-            draw_button(frame, p, more, clip, on, false);
+            draw_button(frame, p, more, body_clip, on, false);
             let color = if on { p.text } else { p.text_muted };
-            icons::more(frame, center(more), color, clip);
-            hits.push((more, CommitTarget::StashMenu(i)));
+            icons::more(frame, center(more), color, body_clip);
+            hits.push((more.intersect(body), CommitTarget::StashMenu(i)));
             let text = t!("git-stash-apply");
             let w = frame.measure(FontKind::Ui, size, text) + 2.0 * STASH_APPLY_PAD;
             let apply = Rect::new(more.x - BUTTON_GAP - w, more.y, w, more.h);
             let on = app.pointer.hover == Hover::Commit(CommitTarget::StashApply(i));
-            draw_button(frame, p, apply, clip, on, false);
+            draw_button(frame, p, apply, body_clip, on, false);
             ui_text_small(
                 frame,
                 app,
@@ -124,9 +132,9 @@ pub(super) fn draw_stashes(
                 apply,
                 text,
                 p.accent,
-                clip,
+                body_clip,
             );
-            hits.push((apply, CommitTarget::StashApply(i)));
+            hits.push((apply.intersect(body), CommitTarget::StashApply(i)));
             right = apply.x - 6.0;
         } else {
             let time = display_local(&stash.local, stash.time, now);
@@ -137,15 +145,15 @@ pub(super) fn draw_stashes(
             let room = (right - row.x - STASH_TITLE) / 2.0;
             let meta = fit(frame, &meta, size, room.max(0.0), false);
             let w = frame.measure(FontKind::Ui, size, &meta);
-            ui_text_small(frame, app, right - w, row, &meta, p.text_dim, clip);
+            ui_text_small(frame, app, right - w, row, &meta, p.text_dim, body_clip);
             right -= w + 8.0;
         }
         let x = row.x + STASH_TITLE;
         let name = crate::app::git::branch::stash_title(stash);
         let name = fit(frame, &name, app.fonts.ui, (right - x).max(0.0), false);
-        let room = clip.intersect(Rect::new(row.x, row.y, (right - row.x).max(0.0), row.h));
+        let room = body_clip.intersect(Rect::new(row.x, row.y, (right - row.x).max(0.0), row.h));
         label(frame, app, app.fonts.ui, (x, row), &name, p.text, room);
-        hits.push((row, CommitTarget::Stash(i)));
+        hits.push((clipped, CommitTarget::Stash(i)));
     }
 }
 

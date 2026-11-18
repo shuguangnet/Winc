@@ -125,6 +125,9 @@ impl App {
             return;
         }
 
+        if !self.keeps_key_edit(part) {
+            self.cancel_key_edit();
+        }
         let editing = self.settings.editing.as_ref().map(|(s, _)| *s);
         if editing.is_some() && part != editing.map(SettingsPart::Field) {
             self.settings_leave_field();
@@ -183,6 +186,15 @@ impl App {
             }
             Some(SettingsPart::Action(setting)) => self.settings_open_menu(setting),
             Some(SettingsPart::Record) => self.toggle_recording(),
+            Some(SettingsPart::Keymap) => self.open_keymap_menu(),
+            Some(
+                part @ (SettingsPart::KeyRow(_)
+                | SettingsPart::KeyEdit(_)
+                | SettingsPart::KeyReset(_)
+                | SettingsPart::KeyRemove(_)
+                | SettingsPart::KeySave
+                | SettingsPart::KeyCancel),
+            ) => self.click_keys_part(part),
             Some(SettingsPart::KeySearch) => {
                 self.set_recording(false);
                 self.focus = Focus::KeySearch;
@@ -307,7 +319,7 @@ impl App {
                 return false;
             }
             if let Some(target) = hit(&self.hits.commit, x, y) {
-                self.with_log_list(|app| app.press_commit(target));
+                self.with_log_list(|app| app.press_commit_down(target));
             }
             self.request_redraw();
             return true;
@@ -334,7 +346,7 @@ impl App {
                 self.focus = focus;
                 self.click_field(x, y);
             } else if let Some(target) = hit(&self.hits.commit, x, y) {
-                self.press_commit(target);
+                self.press_commit_down(target);
             }
             self.request_redraw();
             return true;
@@ -386,7 +398,14 @@ impl App {
             .goto_input
             .as_ref()
             .map(|f| (Focus::Prompt, true, f));
-        let rename = (self.terminal.rename.as_ref()).map(|(_, f)| (Focus::TerminalRename, true, f));
+        let rename = self.terminal.rename.as_ref().map(|(id, field)| {
+            let shown = self.hits.terminal.iter().any(|(rect, hit)| {
+                matches!(hit, crate::app::terminal::HeaderHit::Tab(index)
+                    if rect.contains(x, y)
+                        && self.terminal.tabs.get(*index).is_some_and(|tab| tab.id == *id))
+            });
+            (Focus::TerminalRename, shown, field)
+        });
         let terminal_find =
             (self.terminal.find.as_ref()).map(|f| (Focus::TerminalFind, true, &f.field));
         let shown = self.panel_shown();
@@ -403,12 +422,27 @@ impl App {
             ),
         ];
 
+        // 分支面板顶部的搜索框只在面板完全展开时绘制（见 `view::git::log`）。
+        let log_branch = Some((
+            Focus::LogBranchFilter,
+            self.log_active() && self.log_branches_shown() >= 1.0,
+            &self.git.log.branch_filter,
+        ));
+        // 详情里的「查找文件」只在点开放大镜时绘制（见 `view::git::log::files`）。
+        let log_files = Some((
+            Focus::LogFileFilter,
+            self.log_active() && self.git.log.find_files,
+            &self.git.log.file_filter,
+        ));
+
         visible
             .into_iter()
             .chain(prompt)
             .chain(rename)
             .chain(terminal_find)
             .chain(panel)
+            .chain(log_branch)
+            .chain(log_files)
             .find(|(_, shown, f)| *shown && f.view.area.contains(x, y))
             .map(|(focus, ..)| focus)
     }

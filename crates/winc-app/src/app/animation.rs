@@ -42,7 +42,7 @@ const REVEAL_FROM: f32 = 0.7;
 pub(super) const DETAILS_FADE: Duration = Duration::from_millis(120);
 /// Markdown 预览的标题列表展开的时长，取 [`TREE_ANIMATION`]。
 ///
-/// 展开时卡片淡入，横线从指示条滑到各行。
+/// 展开时卡片从指示条处展开并淡入，横线从指示条移到各行；收起时相反，时长相同。
 pub(super) const TOC_FADE: Duration = TREE_ANIMATION;
 /// Markdown 预览的标题列表钉住、取消钉住的过渡时长，取 [`TREE_ANIMATION`]。
 ///
@@ -362,6 +362,7 @@ impl App {
         self.panels.global.names.settle();
         settle(&mut self.git.commit.shift, |s| s.clock);
         settle(&mut self.git.commit.actions_slide, |s| s.1);
+        settle(&mut self.git.context_row.motion, |m| m.1);
         settle(&mut self.git.commit.motion, |m| m.clock);
         settle(&mut self.git.log.branches_motion, |m| m.1);
         settle(&mut self.git.log.branch_fold, |m| m.clock);
@@ -369,10 +370,12 @@ impl App {
         settle(&mut self.git.commit.fold_motion, |m| m.clock);
         settle(&mut self.git.commit.message_motion, |m| m.1);
         settle(&mut self.git.commit.button_motion, |m| m.1);
-        settle(&mut self.git.commit.stash_motion, |m| m.1);
+        settle(&mut self.git.commit.stashes.motion, |m| m.1);
+        settle(&mut self.git.commit.worktrees.motion, |m| m.1);
         settle(&mut self.panels.outline.motion, |m| m.1);
         settle(&mut self.panels.outline.fold, |f| f.clock);
         settle(&mut self.preview.markdown.toc_fade, |c| *c);
+        settle(&mut self.preview.markdown.toc_close, |c| *c);
         settle(&mut self.preview.markdown.toc_pin, |p| p.1);
         settle(&mut self.preview.markdown.toc_flash, |f| f.1);
         settle(&mut self.preview.markdown.anchor_flash, |f| f.1);
@@ -388,6 +391,7 @@ impl App {
         settle(&mut self.preview.pdf.zoom_motion, |m| m.clock);
         settle(&mut self.preview.picture_view.zoom_motion, |m| m.clock);
         settle(&mut self.preview.pdf.strip_motion, |m| m.1);
+        settle(&mut self.preview.pdf.tools.motion, |m| m.1);
         settle(&mut self.overlays.picker.fold, |f| f.clock);
         if self.overlays.picker.places_in.is_some_and(|c| c.done()) {
             self.overlays.picker.places_in = None;
@@ -415,8 +419,10 @@ impl App {
         }
         settle(&mut self.settings.mode_slide, |s| s.1);
         settle(&mut self.settings.switch_slide, |s| s.1);
+        settle(&mut self.settings.key_slide, |s| s.1);
         settle(&mut self.motion.setup_intro, |c| *c);
         settle(&mut self.motion.setup_outro, |c| *c);
+        settle(&mut self.motion.setup_page, |c| *c);
         self.show_update_notice();
         settle(&mut self.git.log.fade, |c| *c);
         self.settle_hint();
@@ -477,10 +483,14 @@ impl App {
             || self.git.commit.fold_motion.is_some()
             || self.git.commit.message_motion.is_some()
             || self.git.commit.button_motion.is_some()
-            || self.git.commit.stash_motion.is_some()
+            || self.git.context_row.motion.is_some()
+            || self.git.commit.stashes.motion.is_some()
+            || self.git.commit.worktrees.motion.is_some()
             || self.panels.outline.motion.is_some()
             || self.panels.outline.fold.is_some()
             || self.preview.markdown.toc_fade.is_some()
+            || self.preview.markdown.toc_close.is_some()
+            || self.preview.markdown.catch_up.pending
             || self.preview.markdown.toc_pin.is_some()
             || self.preview.markdown.toc_flash.is_some()
             || self.preview.markdown.anchor_flash.is_some()
@@ -501,6 +511,7 @@ impl App {
             || self.preview.pdf.zoom_motion.is_some()
             || self.preview.picture_view.zoom_motion.is_some()
             || self.preview.pdf.strip_motion.is_some()
+            || self.preview.pdf.tools.motion.is_some()
             || self.overlays.picker.fold.is_some()
             || self.overlays.picker.places_in.is_some()
             || self.overlays.picker.places_out.is_some()
@@ -517,8 +528,10 @@ impl App {
             || self.motion.alert_card.motion.is_some()
             || self.settings.mode_slide.is_some()
             || self.settings.switch_slide.is_some()
+            || self.settings.key_slide.is_some()
             || self.motion.setup_intro.is_some()
             || self.motion.setup_outro.is_some()
+            || self.motion.setup_page.is_some()
             || self.git.log.fade.is_some()
             || self.hint_animating()
             || !self.tabs.slides.is_empty()
@@ -586,6 +599,8 @@ pub(crate) struct Motions {
     pub(crate) setup_intro: Option<animation::Clock>,
     /// 点击「完成」之后从「首次设置」换到开始页的过渡动画的时钟；没有在播放时为 `None`。
     pub(crate) setup_outro: Option<animation::Clock>,
+    /// 「首次设置」两页之间切换的过渡动画的时钟；没有在播放时为 `None`。
+    pub(crate) setup_page: Option<animation::Clock>,
     /// 工具栏按钮收入「⋯」或从「⋯」中移出的动画。
     pub(crate) tool_fold: ToolFold,
     /// 编辑区顶部输入条出现、消失的动画。

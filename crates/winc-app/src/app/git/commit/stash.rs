@@ -6,15 +6,29 @@
 //! 悬停时右端是「应用」和「⋯」（应用、应用并删除、删除），右键同样是这个菜单。点击一条储藏时在
 //! 单独的预览标签里打开它的第一个改动文件，同时在这一行下面列出它改动的文件，点击其中一个即在
 //! 预览标签里查看；差异标签里的上一个、下一个文件同样在这些文件之间切换。储藏时一起收进去的
-//! 未跟踪文件排在后面。直接列出的条数有上限，再多时最后一行是「还有 N 条」，点击后弹出全部储藏
-//! 的菜单。
+//! 未跟踪文件排在后面。
+//!
+//! 一组最多露出 [`STASH_ROWS`] 行，再多时在组内上下滚动：滚轮、拖动右边细条，或者按住一行、
+//! 按住行下面的空白直接拖（见 [`App::begin_stash_pan`]）。这样条数再多也不挤改动列表，不必先
+//! 从菜单里挑选。
 
 use winc_editor::DocumentId;
 use winc_editor::git::{CommitFile, Stash};
 
 use super::*;
 
-/// 储藏一组展开时最多占几行（行），连同「还有 N 条」：再多会把上面的改动列表挤得太矮。
+/// 储藏一组里露出各行的范围：标题下面到这一组的下沿，下面留出与上沿相同的空隙。
+pub(crate) fn stash_body(area: Rect) -> Rect {
+    let top = area.y + STASH_GAP + COMMIT_ROW;
+    Rect::new(
+        area.x,
+        top,
+        area.w,
+        (area.bottom() - top - STASH_GAP).max(0.0),
+    )
+}
+
+/// 储藏一组展开时最多露出几行（行）：再多就把上面的改动列表挤得太矮，改为在组内滚动。
 pub(crate) const STASH_ROWS: usize = 5;
 
 /// 正在查看的储藏下面最多列出的文件行数（行），包括「还有 N 个文件」：再多时上方的改动列表
@@ -30,16 +44,11 @@ pub(crate) enum StashLine {
     File(usize),
     /// 正在看的储藏里没有列出的文件个数。
     MoreFiles(usize),
-    /// 没有列出的储藏条数。
-    MoreStashes(usize),
 }
 
 /// 储藏一组上下各留的空隙（逻辑像素）：列表间隔（`SIDEBAR_LIST_GAP`）的一半。这一组上下都是
 /// 分隔线，分隔线本身已经隔开了相邻区域，留半个间隔即可。
 pub(crate) const STASH_GAP: f32 = SIDEBAR_LIST_GAP / 2.0;
-/// 储藏一组收着时的高度（逻辑像素）：标题一行，上下各留 [`STASH_GAP`]。
-const STASH_CLOSED: f32 = COMMIT_ROW + 2.0 * STASH_GAP;
-
 /// 正在预览标签里看的一条储藏。
 #[derive(Debug, Clone)]
 pub(crate) struct StashView {
@@ -58,22 +67,13 @@ pub(crate) struct StashView {
 pub(super) type StashFiles = Result<Vec<(CommitFile, Option<String>, String)>, String>;
 
 impl App {
-    /// 储藏一组展开时直接列出的储藏：最多 [`STASH_ROWS`] 行；再多时留出最后一行写「还有 N 条」。
-    pub(crate) fn shown_stashes(&self) -> &[Stash] {
-        let stashes = self.git.stashes.as_slice();
-        if stashes.len() > STASH_ROWS {
-            &stashes[..STASH_ROWS - 1]
-        } else {
-            stashes
-        }
-    }
-
-    /// 储藏一组展开时标题下面的各行：各条储藏，正在看的那条下面是它的文件，最后是「还有 N 条」。
+    /// 储藏一组展开时标题下面的各行：各条储藏，正在看的那条下面是它的文件。
+    ///
+    /// 列出全部储藏，超出 [`STASH_ROWS`] 的部分靠滚动看到（见 [`App::stash_scroll_max`]）。
     pub(crate) fn stash_lines(&self) -> Vec<StashLine> {
-        let shown = self.shown_stashes();
         let open = self.listed_stash_view();
         let mut lines = Vec::new();
-        for (i, stash) in shown.iter().enumerate() {
+        for (i, stash) in self.git.stashes.iter().enumerate() {
             lines.push(StashLine::Stash(i));
             let Some(view) = open.filter(|view| view.oid == stash.oid) else {
                 continue;
@@ -88,11 +88,54 @@ impl App {
             lines.extend((start..start + room).map(StashLine::File));
             lines.push(StashLine::MoreFiles(count - room));
         }
-        let rest = self.git.stashes.len() - shown.len();
-        if rest > 0 {
-            lines.push(StashLine::MoreStashes(rest));
-        }
         lines
+    }
+
+    /// 储藏一组里露出各行的范围（标题下面那一块）；储藏一组没有显示时为 `None`。
+    pub(crate) fn stash_rows_area(&self) -> Option<Rect> {
+        self.commit_parts().stashes.map(stash_body)
+    }
+
+    /// 储藏一组展开时露得下的行数（行）：[`App::stash_open_rows`] 与 [`STASH_ROWS`] 里小的那个。
+    pub(crate) fn stash_visible_rows(&self) -> usize {
+        self.stash_open_rows().min(STASH_ROWS)
+    }
+
+    /// 储藏一组最多能滚动多远（逻辑像素）：露不下的行数乘以行高。
+    pub(crate) fn stash_scroll_max(&self) -> f32 {
+        let hidden = self
+            .stash_open_rows()
+            .saturating_sub(self.stash_visible_rows());
+        hidden as f32 * COMMIT_ROW
+    }
+
+    /// 在储藏一组里按下：开始上下拖动，内容跟着指针走；松开时没移动过才按点击处理
+    /// （见 [`Self::release_stash_pan`]）。
+    pub(in crate::app) fn begin_stash_pan(&mut self, target: Option<CommitTarget>) {
+        self.settle_glides();
+        self.pointer.drag = crate::app::Drag::StashPan {
+            start_y: self.pointer.mouse.1,
+            scroll: self.git.commit.stash_scroll,
+            target,
+        };
+    }
+
+    /// 拖动储藏一组：指针移动多少，各行就跟着走多少，限制在两端之间。
+    pub(in crate::app) fn drag_stash_pan(&mut self, start_y: f32, scroll: f32, y: f32) {
+        let max = self.stash_scroll_max();
+        self.git.commit.stash_scroll = (scroll - (y - start_y)).clamp(0.0, max);
+        self.request_redraw();
+    }
+
+    /// 松开储藏一组里的拖动：移动不到 [`DRAG_SLOP`] 时按点击处理。
+    pub(in crate::app) fn release_stash_pan(&mut self, start_y: f32, target: Option<CommitTarget>) {
+        let y = self.pointer.mouse.1;
+        if (y - start_y).abs() > DRAG_SLOP {
+            return;
+        }
+        if let Some(target) = target {
+            self.press_commit_stash(target);
+        }
     }
 
     /// 储藏一组展开时，标题下面的行数（[`App::stash_lines`]）。
@@ -122,24 +165,15 @@ impl App {
     /// 储藏一组的终点高度变化（展开、收起一条储藏的文件，或在别处关闭了预览标签，文件不再列出）
     /// 时，从当前显示的高度开始过渡。每帧绘制提交视图之前调用，预览标签无论在何处关闭都能察觉。
     ///
-    /// 整个一组出现或消失（新增第一条储藏、删除最后一条）时不过渡。
+    /// 整组出现或消失时同样过渡；仓库的状态刚读到时直接到位，见 [`App::section_clock`]。
     pub(crate) fn track_stash_height(&mut self) {
-        let settled = self.stash_settled_height();
-        let old = std::mem::replace(&mut self.git.commit.stash_settled, settled);
-        if (settled - old).abs() < 0.5 || old == 0.0 || settled == 0.0 {
-            return;
-        }
-        let from =
-            (self.git.commit.stash_motion).map_or(old, |(from, clock)| clock.between(from, old));
-        let clock = self.clock(crate::app::animation::TREE_ANIMATION);
-        self.git.commit.stash_motion = clock.map(|clock| (from, clock));
+        let (settled, clock) = (self.stash_settled_height(), self.section_clock());
+        self.git.commit.stashes.track(settled, clock);
     }
 
-    /// 储藏一组占的高度（逻辑像素）：收着时是 [`STASH_CLOSED`]，展开时再加上
-    /// [`App::stash_open_rows`] 行；展开、收起的途中按时钟过渡。没有储藏时为 0。
+    /// 返回储藏一组的高度（逻辑像素），过渡中按时钟插值；没有储藏时为 0。
     pub(crate) fn stash_section_height(&self) -> f32 {
-        let settled = self.stash_settled_height();
-        (self.git.commit.stash_motion).map_or(settled, |(from, clock)| clock.between(from, settled))
+        (self.git.commit.stashes).height(self.stash_settled_height())
     }
 
     /// 储藏一组不在过渡中时的高度（逻辑像素），见 [`App::stash_section_height`]。
@@ -147,32 +181,26 @@ impl App {
         if self.git.stashes.is_empty() {
             return 0.0;
         }
-        if self.git.commit.stash_open {
-            STASH_CLOSED + self.stash_open_rows() as f32 * COMMIT_ROW
+        if self.git.commit.stashes.open {
+            // 一组只露出 [`STASH_ROWS`] 行，多出来的靠滚动，不跟着高度一起长。
+            DRAWER_CLOSED + self.stash_visible_rows() as f32 * COMMIT_ROW
         } else {
-            STASH_CLOSED
+            DRAWER_CLOSED
         }
     }
 
-    /// 储藏一组标题上的箭头转到哪儿：0 朝右（收着），1 朝下（展开）。
-    ///
-    /// 按一组现在拉开了多少算，途中再点一下往回收时箭头和高度一起从当时的位置往回走。
+    /// 返回储藏一组标题上箭头的角度比例，见 [`Drawer::chevron`]。
     pub(crate) fn stash_chevron(&self) -> f32 {
-        let span = self.stash_open_rows() as f32 * COMMIT_ROW;
-        if span <= 0.0 {
-            return 0.0;
-        }
-        ((self.stash_section_height() - STASH_CLOSED) / span).clamp(0.0, 1.0)
+        let span = self.stash_visible_rows() as f32 * COMMIT_ROW;
+        (self.git.commit.stashes).chevron(self.stash_settled_height(), span)
     }
 
     /// 点了储藏一组的标题：收起或展开，从现在的高度过渡过去。
     pub(super) fn toggle_stashes(&mut self) {
         let from = self.stash_section_height();
-        self.git.commit.stash_open = !self.git.commit.stash_open;
         let clock = self.clock(crate::app::animation::TREE_ANIMATION);
-        self.git.commit.stash_motion = clock.map(|clock| (from, clock));
-        // 过渡已经从现在的高度开始，`track_stash_height` 不必再开始一次。
-        self.git.commit.stash_settled = self.stash_settled_height();
+        self.git.commit.stashes.toggle(from, clock);
+        self.git.commit.stashes.settled = self.stash_settled_height();
         self.git.commit.scroll = self.git.commit.scroll.min(self.commit_max_scroll());
     }
 
@@ -216,8 +244,80 @@ impl App {
         self.open_stash_file(0);
     }
 
+    /// 储藏一组下面列出的一个文件的菜单里选了「只取这个文件」：先确认（会盖掉工作区里这个文件
+    /// 尚未提交的改动），确认以后把它从储藏里取到工作区。
+    pub(in crate::app) fn confirm_take_stash_file(
+        &mut self,
+        path: PathBuf,
+        from: String,
+        deleted: bool,
+    ) {
+        let name = winc_editor::display_name(&path).into_owned();
+        let message = if deleted {
+            t!("git-stash-take-deletion-confirm", name = name.as_str())
+        } else {
+            t!("git-stash-take-file-confirm", name = name.as_str())
+        };
+        if self.window.handle.is_some() {
+            let (detail, button) = if deleted {
+                (
+                    t!("git-stash-take-deletion-confirm-detail"),
+                    t!("git-stash-take-deletion-confirm-button"),
+                )
+            } else {
+                (
+                    t!("git-stash-take-file-confirm-detail"),
+                    t!("git-stash-take-file-confirm-button"),
+                )
+            };
+            self.show_confirm(&message, detail, button, move |ok| {
+                ok.then(|| UserEvent::GitTakeFile(from.clone(), path.clone(), deleted))
+            });
+            return;
+        }
+        // 没有窗口（测试中）时直接取出。
+        self.take_stash_file(from, path, deleted);
+    }
+
+    /// 把储藏里的 `path` 取到工作区和暂存区（`deleted` 时是把它从两处一并删掉），完成后重新读取
+    /// 状态。储藏本身不变，其余的文件也不动。
+    pub(in crate::app) fn take_stash_file(&mut self, from: String, path: PathBuf, deleted: bool) {
+        let name = winc_editor::display_name(&path).into_owned();
+        let what = t!("git-op-stash-take-file", name = name.as_str());
+        self.git_operate(what, move |git, root| {
+            git.take_file(root, &from, &path, deleted)
+        });
+    }
+
+    /// 右键点在提交视图的储藏一组里：点在一条储藏上时是它的菜单，点在它下面列出的一个文件上时是
+    /// 那个文件的菜单。
+    pub(in crate::app) fn stash_context_target(&self, x: f32, y: f32) -> Option<MenuTarget> {
+        if !self.commit_shown() || self.git.commit.hits_generation != self.git.generation {
+            return None;
+        }
+        match crate::layout::hit(&self.hits.commit, x, y)? {
+            CommitTarget::Stash(i) | CommitTarget::StashApply(i) | CommitTarget::StashMenu(i) => {
+                Some(MenuTarget::StashRow(i))
+            }
+            CommitTarget::StashFile(at) => self.stash_file_target(at),
+            _ => None,
+        }
+    }
+
+    /// 储藏一组里第 `at` 个文件的菜单目标：路径、取它用的版本，以及它在储藏里是不是被删掉了。
+    fn stash_file_target(&self, at: usize) -> Option<MenuTarget> {
+        let view = self.listed_stash_view()?;
+        let (file, _, from) = view.files.get(at)?;
+        Some(MenuTarget::StashFile {
+            at,
+            path: file.path.clone(),
+            from: from.clone(),
+            deleted: file.change == winc_editor::git::Change::Deleted,
+        })
+    }
+
     /// 在储藏的预览标签里打开正在看的储藏的第 `at` 个文件。
-    pub(super) fn open_stash_file(&mut self, at: usize) {
+    pub(in crate::app) fn open_stash_file(&mut self, at: usize) {
         let Some(view) = self.git.commit.stash_view.as_mut() else {
             return;
         };

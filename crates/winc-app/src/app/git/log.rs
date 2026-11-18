@@ -33,7 +33,7 @@ use winc_editor::diff_view::{DiffSide, DiffView};
 use winc_editor::encoding::decode_unknown;
 use winc_editor::format::Cancel;
 use winc_editor::git::log::{Arrival, Compare, Details};
-use winc_editor::git::{Commit, CommitFile, Git, LogQuery, LogStream, Ref};
+use winc_editor::git::{Commit, CommitFile, Divergence, Git, LogQuery, LogStream, Ref};
 use winc_editor::{DocumentId, LARGE_FILE, looks_binary};
 use winc_i18n::t;
 use winc_render::Rect;
@@ -190,8 +190,16 @@ pub enum LogTarget {
     Path,
     /// 详情里改动的文件一行右端的按钮：平铺、按目录分组之间切换（与提交视图一起）。
     FilesLayout,
+    /// 详情标题行右端的放大镜：打开、关闭下面的「查找文件」搜索框。
+    FindFiles,
+    /// 详情里「查找文件」的搜索框：键入文字按路径筛选改动的文件。
+    FileFilter,
+    /// 详情里筛选后一个文件也不剩时的那一行：点击清掉键入的文字。
+    ClearFileFilter,
     /// 标题栏最左边的按钮：显示、隐藏分支面板。
     BranchesToggle,
+    /// 分支面板顶部的搜索框：键入文字筛选面板里的分支。
+    BranchFilter,
     /// 标题栏右边的「⋯」：选择显示哪几列。
     Columns,
     /// 作者一列的左边缘：左右拖动改宽度，双击恢复默认宽度。
@@ -291,7 +299,7 @@ pub(crate) fn history_title(path: &Path) -> String {
 }
 
 /// 后台返回的结果。
-enum Loaded {
+pub(super) enum Loaded {
     /// 「转到提交号、分支或标签」的解析结果：完整的提交号，以及它是否在不筛选的日志中。
     GoTo {
         revision: String,
@@ -313,6 +321,28 @@ enum Loaded {
         files: Result<Vec<CommitFile>, String>,
         /// 改动的文件对照的版本（见 [`Details::base`]）。
         base: Option<String>,
+    },
+    /// 提交视图底部提交图的一批提交（[`super::graph`]）。
+    Graph {
+        /// 发出请求时提交图的版本号；不一致时结果已过时。
+        generation: u64,
+        result: Result<Vec<Commit>, String>,
+    },
+    /// 提交图与基准的对比（[`super::graph`]）。
+    GraphCompare {
+        /// 发出请求时的对比版本号；不一致时结果已过时。
+        generation: u64,
+        /// 对比的基准（分支、远程分支或标签）。
+        base: String,
+        result: Result<Divergence, String>,
+    },
+    /// 提交图里展开的提交改动的文件（[`super::graph`]）。
+    GraphFiles {
+        /// 发出请求时的版本号；不一致时结果已过时。
+        generation: u64,
+        /// 展开的提交号；展开的行已经换了时结果直接丢弃。
+        oid: String,
+        result: Result<Vec<CommitFile>, String>,
     },
     /// 一个文件在某个版本里与工作区里的并排差异，打开为新标签。
     LocalDiff {
@@ -337,6 +367,14 @@ enum Loaded {
         to: String,
         files: Result<Vec<CommitFile>, String>,
     },
+    /// 与输入的版本 `revision` 比较的结果：两侧已按先后排好，文件已取回。
+    CompareRevision {
+        doc: DocumentId,
+        /// 发起时的 `LogView::compare_request`。
+        request: u64,
+        revision: String,
+        result: Result<Compare, String>,
+    },
     /// 一个文件在一次提交中的差异，打开为标签。
     Diff {
         /// 发起读取时的请求序号，与 `LogState::diff_request` 不同时结果已过时。
@@ -352,7 +390,7 @@ enum Loaded {
 
 /// 从日志打开的差异所属的提交或比较。
 #[derive(PartialEq, Eq)]
-struct LogDiffSource {
+pub(super) struct LogDiffSource {
     /// 所在仓库的根目录。
     root: PathBuf,
     /// 旧的一侧的提交；根提交没有父提交，为 `None`。
@@ -367,15 +405,13 @@ struct LogDiffSource {
 
 /// 日志标签的状态：与后台之间的通道和点击区域；标签的数据存放在 `Document::log` 中。
 pub(crate) struct LogState {
-    results: (Sender<Loaded>, Receiver<Loaded>),
+    pub(super) results: (Sender<Loaded>, Receiver<Loaded>),
     /// 标题栏的筛选输入框（按说明查找）。
     ///
     /// 所有日志标签共用一个输入框，切换标签时换为该标签的筛选文字。
     pub filter: TextField,
-    /// 作者菜单中列出的作者，弹出菜单时从已读取的提交中收集；菜单项按下标对应。
+    /// 作者菜单中列出的作者，弹出菜单时收集（见 [`App::log_authors`]）；菜单项按下标对应。
     pub authors: Vec<String>,
-    /// `authors` 是哪个日志标签的：按作者筛选时只沿用同一个标签上次的名单。
-    pub(super) authors_of: Option<DocumentId>,
     /// 路径菜单中列出的路径（相对仓库根目录），弹出菜单时收集；菜单项按下标对应。
     pub paths: Vec<String>,
     /// 打开文件差异的标签；依次查看多个文件时只占用一个标签。
@@ -424,11 +460,20 @@ pub(crate) struct LogState {
     pub branches_max: f32,
     /// 分支面板里正在展开、收起的组或目录。
     pub(crate) branch_fold: Option<PanelFold>,
+    /// 分支面板顶部的搜索框：按名字筛选面板里的各行（与分支选择器的搜索相同）。
+    ///
+    /// 所有日志标签共用，与面板的滚动位置相同。
+    pub(crate) branch_filter: TextField,
+    /// 详情里「查找文件」的搜索框：按路径筛选选中提交改动的文件（与 `Git History` 的
+    /// `Find file` 相同）。留空时列出全部文件。
+    pub(crate) file_filter: TextField,
+    /// 详情里的「查找文件」搜索框是否打开（标题行右端的放大镜切换）。
+    pub(crate) find_files: bool,
     /// 标题栏各个筛选下拉的宽度过渡：换了筛选条件、文字变长变短时宽度缓动，旧文字淡出、新文字
     /// 淡入，与状态栏右侧各项相同。
     pub(crate) pills: crate::app::StatusMotion<LogPill>,
     /// 分支面板各行的缓存（见 [`App::log_branch_rows`]）：排它们用的分支、最近的分支、收起的
-    /// 组和目录、标签，以及排好的各行。
+    /// 组和目录、标签、搜索文字，以及排好的各行。
     #[allow(clippy::type_complexity, reason = "缓存键就是这几项，单独起名反而难懂")]
     pub(super) branch_rows: std::cell::RefCell<
         Option<(
@@ -437,6 +482,7 @@ pub(crate) struct LogState {
                 Vec<String>,
                 HashSet<(bool, String)>,
                 Vec<String>,
+                String,
             ),
             Vec<BranchRow>,
         )>,
@@ -525,7 +571,6 @@ impl Default for LogState {
             results: channel(),
             filter: TextField::default(),
             authors: Vec::new(),
-            authors_of: None,
             paths: Vec::new(),
             preview: None,
             tree: None,
@@ -544,6 +589,9 @@ impl Default for LogState {
             branches_scroll: 0.0,
             branches_max: 0.0,
             branch_fold: None,
+            branch_filter: TextField::default(),
+            file_filter: TextField::default(),
+            find_files: false,
             branches_motion: None,
             branch_rows: Default::default(),
             pills: Default::default(),
@@ -577,6 +625,7 @@ impl App {
         let (index, new) = self.editor.show_log(log_title());
         let id = self.editor.documents[index].id;
         if new {
+            self.reset_log_find_files();
             // 新打开的日志默认只显示当前分支的提交；分离 `HEAD` 时显示全部分支。
             let current = self.git.branches.iter().find(|b| b.current);
             let branches = current.map(|b| b.name.clone()).into_iter().collect();
@@ -603,7 +652,7 @@ impl App {
     ///
     /// `pin` 为真时把该提交固定在列表最前面（见 `LogQuery::pin`），用于任何分支都走不到、
     /// 因而不在日志中的提交。
-    fn show_log_commit(&mut self, oid: &str, pin: bool) {
+    pub(in crate::app) fn show_log_commit(&mut self, oid: &str, pin: bool) {
         if self.git.root.is_none() {
             return;
         }
@@ -999,11 +1048,14 @@ impl App {
                     return;
                 };
                 self.git.log.authors = self.log_authors();
-                self.git.log.authors_of = self.editor.active().map(|d| d.id);
                 self.open_context_menu(MenuTarget::LogAuthor, (rect.x, rect.bottom() + 4.0));
             }
             LogTarget::FilesLayout => self.toggle_commit_layout(),
             LogTarget::BranchesToggle => self.toggle_log_branches(),
+            LogTarget::BranchFilter => self.press_log_branch_filter(),
+            LogTarget::FindFiles => self.toggle_log_find_files(),
+            LogTarget::FileFilter => self.press_log_file_filter(),
+            LogTarget::ClearFileFilter => self.clear_log_file_filter(),
             // 拖动由 `mouse.rs` 开始处理。
             LogTarget::AuthorEdge => {}
             LogTarget::Columns => {

@@ -86,6 +86,9 @@ pub struct State {
     pub markdown_toc_pinned: bool,
     /// 侧栏宽度（逻辑像素）；`None` 表示没有调整过。所有视图、窗口和仓库共用，下次启动沿用。
     pub panel_width: Option<f32>,
+    /// 提交视图里提交图的高度（逻辑像素）；`None` 表示没有调整过，按剩余空间的比例决定。所有
+    /// 窗口和仓库共用，下次启动沿用。
+    pub graph_height: Option<f32>,
     /// 能预览的文件（SVG、Markdown、表格）打开时的显示方式：`"split"`（分栏）或 `"preview"`
     /// （只看预览）；`None` 表示源代码。记录用户最近一次在标签栏右端选择的方式，下次启动
     /// 沿用。
@@ -182,6 +185,14 @@ pub struct Session {
     pub terminal: Option<TerminalSession>,
     /// 选中的运行配置的名字。
     pub run: Option<String>,
+    /// 附加的目录，按添加的顺序。
+    pub folders: Vec<PathBuf>,
+    /// 用户给这组目录起的名字；没有起名时为 `None`。
+    pub name: Option<String>,
+    /// 打开着的标签中用户设为只读的文件。
+    pub readonly: Vec<PathBuf>,
+    /// 窗口是否把全部标签设为只读。
+    pub readonly_all: bool,
     /// 侧栏是否收起；没有记录过的目录为 `false`，打开时显示文件树。
     pub sidebar_hidden: bool,
 }
@@ -386,6 +397,22 @@ impl State {
                     maximized: t.get("maximized").and_then(Json::as_bool).unwrap_or(false),
                 })
             });
+            let folders = (s
+                .get("folders")
+                .and_then(Json::as_array)
+                .into_iter()
+                .flatten())
+            .filter_map(Json::as_str)
+            .map(PathBuf::from)
+            .collect();
+            let readonly = (s
+                .get("readOnly")
+                .and_then(Json::as_array)
+                .into_iter()
+                .flatten())
+            .filter_map(Json::as_str)
+            .map(PathBuf::from)
+            .collect();
             Some(Session {
                 folder,
                 tabs,
@@ -397,6 +424,10 @@ impl State {
                 book_places,
                 terminal,
                 run: s.get("run").and_then(Json::as_str).map(str::to_owned),
+                folders,
+                readonly,
+                readonly_all: s.get("readOnlyAll").and_then(Json::as_bool) == Some(true),
+                name: s.get("name").and_then(Json::as_str).map(str::to_owned),
                 sidebar_hidden: (s.get("sidebarHidden").and_then(Json::as_bool)).unwrap_or(false),
             })
         };
@@ -530,6 +561,10 @@ impl State {
             .get("panelWidth")
             .and_then(Json::as_number)
             .map(|width| width as f32);
+        state.graph_height = root
+            .get("graphHeight")
+            .and_then(Json::as_number)
+            .map(|height| height as f32);
         state.window = root
             .get("window")
             .and_then(Json::as_object)
@@ -669,6 +704,9 @@ impl State {
         if let Some(width) = self.panel_width {
             fields.push(("panelWidth", Json::Number(f64::from(width))));
         }
+        if let Some(height) = self.graph_height {
+            fields.push(("graphHeight", Json::Number(f64::from(height))));
+        }
         if let Some(mode) = &self.preview_mode {
             fields.push(("previewMode", Json::String(mode.clone())));
         }
@@ -767,6 +805,20 @@ impl State {
             }
             if let Some(run) = &session.run {
                 items.push(("run", Json::String(run.clone())));
+            }
+            if !session.folders.is_empty() {
+                let folders = session.folders.iter().map(&path);
+                items.push(("folders", Json::Array(folders.collect())));
+            }
+            if session.readonly_all {
+                items.push(("readOnlyAll", Json::Bool(true)));
+            }
+            if !session.readonly.is_empty() {
+                let files = session.readonly.iter().map(&path);
+                items.push(("readOnly", Json::Array(files.collect())));
+            }
+            if let Some(name) = &session.name {
+                items.push(("name", Json::String(name.clone())));
             }
             // 展开是默认状态，不写。
             if session.sidebar_hidden {

@@ -2,6 +2,9 @@
 //!
 //! 平时由 [`draw_files`] 在详情一栏里逐个文件画出，每个文件一行，点击打开差异；可以按目录
 //! 分组（见 [`log_file_rows`]）。截短的路径记进 `long_files`，鼠标悬停时提示完整路径。
+//!
+//! 标题行右端的放大镜打开「查找文件」：详情底部的搜索框（[`draw_file_filter`]）按路径筛选
+//! 列出的文件；一个文件也不剩时写一行提示，点它清掉键入的文字。
 
 use super::*;
 use crate::app::git::log::LogFileRow;
@@ -20,21 +23,30 @@ pub(super) fn draw_files(
     (hits, long_files): (&mut Vec<(Rect, LogTarget)>, &mut Vec<usize>),
 ) -> f32 {
     let p = app.palette;
-    let (added, removed) = files
+    let rows = app.log_file_rows_of(files);
+    // 「查找文件」筛掉了文件时只统计留下来的，标题行写成「留下来的 / 全部」。
+    let shown: Vec<usize> = rows
         .iter()
-        .filter_map(|f| f.lines)
+        .filter_map(|r| match r {
+            LogFileRow::File(i) => Some(*i),
+            LogFileRow::Dir(_) => None,
+        })
+        .collect();
+    let (added, removed) = shown
+        .iter()
+        .filter_map(|i| files[*i].lines)
         .fold((0, 0), |(a, d), (x, y)| (a + x, d + y));
     // 标题行高 22 逻辑像素（经验值），下面留 4 逻辑像素再开始画文件。
     let row = Rect::new(x, y, width, 22.0);
-    let end = ui_text_small(
-        frame,
-        app,
-        x,
-        row,
-        &t!("git-log-files-changed", count = files.len()),
-        p.text_muted,
-        area,
-    );
+    let title = match shown.len() == files.len() {
+        true => t!("git-log-files-changed", count = files.len()),
+        false => t!(
+            "git-log-files-changed-of",
+            shown = shown.len(),
+            total = files.len()
+        ),
+    };
+    let end = ui_text_small(frame, app, x, row, &title, p.text_muted, area);
     let end = ui_text_small(
         frame,
         app,
@@ -64,10 +76,41 @@ pub(super) fn draw_files(
         false => icons::list_view(frame, center(button), ink, area),
     }
     hits.push((button.intersect(area), LogTarget::FilesLayout));
+    // 它左边是「查找文件」：打开时详情底部出现搜索框，按路径筛选文件。
+    let find = Rect::new(button.x - 26.0, button.y, 24.0, 24.0);
+    let hovered = app.pointer.hover == Hover::Log(LogTarget::FindFiles);
+    let open = app.git.log.find_files;
+    draw_button(frame, p, find, area, hovered, open);
+    let ink = match (open, hovered) {
+        (true, _) => p.accent,
+        (false, true) => p.text,
+        (false, false) => p.text_muted,
+    };
+    icons::magnifier(frame, center(find), ink, area);
+    hits.push((find.intersect(area), LogTarget::FindFiles));
     y += 26.0;
 
+    // 「查找文件」把文件全筛掉了：在标题下面写一行，点它清掉键入的文字。
+    if rows.is_empty() && !files.is_empty() {
+        let row = Rect::new(x, y, width, 24.0);
+        if app.pointer.hover == Hover::Log(LogTarget::ClearFileFilter) {
+            frame.rounded(row, p.hover, RADIUS_ROW);
+        }
+        ui_text_small(
+            frame,
+            app,
+            x,
+            row,
+            t!("git-log-files-no-match"),
+            p.text_dim,
+            area,
+        );
+        hits.push((row.intersect(area), LogTarget::ClearFileFilter));
+        return row.bottom();
+    }
+
     let root = app.git.root.as_deref();
-    for entry in app.log_file_rows_of(files) {
+    for entry in rows {
         let row = Rect::new(area.x + 6.0, y, area.w - 12.0, FILE_ROW);
         y += FILE_ROW;
         if row.bottom() < area.y || row.y > area.bottom() {
@@ -196,4 +239,44 @@ fn draw_stat(
         let block = Rect::new(blocks_x + k as f32 * 7.0, cy - 3.0, 6.0, 6.0);
         frame.rect_clipped(block, color, 1.5, clip);
     }
+}
+
+/// 详情底部的「查找文件」搜索框：与快捷键提示占同一条，打开时替代提示行。
+///
+/// 放在底部而不是文件列表上方，是因为详情的内容整体滚动，跟着滚的搜索框会移出视野。键入的
+/// 文字按路径筛选选中提交改动的文件（见 [`App::log_file_rows_of`]）。
+pub(super) fn draw_file_filter(
+    app: &mut App,
+    frame: &mut Frame<'_>,
+    parts: &LogParts,
+    hits: &mut Vec<(Rect, LogTarget)>,
+) {
+    let p = app.palette;
+    let area = parts.details;
+    let row = Rect::new(area.x, area.bottom() - 30.0, area.w, 30.0);
+    frame.rect(Rect::new(area.x, row.y, area.w, 1.0), p.separator);
+    let rect = Rect::new(row.x + 10.0, row.y + 3.0, (row.w - 20.0).max(0.0), 24.0);
+    let focused = app.focus == Focus::LogFileFilter;
+    field_box(app, frame, rect, p.editor_bg, focused, false);
+    icons::magnifier(
+        frame,
+        (rect.x + 14.0, rect.y + rect.h / 2.0),
+        p.text_dim,
+        rect,
+    );
+    let inside = Rect::new(rect.x + 26.0, rect.y, rect.w - 32.0, rect.h);
+    let mut field = std::mem::take(&mut app.git.log.file_filter);
+    let caret = draw_bar_field(
+        app,
+        frame,
+        inside,
+        &mut field,
+        t!("git-log-find-file"),
+        focused,
+    );
+    app.git.log.file_filter = field;
+    if focused {
+        app.ime.cursor = caret;
+    }
+    hits.push((rect, LogTarget::FileFilter));
 }

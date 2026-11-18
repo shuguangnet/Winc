@@ -250,7 +250,7 @@ fn auto_save_writes_on_switching_tabs_and_leaving_the_window() {
         .position(|d| d.path.as_deref() == Some(&*a));
 
     // 开启自动保存：切换离开时保存，且不在状态栏提示。
-    app.config.auto_save = Some(true);
+    app.config.auto_save = Some(winc_config::AutoSave::OnFocusChange);
     app.status.message = None;
     app.activate_tab(a_index.unwrap());
     app.run(Command::Insert("y".into()));
@@ -311,6 +311,55 @@ fn auto_save_writes_on_switching_tabs_and_leaving_the_window() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// 焦点离开编辑区（切到终端）时保存当前文档，查找条不算离开；「停止输入后」在最后一次修改
+/// 一秒后保存，再修改时重新计时，没有保存成功的文档不反复重试。
+#[test]
+fn auto_save_writes_when_the_editor_loses_focus_and_after_typing_stops() {
+    use std::time::{Duration, Instant};
+    use winc_config::AutoSave;
+    let dir = winc_config::files::canonicalize(sample_folder("auto-save-focus")).unwrap();
+    let mut app = app_with(&dir, false);
+    let a = dir.join("a.txt");
+    let read = |path: &Path| std::fs::read_to_string(path).unwrap();
+    let now = Instant::now();
+
+    app.config.auto_save = Some(AutoSave::OnFocusChange);
+    app.open_path(&a);
+    app.focus = Focus::Editor;
+    app.run(Command::Insert("x".into()));
+    assert_eq!(app.auto_save_tick(now), None);
+    app.focus = Focus::Search;
+    app.auto_save_tick(now);
+    assert!(!read(&a).starts_with('x'));
+    app.focus = Focus::Editor;
+    app.auto_save_tick(now);
+    app.focus = Focus::Terminal;
+    app.auto_save_tick(now);
+    assert!(read(&a).starts_with('x'));
+
+    app.config.auto_save = Some(AutoSave::AfterDelay);
+    app.focus = Focus::Editor;
+    app.run(Command::Insert("y".into()));
+    let second = Duration::from_secs(1);
+    assert_eq!(app.auto_save_tick(now), Some(now + second));
+    let later = now + second / 2;
+    app.run(Command::Insert("z".into()));
+    assert_eq!(app.auto_save_tick(later), Some(later + second));
+    assert_eq!(app.auto_save_tick(now + second), Some(later + second));
+    assert!(read(&a).starts_with('x'));
+    assert_eq!(app.auto_save_tick(later + second), None);
+    assert!(read(&a).starts_with("xyz"), "{}", read(&a));
+
+    // 没有路径的新文档保存不了：到期一次以后不再计时。
+    app.new_file();
+    app.run(Command::Insert("new".into()));
+    assert!(app.auto_save_tick(now).is_some());
+    assert_eq!(app.auto_save_tick(now + 2 * second), None);
+    assert_eq!(app.auto_save_tick(now + 3 * second), None);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn editorconfig_sets_indentation_and_tidies_on_save() {
     let dir = winc_config::files::canonicalize(sample_folder("editorconfig")).unwrap();
@@ -349,7 +398,7 @@ fn editorconfig_sets_indentation_and_tidies_on_save() {
     );
 
     // 自动保存：光标所在行可能正在输入，不删除该行的行尾空白。
-    app.config.auto_save = Some(true);
+    app.config.auto_save = Some(winc_config::AutoSave::OnFocusChange);
     let ids: Vec<DocumentId> = app.editor.documents.iter().map(|d| d.id).collect();
     app.auto_save(&ids);
     assert_eq!(read(), "def run():\n    return 1\nx = 2  \n");
@@ -1141,5 +1190,68 @@ fn the_far_end_of_a_whole_line_is_drawn_in_place() {
     // 点击该字符的左半边，落在它之前。
     let pos = app.pos_at(expected as f32 + 0.3 * cell, t.y + 0.5 * lh);
     assert_eq!(pos, Some(col));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 自动换行时，超过 `MAX_LINE_CHARS` 个字符而不足 `MAX_LINE_BYTES` 字节的行可以通过点击「显示整行」
+/// 或设置展开：截断说明消失，行尾可以绘制，点击位置与字符对应。
+#[test]
+fn wrapped_long_lines_expand_by_clicking_or_by_the_setting() {
+    use winc_core::text::{MAX_LINE_BYTES, MAX_LINE_CHARS};
+    let dir = sample_folder("long-lines-wrapped");
+    // 两种样本都在两个上限之间：3 万个 ASCII 字符、1.2 万个汉字。
+    let ascii = format!("{}{}", "a".repeat(10_000), "b".repeat(20_000));
+    let cjk = format!("{}{}", "甲".repeat(10_000), "乙".repeat(2_000));
+    for (name, long, last) in [("a.txt", &ascii, 'b'), ("c.txt", &cjk, '乙')] {
+        assert!(long.chars().count() > MAX_LINE_CHARS && long.len() + 3 < MAX_LINE_BYTES);
+        for by_setting in [false, true] {
+            let path = dir.join(name);
+            std::fs::write(&path, format!("{long}\nshort\n")).unwrap();
+            let mut app = app_with(&path, false);
+            app.run_action(Action::ToggleWordWrap);
+            paint(&mut app);
+            let notices = |app: &App| app.hits.long_lines.iter().map(|h| h.1).collect::<Vec<_>>();
+            // 滚动到该行的最后几段。
+            let to_end = |app: &mut App| {
+                let doc = app.editor.active_mut().unwrap();
+                doc.scroll_line = (doc.rows_of(0) as f64 - 3.0).max(0.0);
+                paint(app);
+            };
+            to_end(&mut app);
+            assert_eq!(notices(&app), [0], "{name}");
+            let folded = app.editor.active().unwrap().rows_of(0);
+
+            if by_setting {
+                app.config.whole_lines = Some(true);
+                paint(&mut app);
+            } else {
+                let (rect, _) = app.hits.long_lines[0];
+                click(&mut app, (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0));
+                paint(&mut app);
+            }
+            let doc = app.editor.active().unwrap();
+            assert!(doc.shows_whole_line(0) && doc.rows_of(0) > folded, "{name}");
+            to_end(&mut app);
+            assert!(notices(&app).is_empty(), "{name} {by_setting}");
+
+            // 最后一段的首字符位于行尾部分：点击后光标落在该字符之前。
+            let doc = app.editor.active().unwrap();
+            let rows = doc.rows_of(0);
+            let breaks = doc.line_breaks(0);
+            let start = breaks.start_of(rows - 1);
+            assert!(start > MAX_LINE_CHARS, "{name}: {start}");
+            let (t, lh) = (app.layout.text, app.fonts.line_height);
+            let top = app.editor.active().unwrap().scroll_line;
+            let y = t.y + ((rows - 1) as f64 - top) as f32 * lh + 0.5 * lh;
+            let pos = app.pos_at(t.x + TEXT_PAD + 1.0, y).unwrap();
+            assert_eq!(pos, start, "{name}");
+            let doc = app.editor.active().unwrap();
+            assert_eq!(doc.text().char_at(pos), Some(last), "{name}");
+            // 选中最后一段到行尾：选区按整行的内容测量。
+            let end = doc.text().line_end(0);
+            app.editor.active_mut().unwrap().selection = winc_core::Selection::new(pos, end);
+            paint(&mut app);
+        }
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

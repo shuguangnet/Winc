@@ -464,6 +464,10 @@ pub enum Scrollbar {
     Panel,
     /// 提交视图改动列表的竖直滚动条。
     Commit,
+    /// 提交视图底部提交图的竖直滚动条。
+    Graph,
+    /// 提交视图里储藏一组展开时各行的竖直滚动条。
+    Stash,
     /// 文件视图底部大纲符号列表的竖直滚动条。
     Outline,
     /// Git 日志左侧的分支面板。
@@ -478,6 +482,12 @@ pub enum Scrollbar {
     Pdf,
     /// PDF 预览缩略图栏的竖直滚动条。
     PdfStrip,
+    /// Markdown 预览左侧展开的标题列表的竖直滚动条。
+    MarkdownToc,
+    /// 表格预览的竖直滚动条。
+    Table,
+    /// 表格预览的水平滚动条。
+    TableHorizontal,
     /// 设置页（含快捷键列表）的竖直滚动条。
     Settings,
 }

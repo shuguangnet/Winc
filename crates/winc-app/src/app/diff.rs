@@ -48,10 +48,12 @@ const DIFF_ARROWS: f32 = 22.0;
 const DIFF_CHECKS: f32 = 22.0;
 /// 并排时行号栏中行勾选框的宽度（逻辑像素）：容纳边长 11 的勾选框和两侧各 3 的留白。
 const DIFF_LINE_CHECK: f32 = 18.0;
-/// 两侧行号之间连接改动的连接带宽度（逻辑像素）。
-const DIFF_RIBBON: f32 = 48.0;
-/// 连接带上的按钮中心到连接带边缘的距离（逻辑像素）：两个宽 20 的悬停底色之间留出 4 的间隙。
-const DIFF_RIBBON_BUTTON_INSET: f32 = 12.0;
+/// 两侧之间那道缝的宽度（逻辑像素），缝里放「»」和改动勾选框。
+const DIFF_SEAM: f32 = 34.0;
+/// 缝里的按钮中心到缝边缘的距离（逻辑像素）：两个宽 16 的悬停底色之间留出 2 的间隙。
+const DIFF_SEAM_BUTTON_INSET: f32 = 8.0;
+/// 每侧行号左边的改动色条宽度（逻辑像素）：这段改动在这一侧是红还是绿，靠它一眼看出来。
+const DIFF_BAR: f32 = 3.0;
 /// 行号左右各留的空白（逻辑像素）。
 pub(crate) const DIFF_GUTTER_PAD: f32 = 10.0;
 /// 单栏时加减号列的宽度（字符宽度的倍数）：一个字符宽度加少量间距。
@@ -244,10 +246,10 @@ struct DiffSpot {
 
 /// 差异的一侧在屏幕上的位置。
 ///
-/// 左侧为文字在左、行号在右，右侧为行号在左、文字在右，两侧的行号都紧邻中间的连接带。
+/// 两侧的排列相同：改动色条、行号、文字依次从左到右，行号紧挨文字，改动色条在每侧的外缘。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DiffPane {
-    /// 该侧的整体区域（文字与行号，左侧还包括「»」列）。
+    /// 该侧的整体区域：改动色条、行号与文字。
     pub rect: Rect,
     /// 行号栏。
     pub gutter: Rect,
@@ -267,8 +269,10 @@ pub(crate) struct DiffParts {
     pub body: Rect,
     /// 左侧（修改前）和右侧（修改后）。
     pub panes: [DiffPane; 2],
-    /// 两侧行号之间连接改动的连接带。
+    /// 两侧之间那道缝：竖直分隔线，以及「»」和改动勾选框。
     pub ribbon: Rect,
+    /// 两侧的改动色条：这段改动在这一侧的颜色。
+    pub bars: [Rect; 2],
     /// 单栏时右侧行号右边放置改动勾选框的列；并排时宽度为 0，勾选框位于连接带上。
     pub checks: Rect,
     /// 两侧放置行勾选框的列：并排时位于行号栏靠文字的一侧，单栏时均为加减号列。
@@ -1225,13 +1229,14 @@ pub(crate) fn diff_parts(editor: Rect, view: &DiffView, cell: f32) -> DiffParts 
                 },
             ],
             ribbon: column(lines.right(), 0.0),
+            bars: [column(editor.x, 0.0), column(editor.x, 0.0)],
             checks,
             line_checks: [lines, lines],
             revert_x: arrows.x + arrows.w / 2.0,
             include_x: checks.x + checks.w / 2.0,
         };
     }
-    // 可按行勾选的差异：行号栏靠文字一侧留出行勾选框的位置，勾选框宽于行号留白的部分计入栏宽。
+    // 可按行勾选的差异：行号栏外侧留出行勾选框的位置，勾选框宽于行号留白的部分计入栏宽。
     let line_w = if view.repo_path.is_some() {
         DIFF_LINE_CHECK
     } else {
@@ -1239,13 +1244,16 @@ pub(crate) fn diff_parts(editor: Rect, view: &DiffView, cell: f32) -> DiffParts 
     };
     let extra = (line_w - DIFF_GUTTER_PAD).max(0.0);
     let gutter_w = gutter_w + extra;
-    let middle = 2.0 * gutter_w + DIFF_RIBBON;
-    let text_w = ((editor.w - middle) / 2.0).max(0.0).floor();
-
-    let left_text = column(editor.x, text_w);
-    let left_gutter = column(left_text.right(), gutter_w);
-    let ribbon = column(left_gutter.right(), DIFF_RIBBON);
-    let right_gutter = column(ribbon.right(), gutter_w);
+    // 每侧依次为改动色条、行号栏、文字区：两侧行列对齐，行号都在外侧，文字都从行号右边开始。
+    let text_w = ((editor.w - 2.0 * (DIFF_BAR + gutter_w) - DIFF_SEAM) / 2.0)
+        .max(0.0)
+        .floor();
+    let left_bar = column(editor.x, DIFF_BAR);
+    let left_gutter = column(left_bar.right(), gutter_w);
+    let left_text = column(left_gutter.right(), text_w);
+    let ribbon = column(left_text.right(), DIFF_SEAM);
+    let right_bar = column(ribbon.right(), DIFF_BAR);
+    let right_gutter = column(right_bar.right(), gutter_w);
     let right_text = column(
         right_gutter.right(),
         (editor.right() - right_gutter.right()).max(0.0),
@@ -1255,27 +1263,28 @@ pub(crate) fn diff_parts(editor: Rect, view: &DiffView, cell: f32) -> DiffParts 
         body,
         panes: [
             DiffPane {
-                rect: column(editor.x, left_gutter.right() - editor.x),
+                rect: column(editor.x, left_text.right() - editor.x),
                 gutter: left_gutter,
                 number_end: left_gutter.right() - DIFF_GUTTER_PAD,
                 text: left_text,
             },
             DiffPane {
-                rect: column(right_gutter.x, editor.right() - right_gutter.x),
+                rect: column(right_bar.x, editor.right() - right_bar.x),
                 gutter: right_gutter,
-                number_end: right_gutter.right() - DIFF_GUTTER_PAD - extra,
+                number_end: right_gutter.right() - DIFF_GUTTER_PAD,
                 text: right_text,
             },
         ],
         ribbon,
+        bars: [left_bar, right_bar],
         checks: column(right_gutter.right(), 0.0),
         line_checks: [
-            column(left_gutter.x, line_w),
-            column(right_gutter.right() - line_w, line_w),
+            column(left_bar.right(), line_w),
+            column(right_bar.right(), line_w),
         ],
-        // 改动级的两个按钮都位于中间的连接带上。
-        revert_x: ribbon.x + DIFF_RIBBON_BUTTON_INSET,
-        include_x: ribbon.right() - DIFF_RIBBON_BUTTON_INSET,
+        // 改动级的两个按钮都位于中间的缝里。
+        revert_x: ribbon.x + DIFF_SEAM_BUTTON_INSET,
+        include_x: ribbon.right() - DIFF_SEAM_BUTTON_INSET,
     }
 }
 

@@ -33,7 +33,11 @@ settings-editor-font = Font
 settings-editor-size = Font Size
 settings-tab-width = Tab Width
 settings-auto-save = Auto Save
+settings-auto-save-off = Off
+settings-auto-save-focus = On Focus Change
+settings-auto-save-delay = 1 Second After Typing
 settings-hot-exit = Hot Exit
+settings-confirm-close = Confirm Before Closing
 settings-restore-folder = Restore Last Folder
 settings-sticky-scroll = Sticky Scroll
 settings-vim-mode = Vim Mode (Experimental)
@@ -85,6 +89,7 @@ settings-terminal-module = Terminal
 settings-remote-module = SSH Remote (Experimental)
 settings-terminal-shell = Default Shell
 settings-terminal-position = Panel Position
+settings-terminal-tab-position = Tab Position
 settings-terminal-font = Font
 settings-terminal-size = Font Size
 settings-terminal-copy-on-select = Copy on Select
@@ -93,20 +98,35 @@ settings-git-system-proxy = Use System Proxy
 settings-git-inline-blame = Current Line Blame
 settings-git-auto-fetch = Auto Fetch
 settings-git-tree = Show Changes as Tree
+settings-git-remember-credentials = Remember Passwords
 settings-git-confirm-push = Confirm Before Pushing
 settings-git-staging-area = Staging Area
 settings-terminal-prompt = Winc Prompt
 settings-terminal-shell-integration = Shell Integration
+settings-terminal-application-priority = Terminal Application Priority
 settings-terminal-option-as-meta = Meta Key
 settings-key-search = Search Shortcuts
 
 ## Setting descriptions.
 
-settings-auto-save-desc = Save changes when switching tabs or apps
+settings-auto-save-desc = Save changes when switching tabs, the terminal, or apps
 settings-hot-exit-desc = Quit without confirming each file and restore unsaved changes on next launch
+settings-confirm-close-desc = Ask before closing a window or quitting
 settings-restore-folder-desc = Reopen the last folder and its tabs on launch
 settings-sticky-scroll-desc = Pin the current function, class or heading to the top while scrolling
 settings-vim-mode-desc = Use Vim modes and keys in the editor
+settings-git-path = Git Program
+settings-git-path-auto = Automatic
+settings-git-path-desc = Path to the Git executable; found on PATH when empty
+settings-git-open-worktree = Open Worktrees In
+settings-git-open-worktree-ask = Always Ask
+settings-git-open-worktree-new = New Window
+settings-git-open-worktree-current = Current Window
+settings-git-open-worktree-desc = Which window a clicked worktree opens in
+settings-drop-folder = Dropped Folders
+settings-drop-folder-add = Add to Window
+settings-drop-folder-open = Don’t Add
+settings-drop-folder-desc = When not added, a folder opens from the editor area and is copied from the file tree
 settings-vim-clipboard-desc = When yanked or deleted text goes to the system clipboard
 settings-vim-relative-number-desc = Show the line number on the current line and distances on the others
 settings-vim-yank-highlight-desc = Briefly highlight the text that was just yanked
@@ -160,6 +180,7 @@ settings-git-system-proxy-desc = Use the system proxy for network operations whe
 settings-git-inline-blame-desc = Show the author, time and message of the last change at the end of the caret line
 settings-git-auto-fetch-desc = Fetch from remotes in the background every 3 minutes
 settings-git-tree-desc = Group changes by folder; when off, list every file
+settings-git-remember-credentials-desc = Keep verified HTTPS passwords in the system keychain; turning this off removes the saved ones
 settings-git-confirm-push-desc = List the target repository and outgoing commits before pushing
 settings-git-staging-area-desc = Choose changes to commit with the staging area; when off, with checkboxes
 settings-terminal-module-desc-key = Terminal panel below the editor ({ $key }); starts a helper process when opened
@@ -167,11 +188,13 @@ settings-terminal-module-desc = Terminal panel below the editor; starts a helper
 settings-remote-module-desc = Open folders on remote hosts over SSH, running a server process on the host while connected
 settings-terminal-copy-on-select-desc = Copy selected text to the clipboard automatically
 settings-terminal-confirm-close-desc = Ask before closing a tab that’s still running a program
+settings-terminal-shell-desc = Shell for new terminals; quote paths that contain spaces
 settings-terminal-prompt-desc = Replace the default prompt with the folder, Git branch and exit status
 settings-terminal-shell-integration-desc = { $platform ->
-    [windows] Split WSL zsh, bash and fish output into command blocks to fold and jump between
-   *[other] Split zsh, bash and fish output into command blocks to fold and jump between
+    [windows] Group WSL output by command and load Python environments automatically
+   *[other] Group output by command and load Python environments automatically
 }
+settings-terminal-application-priority-desc = Pass shortcuts to the terminal application, keeping terminal management, copy and paste
 settings-terminal-option-as-meta-desc = Send an Esc prefix instead of typing special characters with the chosen ⌥
 
 ## Setting values and hints.
@@ -186,9 +209,11 @@ settings-font-others = Other Fonts
 settings-font-fallbacks = Fallback Fonts
 settings-terminal-shell-default = System Default
 settings-terminal-shell-custom = Custom Command…
-settings-terminal-shell-placeholder = Enter a command; quote paths that contain spaces
+settings-terminal-shell-placeholder = Enter a command
 settings-terminal-position-bottom = Bottom
 settings-terminal-position-right = Right
+settings-terminal-tab-position-top = Top
+settings-terminal-tab-position-right = Right
 settings-terminal-font-default = Match Editor
 settings-terminal-option-as-meta-left = Left ⌥
 settings-terminal-option-as-meta-right = Right ⌥
@@ -223,11 +248,29 @@ settings-theme-name-veil-umber = Umber Veil
 
 ## Shortcuts page.
 
-settings-keys-recording = Press the shortcut to look up; press Esc to stop
-settings-keys-search-record = Type a command name to search, or press { $key } to record keys
-settings-keys-search = Type a command name to search
+settings-keys-recording = Press a shortcut to find its command
+settings-keys-search = Search commands
 settings-keys-no-command = No command uses this shortcut
 settings-keys-no-match = No matching commands
+settings-keys-keymap = Keymap
+settings-keys-imported = Imported shortcuts from { $name }
+settings-keys-imported-skipped = Imported shortcuts from { $name }, skipping { $count } with no match
+settings-keys-keymap-description = The default shortcuts, or import them from another editor on this computer
+settings-keys-keymap-changed = Shortcuts changed for { $count } commands
+settings-keys-edit = Edit
+settings-keys-reset = Reset
+settings-keys-save = Save
+settings-keys-cancel = Cancel
+settings-keys-edit-hint = New shortcuts are added after the existing ones
+settings-keys-conflict = Saving moves { $key } here from { $names }
+settings-keys-takes-typing = { $key } without a modifier replaces typing in the editor and input fields
+settings-keys-modified = Modified
+settings-keys-press = Press keys
+settings-keys-import-from = Import from { $name }…
+keymap-import-read-failed = Couldn’t read “{ $path }”: { $error }
+keymap-import-invalid = “{ $path }” isn’t valid
+keymap-import-unsupported = The “{ $name }” keymap can’t be imported
+keymap-import-missing = Couldn’t find the “{ $name }” keymap
 
 ## Font size and the configuration file.
 

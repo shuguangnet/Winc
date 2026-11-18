@@ -263,7 +263,7 @@ impl App {
         match command {
             MenuCommand::GitShowDiff => self.open_log_file(i),
             MenuCommand::GitOpenFile => {
-                if winc_backend::fs::is_file(&path) {
+                if self.may_be_file(&path) {
                     self.open_path(&path);
                     self.focus = Focus::Editor;
                 }
@@ -301,11 +301,125 @@ impl App {
 
     /// 详情里文件 `files` 排成的各行：平铺还是分组跟随提交视图，文件历史查看的文件所在的组
     /// 排在最前（比较两个版本时没有）。
+    ///
+    /// 「查找文件」键入文字时只留下路径含这段文字的文件（不分大小写，改过名的按新旧两个路径
+    /// 匹配）；一组里没有留下的文件时，组的标题也不画。
     pub(crate) fn log_file_rows_of(&self, files: &[CommitFile]) -> Vec<LogFileRow> {
         let view = self.editor.active().and_then(|d| d.log.as_deref());
         let pinned = view.is_some_and(|v| v.query.path.is_some() && v.compare.is_none());
         let flat = self.git.commit.flat();
-        log_file_rows(self.git.root.as_deref(), files, (flat, pinned))
+        let rows = log_file_rows(self.git.root.as_deref(), files, (flat, pinned));
+        let Some(needle) = self.log_file_needle() else {
+            return rows;
+        };
+        let hit = |i: usize| {
+            let file = &files[i];
+            let has = |path: &Path| path.to_string_lossy().to_lowercase().contains(&needle);
+            has(&file.path) || file.from.as_deref().is_some_and(has)
+        };
+        let mut kept = Vec::new();
+        // 目录标题等到组里第一个留下的文件才写进去：整组都被筛掉时标题也不出现。
+        let mut dir: Option<LogFileRow> = None;
+        for row in rows {
+            match row {
+                LogFileRow::Dir(_) => dir = Some(row),
+                LogFileRow::File(i) if hit(i) => {
+                    kept.extend(dir.take());
+                    kept.push(LogFileRow::File(i));
+                }
+                LogFileRow::File(_) => {}
+            }
+        }
+        kept
+    }
+
+    /// 「查找文件」键入的文字（不分大小写，去掉首尾空白）；没有键入时为 `None`。
+    pub(crate) fn log_file_needle(&self) -> Option<String> {
+        let text = self.git.log.file_filter.text().trim().to_lowercase();
+        (!text.is_empty()).then_some(text)
+    }
+
+    /// 详情标题行的放大镜：打开、关闭「查找文件」的搜索框。
+    ///
+    /// 打开时焦点移进搜索框，可以直接键入；关掉时清掉键入的文字，文件列表恢复成全部文件。
+    pub(super) fn toggle_log_find_files(&mut self) {
+        self.git.log.find_files = !self.git.log.find_files;
+        match self.git.log.find_files {
+            true => self.press_log_file_filter(),
+            false => {
+                if !self.git.log.file_filter.text().is_empty() {
+                    self.git.log.file_filter.set_text("");
+                    self.log_file_filter_changed();
+                }
+                if self.focus == Focus::LogFileFilter {
+                    self.focus = Focus::Editor;
+                }
+                self.request_redraw();
+            }
+        }
+    }
+
+    /// 点了「一个文件也不剩」那一行：清掉键入的文字，文件列表恢复成全部文件（搜索框还开着）。
+    pub(super) fn clear_log_file_filter(&mut self) {
+        if self.git.log.file_filter.text().is_empty() {
+            return;
+        }
+        self.git.log.file_filter.set_text("");
+        self.log_file_filter_changed();
+    }
+
+    /// 新开日志标签时收起「查找文件」、清掉键入的文字：上一个标签的筛选不该影响新的列表。
+    pub(in crate::app) fn reset_log_find_files(&mut self) {
+        if !self.git.log.find_files && self.git.log.file_filter.text().is_empty() {
+            return;
+        }
+        self.git.log.find_files = false;
+        self.git.log.file_filter.set_text("");
+        if self.focus == Focus::LogFileFilter {
+            self.focus = Focus::Editor;
+        }
+    }
+
+    /// 点了详情里的「查找文件」搜索框：焦点移进去，光标放到点击的位置。
+    pub(super) fn press_log_file_filter(&mut self) {
+        self.focus = Focus::LogFileFilter;
+        let (x, y) = self.pointer.mouse;
+        self.click_field(x, y);
+    }
+
+    /// 「查找文件」键入的文字变了：文件列表重排。
+    ///
+    /// 详情不回到顶部：搜索框固定在详情底部，重排后绘制时会把滚动距离收回到新的内容长度，
+    /// 重置反而没有必要。
+    pub(in crate::app) fn log_file_filter_changed(&mut self) {
+        self.request_redraw();
+    }
+
+    /// 「查找文件」搜索框的按键：`Esc` 先清掉键入的文字、再关掉搜索框，`↩` `↓` 回到列表。
+    pub(in crate::app) fn on_key_log_file_filter(
+        &mut self,
+        event: &winit::event::KeyEvent,
+        base: &str,
+        cmd: bool,
+    ) {
+        match &event.logical_key {
+            Key::Named(NamedKey::Escape) if !self.git.log.file_filter.text().is_empty() => {
+                self.edit_field(|f| {
+                    f.set_text("");
+                    true
+                });
+            }
+            Key::Named(NamedKey::Escape) => {
+                self.git.log.find_files = false;
+                self.focus = Focus::Editor;
+                self.request_redraw();
+            }
+            Key::Named(NamedKey::Enter | NamedKey::ArrowDown) => {
+                self.focus = Focus::Editor;
+                self.request_redraw();
+            }
+            _ => self.on_key_field(event, base, cmd),
+        }
     }
 
     /// 详情里各文件从上到下的顺序（文件列表里的下标）：键盘上下移动、打开第一个文件都按它。

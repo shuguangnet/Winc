@@ -87,6 +87,7 @@ fn outline(rows: &[BranchRow]) -> Vec<String> {
             BranchRow::Tag(index) => format!("tag {index}"),
             BranchRow::Branch { depth, label, .. } => format!("{}{label}", "  ".repeat(*depth)),
             BranchRow::Create(name) => format!("+ {name}"),
+            BranchRow::Revision(revision) => format!("= {revision}"),
         })
         .collect()
 }

@@ -9,6 +9,7 @@ impl App {
     pub(in crate::app) fn on_mouse_move(&mut self, x: f32, y: f32) {
         self.pointer.mouse = (x, y);
         self.update_scrollbar_hover(x, y);
+        self.track_pdf_tools(x, y);
 
         // 鼠标离开顶栏时解除关闭标签期间锁定的宽度，标签重新排布。
         if y >= TOP_BAR_END && self.tabs.width_lock.take().is_some() {
@@ -72,7 +73,7 @@ impl App {
         if self.tabs.drag.is_some() {
             self.drag_tab(x);
         }
-        self.drag_terminal_tab(x);
+        self.drag_terminal_tab(self.terminal.strip.along((x, y)));
 
         self.set_hover(self.hover_at(x, y));
         let code = self
@@ -91,6 +92,11 @@ impl App {
 
         match self.pointer.drag {
             Drag::Picture { at } => self.drag_picture(x, y, at),
+            Drag::GraphPan { start, scroll, .. } => self.drag_graph(start, scroll, y),
+            Drag::GraphResize { start_y, height } => self.drag_graph_resize(start_y, height, y),
+            Drag::StashPan {
+                start_y, scroll, ..
+            } => self.drag_stash_pan(start_y, scroll, y),
             Drag::TerminalSelect | Drag::TerminalMouse(_) => self.terminal_mouse_drag(x, y),
             Drag::None if self.layout.terminal.contains(x, y) => self.terminal_mouse_hover(x, y),
             Drag::Select { by_word, origin } => self.drag_select(x, y, by_word, origin),
@@ -274,6 +280,32 @@ impl App {
                 self.request_redraw();
             }
             Drag::Scrollbar {
+                bar: Scrollbar::Graph,
+                grab,
+            } => {
+                if let Some(rows) = self.commit_parts().graph.map(graph_rows) {
+                    let max = self.graph_scroll_max(rows);
+                    if let Some(thumb) = scrollbar_thumb(rows, 0.0, max + rows.h) {
+                        self.git.graph.scroll =
+                            scroll_for_thumb(rows.y, rows.h, thumb.h, y, grab, max);
+                    }
+                }
+                self.request_redraw();
+            }
+            Drag::Scrollbar {
+                bar: Scrollbar::Stash,
+                grab,
+            } => {
+                if let Some(rows) = self.stash_rows_area() {
+                    let max = self.stash_scroll_max();
+                    if let Some(thumb) = scrollbar_thumb(rows, 0.0, max + rows.h) {
+                        self.git.commit.stash_scroll =
+                            scroll_for_thumb(rows.y, rows.h, thumb.h, y, grab, max);
+                    }
+                }
+                self.request_redraw();
+            }
+            Drag::Scrollbar {
                 bar: Scrollbar::LogBranches,
                 grab,
             } => {
@@ -317,6 +349,14 @@ impl App {
                 bar: Scrollbar::MarkdownTable,
                 grab,
             } => self.drag_markdown_table_scrollbar(x, grab),
+            Drag::Scrollbar {
+                bar: Scrollbar::MarkdownToc,
+                grab,
+            } => self.drag_toc_scrollbar(y, grab),
+            Drag::Scrollbar {
+                bar: bar @ (Scrollbar::Table | Scrollbar::TableHorizontal),
+                grab,
+            } => self.drag_table_scrollbar(bar == Scrollbar::TableHorizontal, (x, y), grab),
             Drag::Scrollbar {
                 bar: Scrollbar::PdfStrip,
                 grab,
@@ -412,8 +452,10 @@ impl App {
         let t = self.layout.text;
         let scrolled = self.scroll_while_dragging(Some(x), y);
 
-        if let Some(pos) = self.pos_at(x.clamp(t.x, t.right()), y.clamp(t.y, t.bottom() - 1.0))
-            && let Some(doc) = self.editor.active_mut()
+        if let Some(pos) = self.pos_at(
+            x.clamp(t.x, t.right()),
+            y.clamp(t.y, (t.bottom() - 1.0).max(t.y)),
+        ) && let Some(doc) = self.editor.active_mut()
         {
             doc.selection = if !by_word {
                 Selection::new(origin.0, pos)
@@ -532,7 +574,7 @@ impl App {
         let t = self.layout.text;
         let scrolled = self.scroll_while_dragging(None, y);
 
-        if let Some(pos) = self.pos_at(x, y.clamp(t.y, t.bottom() - 1.0))
+        if let Some(pos) = self.pos_at(x, y.clamp(t.y, (t.bottom() - 1.0).max(t.y)))
             && let Some(doc) = self.editor.active_mut()
         {
             let line = doc.text().pos_to_line_col(pos).0;

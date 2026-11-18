@@ -6,6 +6,8 @@
 //! 刷新仓库状态，并重新读被改动过的文件。
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use winc_editor::git::{Branch, BranchDeleted, Carried, Git, Operation, Remote, Stash};
@@ -197,6 +199,8 @@ pub(crate) struct BranchState {
     pub(super) questions: QuestionChannel,
     /// 对话框正在处理的请求：所属操作的编号和答复通道；丢弃通道表示取消。
     pub(in crate::app) asking: Option<(super::question::Asker, Sender<String>)>,
+    /// 正在询问的登录请求的「记住密码」标记；该请求不提供此选项时为 `None`。
+    pub(in crate::app) remember: Option<Arc<AtomicBool>>,
     /// 用户是否取消了当前操作的输入请求；为真时该操作的失败不按错误提示。
     pub(in crate::app) declined: bool,
     /// 登录对话框中填写的密码及其远程地址，用于答复随后的密码请求，操作结束时清除。
@@ -212,6 +216,7 @@ impl Default for BranchState {
             results: channel(),
             questions: channel(),
             asking: None,
+            remember: None,
             declined: false,
             password: None,
         }
@@ -285,11 +290,19 @@ pub(crate) fn stash_ops(index: usize, busy: bool) -> Vec<MenuEntry> {
     ops
 }
 
-/// 全部储藏的菜单，每条一个子菜单（见 [`stash_ops`]）：提交视图里储藏多到列不下时弹出。
-pub(crate) fn stash_menu(stashes: &[Stash], busy: bool) -> Vec<MenuEntry> {
-    (stashes.iter().enumerate())
-        .map(|(i, stash)| MenuEntry::Submenu(stash_title(stash), stash_ops(i, busy)))
-        .collect()
+/// 储藏一组下面列出的一个文件的菜单：显示它在储藏里的差异、只取它（`deleted` 时是只删它），
+/// 分隔线，复制路径、复制相对路径。
+///
+/// 储藏是旧版本，取出会盖掉工作区里这个文件尚未提交的改动，因此那一项执行前还要再确认一次
+/// （见 [`App::confirm_take_stash_file`]）。
+pub(crate) fn stash_file_menu(deleted: bool, busy: bool) -> Vec<MenuEntry> {
+    vec![
+        MenuEntry::Item(MenuCommand::GitShowDiff, true),
+        MenuEntry::Item(MenuCommand::GitStashTakeFile(deleted), !busy),
+        MenuEntry::Separator,
+        MenuEntry::Item(MenuCommand::CopyPath, true),
+        MenuEntry::Item(MenuCommand::CopyRelativePath, true),
+    ]
 }
 
 /// 分支选择器里第 `index` 个分支的操作菜单：按 `BranchOp::GROUPS` 分组，组之间有分隔线。
@@ -477,13 +490,21 @@ impl App {
         }
     }
 
+    /// 把分支 `name` 合并到当前分支。
+    pub(in crate::app) fn git_merge_branch(&mut self, name: String) {
+        self.git_operate(
+            t!("git-op-merge", name = name.as_str()),
+            move |git, root| git.operate(root, &["merge", "--no-edit", "--end-of-options", &name]),
+        );
+    }
+
     /// 对分支 `branch` 执行操作菜单中的 `op`。
     pub(in crate::app) fn run_branch_op(&mut self, op: BranchOp, branch: Branch) {
         let name = branch.name.clone();
         match op {
             // 分支已经在其他工作树里签出：git 不允许重复签出，改为切到该工作树。
             BranchOp::Checkout if let Some(i) = self.git.worktree_holding(local_name(&branch)) => {
-                self.open_worktree(i, false);
+                self.open_worktree_asking(i);
             }
             BranchOp::NewWorktree => self.new_worktree_for(&branch),
             BranchOp::Checkout if branch.remote => {
@@ -513,12 +534,7 @@ impl App {
             BranchOp::NewFrom => {
                 self.open_branch_dialog(Some(name), None);
             }
-            BranchOp::Merge => self.git_operate(
-                t!("git-op-merge", name = name.as_str()),
-                move |git, root| {
-                    git.operate(root, &["merge", "--no-edit", "--end-of-options", &name])
-                },
-            ),
+            BranchOp::Merge => self.git_merge_branch(name),
             BranchOp::Rebase => self.git_operate(
                 t!("git-op-rebase-onto", name = name.as_str()),
                 move |git, root| git.operate(root, &["rebase", "--end-of-options", &name]),
@@ -758,11 +774,15 @@ impl App {
         let id = self.git.branch.started;
         let wake = self.link.proxy.clone();
         let questions = self.git.branch.questions.0.clone();
+        // 凭据只为本机运行的 `git` 保存：远端主机和发行版中的 `git` 访问不到本机的凭据存储。
+        let remember = self.config.git_remember_credentials != Some(false)
+            && winc_editor::git::runs_here(&dir);
         self.spawn_git(UserEvent::GitOperated, move |tool| {
             let result = match tool {
                 Ok(git) => {
                     // 端点只在操作期间存在，`listener` 在本分支结束时被丢弃。
-                    let listener = wake.and_then(|proxy| question::listen(proxy, questions, id));
+                    let listener =
+                        wake.and_then(|proxy| question::listen(proxy, questions, id, remember));
                     let askpass = listener.as_ref().and_then(Listener::askpass);
                     work(&git.with_askpass(askpass), &dir)
                 }

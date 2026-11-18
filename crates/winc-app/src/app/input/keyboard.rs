@@ -32,6 +32,7 @@ impl App {
     /// 处理顺序：取消文件树拖动、关闭「⋯」菜单、设置浮层（模态）、键位表中的快捷键，
     /// 最后按焦点分发。
     pub(in crate::app) fn on_key(&mut self, event: &KeyEvent) {
+        self.track_tap(event);
         if event.state != ElementState::Pressed {
             return;
         }
@@ -145,6 +146,8 @@ impl App {
             }
             Focus::Outline => self.outline_key(&event.logical_key),
             Focus::LogFilter => self.on_key_log_filter(event, &base, cmd),
+            Focus::LogBranchFilter => self.on_key_log_branch_filter(event, &base, cmd),
+            Focus::LogFileFilter => self.on_key_log_file_filter(event, &base, cmd),
             Focus::Terminal => self.on_key_terminal(event),
             // 这两个输入框使用终端的键位表，Windows、Linux 的 Ctrl+V 不在表中，在此处理。
             Focus::TerminalFind | Focus::TerminalRename if cmd && base == "v" => self.paste(),
@@ -154,7 +157,7 @@ impl App {
     }
 
     /// 返回当前焦点对应的键位上下文，键位表按它划分适用范围。
-    pub(super) fn key_context(&self) -> Context {
+    pub(in crate::app) fn key_context(&self) -> Context {
         match self.focus {
             Focus::Editor if self.markdown_live() => Context::Markdown,
             Focus::Editor => Context::Editor,
@@ -198,7 +201,7 @@ impl App {
 
     /// 应用是否在当前的上下文中绑定了按键 `stroke`，含两步组合键的第一步。
     pub(in crate::app) fn binds(&self, stroke: Stroke) -> bool {
-        let lookup = keymap::lookup(keymap::current(), stroke, None, self.key_context());
+        let lookup = self.lookup_shortcut(stroke, None);
         !matches!(lookup, Lookup::None)
     }
 
@@ -208,14 +211,23 @@ impl App {
     /// 不是快捷键时返回 `false`，按键交给焦点所在的部件。
     pub(in crate::app) fn on_shortcut(&mut self, stroke: Stroke) -> bool {
         let table = keymap::current();
-        let context = self.key_context();
+
+        // 程序开始运行或输入策略改变后，旧的组合键等待不能继续截获程序输入。
+        if self.focus == Focus::Terminal
+            && self.pending_chord.is_some()
+            && (!self.terminal_at_prompt()
+                || self.config.terminal_application_priority == Some(true))
+        {
+            self.pending_chord = None;
+            self.status.message = None;
+        }
 
         if let Some(first) = self.pending_chord.take() {
             self.status.message = None;
             if stroke.key == keymap::KeyCode::Escape {
                 return true;
             }
-            match keymap::lookup(table, stroke, Some(first), context) {
+            match self.lookup_shortcut(stroke, Some(first)) {
                 Lookup::Run(actions)
                     if actions
                         .iter()
@@ -233,13 +245,13 @@ impl App {
         // 不移动，上下键仍然在列表里选文件。
         if self.focus == Focus::CommitList
             && self.diff_active()
-            && let Lookup::Run(actions) = keymap::lookup(table, stroke, None, Context::Editor)
+            && let Lookup::Run(actions) = keymap::lookup(&table, stroke, None, Context::Editor)
             && let Some(&action) = actions.iter().find(|a| a.navigates_diff())
         {
             return self.run_action(action);
         }
 
-        match keymap::lookup(table, stroke, None, context) {
+        match self.lookup_shortcut(stroke, None) {
             Lookup::Run(actions) => actions
                 .into_iter()
                 .any(|a| self.run_action(self.keyboard_action(a))),
@@ -260,7 +272,7 @@ impl App {
     ///
     /// macOS 上没有打开的标签时，「关闭标签页」的快捷键改为关闭窗口：关掉最后一个标签后再按
     /// 一次 `⌘W` 关闭窗口。只对按键生效，在命令面板里选「关闭标签页」不会关闭窗口。
-    fn keyboard_action(&self, action: Action) -> Action {
+    pub(super) fn keyboard_action(&self, action: Action) -> Action {
         if cfg!(target_os = "macos")
             && action == Action::CloseTab
             && self.editor.documents.is_empty()
@@ -546,6 +558,17 @@ impl App {
     fn on_key_settings(&mut self, event: &KeyEvent, base: &str, cmd: bool) {
         let shift = self.pointer.modifiers.shift_key();
 
+        // 修改快捷键时，按键都记作新键。
+        if self.settings.key_edit.is_some() {
+            let location = event.location;
+            if let Some(stroke) =
+                self.stroke_of(&event.logical_key, base, event.physical_key, location)
+            {
+                self.key_edit_stroke(stroke);
+            }
+            return;
+        }
+
         if self.focus == Focus::KeySearch {
             self.on_key_search_keys(event, base, cmd);
             return;
@@ -690,7 +713,7 @@ impl App {
     /// 录制按键时，按键写入搜索框，`Esc` 停止录制；不录制时，`Esc` 先清空搜索框，搜索框为空时
     /// 关闭设置。「录制按键」的快捷键在两种状态下都用于开关录制。
     pub(in crate::app) fn keys_page_stroke(&mut self, stroke: Stroke) -> bool {
-        let action = match keymap::lookup(keymap::current(), stroke, None, Context::Keys) {
+        let action = match keymap::lookup(&keymap::current(), stroke, None, Context::Keys) {
             Lookup::Run(actions) => actions.first().copied(),
             _ => None,
         };

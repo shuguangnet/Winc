@@ -1,7 +1,7 @@
 //! 键位表：每个命令在三个系统上的快捷键。
 //!
-//! 按键处理、命令面板、右键菜单、欢迎页和设置中的「快捷键」页
-//! 都从同一张键位表读取快捷键。
+//! 当前的键位表由选用的方案（[`Preset`]）和用户改过的键（[`Custom`]）合成，见 [`install`]。
+//! 按键处理、命令面板、右键菜单、欢迎页和设置中的「快捷键」页都从当前的键位表读取快捷键。
 //!
 //! 一个命令可以对应多个键，每个键在表中占一条 [`Binding`]。
 //! 两段组合键（如 `⌘K ⌘S`）在按下第一段后返回 [`Lookup::Chord`]。
@@ -10,13 +10,21 @@ use winc_i18n::t;
 use winit::keyboard::{Key, KeyLocation, ModifiersState, NamedKey, PhysicalKey};
 
 mod action;
+mod custom;
+#[allow(clippy::disallowed_methods, reason = "只访问本机：其他编辑器的配置")]
+pub mod import;
 mod page;
+mod presets;
+mod spec;
 mod table;
 #[cfg(test)]
 mod tests;
 
 pub use action::*;
+pub use custom::*;
 pub use page::*;
+pub use presets::Preset;
+pub use spec::*;
 pub use table::*;
 
 /// 操作系统，决定快捷键的默认键位和显示写法。
@@ -116,6 +124,11 @@ pub enum KeyCode {
     Right,
     PageUp,
     PageDown,
+    Home,
+    End,
+    Insert,
+    /// 单按修饰键后松开，修饰键记在 [`Stroke::mods`] 中；连按两下构成组合键（如连按两下 Shift）。
+    Tap,
 }
 
 /// 返回物理键 `key` 在美式键盘上的字符（字母为小写）；不是字母、数字或标点键时返回 `None`。
@@ -224,6 +237,9 @@ impl Stroke {
                 NamedKey::ArrowRight => KeyCode::Right,
                 NamedKey::PageUp => KeyCode::PageUp,
                 NamedKey::PageDown => KeyCode::PageDown,
+                NamedKey::Home => KeyCode::Home,
+                NamedKey::End => KeyCode::End,
+                NamedKey::Insert => KeyCode::Insert,
                 NamedKey::Process if m.control_key() => KeyCode::Char(us_char(physical)?),
                 named => {
                     let n = function_key(named)?;
@@ -274,6 +290,10 @@ impl Stroke {
             KeyCode::Right => "→".into(),
             KeyCode::PageUp => "PageUp".into(),
             KeyCode::PageDown => "PageDown".into(),
+            KeyCode::Home => "Home".into(),
+            KeyCode::End => "End".into(),
+            KeyCode::Insert => "Insert".into(),
+            KeyCode::Tap => String::new(),
         };
         let m = self.mods;
         if os == Os::Mac {
@@ -302,7 +322,9 @@ impl Stroke {
             .filter(|&(bit, _)| m.has(bit))
             .map(|(_, name)| name)
             .collect();
-            parts.push(&key);
+            if !key.is_empty() {
+                parts.push(&key);
+            }
             parts.join("+")
         }
     }
@@ -393,6 +415,11 @@ pub enum When {
 }
 
 impl When {
+    /// 覆盖的区域数：数值小的范围更窄，表中排在前面优先匹配。
+    pub(super) fn breadth(self) -> u32 {
+        self.mask().count_ones()
+    }
+
     fn mask(self) -> u16 {
         const MARKDOWN: u16 = Context::Markdown.bit();
         // 可编辑的 Markdown 预览属于编辑区：覆盖编辑区的范围都覆盖该预览。
@@ -422,6 +449,11 @@ impl When {
             When::Terminal => TERMINAL,
             When::Everywhere => EDITOR | FIND | REPLACE | PANEL | TREE | OTHER | TERMINAL,
         }
+    }
+
+    /// 是否与范围 `other` 有共同覆盖的区域。
+    pub fn overlaps(self, other: When) -> bool {
+        self.mask() & other.mask() != 0
     }
 
     /// 是否覆盖焦点所在的区域 `context`。
@@ -498,10 +530,72 @@ impl Group {
     }
 }
 
-/// 返回当前编译目标系统的绑定表，首次调用时构建并缓存。
-pub fn current() -> &'static [Binding] {
-    static TABLE: std::sync::OnceLock<Vec<Binding>> = std::sync::OnceLock::new();
-    TABLE.get_or_init(|| bindings(Os::CURRENT))
+/// 当前的键位表及按分组列出的「快捷键」页的行。
+struct Active {
+    preset: Preset,
+    table: std::sync::Arc<[Binding]>,
+    rows: std::sync::Arc<[(Group, Vec<Row>)]>,
+}
+
+/// 当前的键位表；尚未调用 [`install`] 时为默认方案。
+#[cfg(not(test))]
+static ACTIVE: std::sync::RwLock<Option<std::sync::Arc<Active>>> = std::sync::RwLock::new(None);
+
+// 测试并行运行，各测试线程各用一张键位表。
+#[cfg(test)]
+thread_local! {
+    static ACTIVE: std::cell::RefCell<Option<std::sync::Arc<Active>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// 改用方案 `preset` 和用户改过的键 `custom` 合成的键位表；同一进程中的各窗口共用。
+pub fn install(preset: Preset, custom: &Custom) {
+    let table: std::sync::Arc<[Binding]> = custom.apply(preset, Os::CURRENT).into();
+    let rows = rows(&table, Os::CURRENT).into();
+    let active = std::sync::Arc::new(Active {
+        preset,
+        table,
+        rows,
+    });
+    #[cfg(not(test))]
+    {
+        *ACTIVE
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(active);
+    }
+    #[cfg(test)]
+    ACTIVE.with_borrow_mut(|slot| *slot = Some(active));
+}
+
+/// 返回当前的键位表信息；尚未安装时先安装默认方案。
+fn active() -> std::sync::Arc<Active> {
+    #[cfg(not(test))]
+    let installed = ACTIVE
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    #[cfg(test)]
+    let installed = ACTIVE.with_borrow(Clone::clone);
+    if let Some(active) = installed {
+        return active;
+    }
+    install(Preset::default(), &Custom::default());
+    active()
+}
+
+/// 返回当前编译目标系统上正在使用的绑定表。
+pub fn current() -> std::sync::Arc<[Binding]> {
+    active().table.clone()
+}
+
+/// 返回正在使用的方案。
+pub fn current_preset() -> Preset {
+    active().preset
+}
+
+/// 返回当前的绑定表按分组列出的全部命令的快捷键（见 [`rows`]）。
+pub fn current_rows() -> std::sync::Arc<[(Group, Vec<Row>)]> {
+    active().rows.clone()
 }
 
 /// 一次按键查找的结果。
@@ -526,40 +620,59 @@ pub fn lookup(
     pending: Option<Stroke>,
     context: Context,
 ) -> Lookup {
+    lookup_allowed(table, stroke, pending, context, |_| true)
+}
+
+/// 按上下文和当前输入状态查找按键；被 `allowed` 排除的绑定不占用组合键第一段。
+pub fn lookup_allowed(
+    table: &[Binding],
+    stroke: Stroke,
+    pending: Option<Stroke>,
+    context: Context,
+    allowed: impl Fn(&Binding) -> bool,
+) -> Lookup {
     // 焦点在终端时，全局快捷键中只有带 ⌘ 的（macOS）或带 Ctrl+Shift 的
     // （其他系统）不交给终端程序，其余组合留给终端程序使用；
     // 单按 Ctrl 的组合由终端程序处理。
     let reaches = |mods: Mods| {
         mods.has(Mods::META) || !cfg!(target_os = "macos") && mods.has(Mods::CTRL | Mods::SHIFT)
     };
+    // 终端自己用到的键（清屏、新建标签等）在终端里不再作为其他范围的快捷键：终端的绑定暂停时
+    // （全屏程序运行中），按键交给程序。所查绑定的第一段都是 `key`。
+    let key = pending.unwrap_or(stroke);
+    let owned = context == Context::Terminal
+        && (table.iter()).any(|b| b.when == When::Terminal && b.first == key);
     let applies = |b: &&Binding| {
         b.when.covers(context)
             && (context != Context::Terminal
-                || b.when != When::Global
-                || reaches(b.first.mods) && b.action.reaches_terminal())
+                || b.when == When::Terminal
+                || !owned
+                    && (b.when != When::Global
+                        || reaches(b.first.mods) && b.action.reaches_terminal()))
+            && allowed(b)
     };
     match pending {
         Some(first) => Lookup::Run(
             table
                 .iter()
-                .filter(applies)
                 .filter(|b| b.first == first && b.second == Some(stroke))
+                .filter(applies)
                 .map(|b| b.action)
                 .collect(),
         ),
         None => {
             let run: Vec<Action> = table
                 .iter()
-                .filter(applies)
                 .filter(|b| b.first == stroke && b.second.is_none())
+                .filter(applies)
                 .map(|b| b.action)
                 .collect();
             if !run.is_empty() {
                 Lookup::Run(run)
             } else if table
                 .iter()
-                .filter(applies)
-                .any(|b| b.first == stroke && b.second.is_some())
+                .filter(|b| b.first == stroke && b.second.is_some())
+                .any(|b| applies(&b))
             {
                 Lookup::Chord
             } else {

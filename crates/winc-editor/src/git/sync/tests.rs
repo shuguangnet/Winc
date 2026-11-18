@@ -228,3 +228,66 @@ fn an_untracked_file_in_the_way_stops_the_pull_without_losing_changes() {
     assert_eq!(text, "one\ntwo\nTHREE\n");
     assert_eq!(git.stash_tip(&work), None);
 }
+
+#[test]
+fn compare_lists_the_commits_on_each_side() {
+    let Some(git) = real_git() else {
+        return;
+    };
+    let (work, remote) = cloned("compare-sides");
+    let other = crate::test_util::scratch("compare-sides-peer");
+    sh(&other, &["clone", "-q", remote.to_str().unwrap(), "."]);
+
+    // 本地新提交一个，别人推送另一个：领先、落后各 1 个，各自列出自己的那个提交。
+    std::fs::write(work.join("ours.txt"), "ours\n").unwrap();
+    sh(&work, &["add", "."]);
+    sh(&work, &["commit", "-q", "-m", "ours"]);
+    std::fs::write(other.join("theirs.txt"), "theirs\n").unwrap();
+    sh(&other, &["add", "."]);
+    sh(&other, &["commit", "-q", "-m", "theirs"]);
+    sh(&other, &["push", "-q"]);
+    sh(&work, &["fetch", "-q", "origin"]);
+
+    let ours = sh(&work, &["rev-parse", "HEAD"]);
+    let theirs = sh(&remote, &["rev-parse", "main"]);
+    let compared = git.compare(&work, "origin/main").unwrap();
+    assert_eq!(
+        (compared.ahead_count, compared.behind_count),
+        (1, 1),
+        "两边各多出一个提交"
+    );
+    assert_eq!(compared.ahead, vec![ours]);
+    assert_eq!(compared.behind, vec![theirs]);
+
+    // 同一侧有多个提交时都列出来，最新的在前；与自己的上游一致时两边都为空。
+    sh(&work, &["merge", "-q", "--no-edit", "origin/main"]);
+    sh(&work, &["push", "-q"]);
+    std::fs::write(work.join("more.txt"), "more\n").unwrap();
+    sh(&work, &["add", "."]);
+    sh(&work, &["commit", "-q", "-m", "more"]);
+    sh(&work, &["commit", "-q", "--allow-empty", "-m", "last"]);
+    let compared = git.compare(&work, "origin/main").unwrap();
+    assert_eq!((compared.ahead_count, compared.behind_count), (2, 0));
+    assert_eq!(
+        sh(&work, &["rev-list", "--max-count=2", "origin/main..HEAD"])
+            .lines()
+            .map(str::to_owned)
+            .collect::<Vec<_>>(),
+        compared.ahead,
+        "最新的在前"
+    );
+    assert!(compared.behind.is_empty());
+
+    // 也可以和本地的另一个分支、标签比。
+    sh(&work, &["branch", "-q", "side", "HEAD~1"]);
+    let compared = git.compare(&work, "side").unwrap();
+    assert_eq!((compared.ahead_count, compared.behind_count), (1, 0));
+
+    // 空名字和以 `-` 开头的引用不交给 `git`。
+    assert!(git.compare(&work, "").is_err());
+    assert!(git.compare(&work, "--all").is_err());
+
+    let _ = std::fs::remove_dir_all(&other);
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&work);
+}

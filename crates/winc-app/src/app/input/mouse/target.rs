@@ -188,6 +188,10 @@ impl App {
         // 拖动文件树中的项或标签时没有悬停目标；文件树中高亮的是放置目标目录，而不是鼠标所在的行。
         match self.pointer.drag {
             Drag::Scrollbar { bar, .. } => return Hover::Scrollbar(bar),
+            // 拖动提交图时内容跟着走，指针下面那一行不再高亮。
+            Drag::GraphPan { .. } | Drag::GraphResize { .. } | Drag::StashPan { .. } => {
+                return Hover::None;
+            }
             _ if self.tree_dragging().is_some() || self.dragged_tab().is_some() => {
                 return Hover::None;
             }
@@ -321,7 +325,12 @@ impl App {
         let side = |bar| {
             matches!(
                 bar,
-                Scrollbar::Panel | Scrollbar::Commit | Scrollbar::Outline | Scrollbar::LogBranches
+                Scrollbar::Panel
+                    | Scrollbar::Commit
+                    | Scrollbar::Graph
+                    | Scrollbar::Stash
+                    | Scrollbar::Outline
+                    | Scrollbar::LogBranches
             )
         };
         if let Some((bar, grab)) = self.scrollbar_at(x, y).filter(|(bar, _)| side(*bar))
@@ -427,6 +436,12 @@ impl App {
             return Target::TitleBar;
         }
         if l.terminal.contains(x, y) {
+            if self
+                .terminal_tab_list()
+                .is_some_and(|list| list.contains(x, y))
+            {
+                return Target::Blocked;
+            }
             return match self.terminal_block_hit(x, y) {
                 Some(hit) => Target::TerminalBlock(hit),
                 None => Target::Terminal,
@@ -572,6 +587,38 @@ impl App {
             }
         }
 
+        // 提交视图里储藏一组展开时，标题下面各行的右端。
+        if self.commit_shown()
+            && self.git.commit.stashes.open
+            && let Some(rows) = self.stash_rows_area()
+            && rows.contains(x, y)
+            && x >= rows.right() - SCROLLBAR_HIT
+            && let Some(thumb) = scrollbar_thumb(
+                rows,
+                self.git.commit.stash_scroll,
+                self.stash_scroll_max() + rows.h,
+            )
+        {
+            return Some((Scrollbar::Stash, grab(y, thumb.y, thumb.h)));
+        }
+
+        // 提交视图底部的提交图：标题行下面那几行的右端。
+        if self.commit_shown()
+            && let Some(area) = self.commit_parts().graph
+        {
+            let rows = graph_rows(area);
+            if rows.contains(x, y)
+                && x >= rows.right() - SCROLLBAR_HIT
+                && let Some(thumb) = scrollbar_thumb(
+                    rows,
+                    self.git.graph.scroll,
+                    self.graph_scroll_max(rows) + rows.h,
+                )
+            {
+                return Some((Scrollbar::Graph, grab(y, thumb.y, thumb.h)));
+            }
+        }
+
         let tree = self.layout.tree;
         if self.panels.sidebar.visible && tree.contains(x, y) {
             let rows = self.editor.workspace.as_ref().map_or(0, |w| w.rows().len());
@@ -601,6 +648,17 @@ impl App {
 
         // 预览（分栏时位于右侧，仅预览时占满编辑区）先于编辑区判断，仅预览时两者重叠。
         let preview = self.preview.markdown.area;
+        // 标题列表覆盖在预览之上，先于预览判断；图钉按钮所在的位置不属于滚动条。
+        let list = &self.preview.markdown.toc_list;
+        let pin = crate::app::preview::markdown::TocTarget::Pin;
+        if list.track.contains(x, y)
+            && x >= list.track.right() - SCROLLBAR_HIT
+            && hit(&self.hits.markdown_toc, x, y) != Some(pin)
+            && let Some((scroll, content)) = list.scrollbar()
+        {
+            let thumb = scrollbar_thumb(list.track, scroll, content)?;
+            return Some((Scrollbar::MarkdownToc, grab(y, thumb.y, thumb.h)));
+        }
         if preview.contains(x, y) {
             // 比正文宽的表格的水平滚动条：位于表格显示区域的底边。
             if let Some(bar) = self.hits.markdown_table_bar
@@ -617,6 +675,28 @@ impl App {
             let scroll = self.preview.markdown.scroll();
             let thumb = scrollbar_thumb(preview, scroll, self.preview.markdown.height)?;
             return Some((Scrollbar::Markdown, grab(y, thumb.y, thumb.h)));
+        }
+
+        // 表格预览的滚动条位于单元格区域的右边和下边。
+        if self.table_at(x, y) {
+            let layout = &self.preview.table_layout;
+            let (body, scroll) = (layout.body, self.table_scroll());
+            if !body.contains(x, y) {
+                return None;
+            }
+            let content = (
+                body.w + layout.max_scroll.0,
+                body.h + layout.max_scroll.1 as f32,
+            );
+            if x >= body.right() - SCROLLBAR_HIT {
+                let thumb = scrollbar_thumb(body, scroll.1 as f32, content.1)?;
+                return Some((Scrollbar::Table, grab(y, thumb.y, thumb.h)));
+            }
+            if y >= body.bottom() - SCROLLBAR_HIT {
+                let thumb = hscrollbar_thumb(body, scroll.0, content.0)?;
+                return Some((Scrollbar::TableHorizontal, grab(x, thumb.x, thumb.w)));
+            }
+            return None;
         }
 
         let strip = self.preview.pdf.strip;
@@ -845,6 +925,25 @@ impl App {
         {
             // 提交图中的线可点击（沿线跳转）；终端中命令块的色带和吸顶的命令行同样可点击。
             CursorIcon::Pointer
+        } else if matches!(self.pointer.drag, Drag::GraphPan { .. }) {
+            // 拖动提交图：内容跟着指针走，指针显示抓取中。
+            CursorIcon::Grabbing
+        } else if matches!(self.pointer.drag, Drag::GraphResize { .. })
+            || matches!(
+                self.pointer.hover,
+                Hover::Commit(crate::app::CommitTarget::GraphDivider)
+            )
+        {
+            // 提交图的上沿可以按住上下拉，调整图的高度。
+            CursorIcon::RowResize
+        } else if matches!(
+            self.pointer.hover,
+            Hover::Commit(
+                crate::app::CommitTarget::GraphRow(_) | crate::app::CommitTarget::GraphBlank
+            )
+        ) {
+            // 提交图上的行、行下面的空白处可以按住上下拖动。
+            CursorIcon::Grab
         } else if matches!(self.pointer.drag, Drag::Picture { .. }) {
             CursorIcon::Grabbing
         } else if self.picture_pannable() && matches!(self.target_at(x, y), Target::Picture) {

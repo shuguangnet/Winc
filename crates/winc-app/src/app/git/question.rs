@@ -75,6 +75,40 @@ impl QuestionView {
         }
     }
 
+    /// 返回「与指定版本比较」对话框的内容：提交 `commit` 的提交号和一个输入框。
+    pub(super) fn compare_revision(commit: &str) -> Self {
+        Self {
+            title: t!("git-compare-revision-title").to_owned(),
+            message: None,
+            message_lines: 0,
+            values: vec![QuestionValue {
+                label: t!("git-compare-commit"),
+                text: commit.to_owned(),
+                mono: true,
+            }],
+            inputs: vec![QuestionInput {
+                label: t!("git-compare-with"),
+                placeholder: t!("git-go-to-placeholder"),
+            }],
+            confirm: t!("git-compare-button"),
+        }
+    }
+
+    /// 返回给一组目录起名的对话框内容：一个输入框。
+    pub(super) fn rename_group() -> Self {
+        Self {
+            title: t!("workspace-group-rename-title").to_owned(),
+            message: None,
+            message_lines: 0,
+            values: Vec::new(),
+            inputs: vec![QuestionInput {
+                label: t!("workspace-group-rename-label"),
+                placeholder: t!("workspace-group-rename-placeholder"),
+            }],
+            confirm: t!("workspace-group-rename-button"),
+        }
+    }
+
     /// 返回「按路径筛选」对话框的内容：一个输入框。
     pub(super) fn log_path() -> Self {
         Self {
@@ -87,6 +121,36 @@ impl QuestionView {
                 placeholder: t!("git-log-path-placeholder"),
             }],
             confirm: t!("git-log-path-button"),
+        }
+    }
+
+    /// 返回「按作者筛选」对话框的内容：一个输入框，填作者名字或邮箱的一部分。
+    pub(super) fn log_author() -> Self {
+        Self {
+            title: t!("git-log-author-title").to_owned(),
+            message: None,
+            message_lines: 0,
+            values: Vec::new(),
+            inputs: vec![QuestionInput {
+                label: t!("git-log-author-label"),
+                placeholder: t!("git-log-author-placeholder"),
+            }],
+            confirm: t!("git-log-author-button"),
+        }
+    }
+
+    /// 返回「按时间筛选」对话框的内容：一个输入框，填 `git log --since` 认识的时间。
+    pub(super) fn log_since() -> Self {
+        Self {
+            title: t!("git-log-since-title").to_owned(),
+            message: None,
+            message_lines: 0,
+            values: Vec::new(),
+            inputs: vec![QuestionInput {
+                label: t!("git-log-since-label"),
+                placeholder: t!("git-log-since-placeholder"),
+            }],
+            confirm: t!("git-log-since-button"),
         }
     }
 
@@ -270,15 +334,39 @@ pub(in crate::app) enum Asker {
 }
 
 /// 开始接收第 `id` 个操作的输入请求：写入 `questions` 并唤醒界面线程。
+///
+/// `remember` 表示设置允许记住密码；系统没有可用的凭据存储时不提供。在后台线程中调用。
 pub(super) fn listen(
     proxy: WindowProxy,
     questions: Sender<(u64, Question)>,
     id: u64,
+    remember: bool,
 ) -> Option<Listener> {
-    Listener::bind(move |question| {
-        let _ = questions.send((id, question));
-        let _ = proxy.send_event(UserEvent::GitQuestion);
-    })
+    Listener::bind(
+        remember && crate::credentials::available(),
+        move |question| {
+            let _ = questions.send((id, question));
+            let _ = proxy.send_event(UserEvent::GitQuestion);
+        },
+    )
+}
+
+/// 开始只提供已保存凭据的端点，用于无人值守的操作：输入请求一律按取消答复。
+///
+/// 在后台线程中调用。
+pub(super) fn listen_unattended(remember: bool) -> Option<Listener> {
+    (remember && crate::credentials::available())
+        .then(|| Listener::bind(true, drop))
+        .flatten()
+}
+
+/// 在后台线程中删除全部已保存的凭据。
+pub(in crate::app) fn forget_credentials() {
+    let _ = std::thread::Builder::new()
+        .name("winc-credentials".into())
+        .spawn(|| {
+            crate::credentials::forget_all();
+        });
 }
 
 impl App {
@@ -306,7 +394,11 @@ impl App {
 
     /// 答复来自 `asker` 的输入请求，规则见 [`App::open_git_question`]。
     pub(in crate::app) fn open_question(&mut self, asker: Asker, question: Question) {
-        let Question { prompt, reply } = question;
+        let Question {
+            prompt,
+            reply,
+            remember,
+        } = question;
         if let Prompt::Password { server, .. } = &prompt
             && let Some((known, password)) = self.git.branch.password.take()
             && known == *server
@@ -335,6 +427,8 @@ impl App {
             | Prompt::HostKey { .. } => (TextField::masked(), DialogPart::Branch),
         };
         self.git.branch.asking = Some((asker, reply));
+        let offered = remember.is_some();
+        self.git.branch.remember = remember;
         // 远端仓库的操作提出的请求：答复会发到那台主机上，对话框标明它。
         let origin = match asker {
             Asker::Git(_) => (self.git.root.as_deref())
@@ -343,6 +437,17 @@ impl App {
             Asker::Remote => None,
         };
         self.show_form_dialog(FormKind::Question(prompt, origin), name, focus);
+        // 「记住密码」借用 `checkout` 一项，默认勾选。
+        if let Some(dialog) = &mut self.overlays.form_dialog {
+            dialog.checkout = offered;
+        }
+    }
+
+    /// 当前的询问对话框是否提供「记住密码」。
+    pub(in crate::app) fn question_remembers(&self) -> bool {
+        let asking = (self.overlays.form_dialog.as_ref())
+            .is_some_and(|dialog| matches!(dialog.kind, FormKind::Question(..)));
+        asking && self.git.branch.remember.is_some()
     }
 
     /// 提交询问对话框。
@@ -369,6 +474,9 @@ impl App {
             let password = dialog.second.text().replace(['\r', '\n'], "");
             self.git.branch.password = Some((server.clone(), password));
         }
+        if let Some(flag) = self.git.branch.remember.take() {
+            flag.store(dialog.checkout, std::sync::atomic::Ordering::Relaxed);
+        }
         let asker = self.git.branch.asking.take().map(|(asker, reply)| {
             let _ = reply.send(answer);
             asker
@@ -385,6 +493,7 @@ impl App {
     /// 取消一次即取消整件事：`ssh` 在一次询问没有答复后会再问（口令默认问三次）。连接远端
     /// 主机时直接中止连接；Git 操作此后的询问不再弹出（见 [`App::open_git_question`]）。
     pub(super) fn decline_git_question(&mut self) {
+        self.git.branch.remember = None;
         match self.git.branch.asking.take() {
             Some((Asker::Git(_), _)) => self.git.branch.declined = true,
             Some((Asker::Remote, _)) => self.cancel_remote(),
@@ -414,6 +523,7 @@ impl App {
             .is_some_and(|(at, _)| *at == asker)
         {
             self.git.branch.asking = None;
+            self.git.branch.remember = None;
             self.close_form_dialog();
         }
     }

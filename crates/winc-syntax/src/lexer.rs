@@ -461,22 +461,43 @@ fn block_string_span(language: &Language, index: u8) -> Option<Span> {
 /// 对一行做词法分析，生成 token 并返回下一行开头的状态。
 ///
 /// `chars` 是这一行的字符（不含换行符），`state` 是这一行开头的状态；`tokens` 先被清空，
-/// 之后按位置从小到大存放本行的 token。
+/// 之后按位置从小到大存放本行的 token。`depth` 是这一行行首代码括号（`()`、`[]`、`{}`）的
+/// 嵌套层数，行尾的层数写回；字符串和注释中的括号不计。
 pub fn highlight_line(
     language: &Language,
     chars: &[char],
     state: LineState,
     tokens: &mut Vec<Token>,
+    depth: &mut i32,
 ) -> LineState {
     tokens.clear();
-    Lexer::new(language, chars, Some(tokens), 0).run(state)
+    Lexer::new(language, chars, Some(tokens), 0, depth).run(state)
 }
 
 /// 只推算下一行开头的状态，不生成 token，也不查关键字表。
 ///
 /// 调用方不需要 token 时用它代替 [`highlight_line`]，省去 token 的生成与内存分配。
-pub(crate) fn scan_line(language: &Language, chars: &[char], state: LineState) -> LineState {
-    Lexer::new(language, chars, None, 0).run(state)
+/// `depth` 的含义见 [`highlight_line`]。
+pub(crate) fn scan_line(
+    language: &Language,
+    chars: &[char],
+    state: LineState,
+    depth: &mut i32,
+) -> LineState {
+    Lexer::new(language, chars, None, 0, depth).run(state)
+}
+
+/// 返回字符 `c` 对代码括号深度的影响：左括号（`(`、`[`、`{`）是 `1`，右括号是 `-1`，其余
+/// 是 `0`。
+///
+/// 词法分析在「没有被任何 token 覆盖的字符」上计数（见 [`Lexer::bracket_depth`]）；绘制括号
+/// 着色时对同一规则逐字符推算层级，两边用同一个函数保证一致。
+pub fn bracket_delta(c: char) -> i32 {
+    match c {
+        '(' | '[' | '{' => 1,
+        ')' | ']' | '}' => -1,
+        _ => 0,
+    }
 }
 
 /// 对一行字符做词法分析的临时状态。
@@ -487,6 +508,11 @@ struct Lexer<'a> {
     chars: &'a [char],
     /// 接收 token 的缓冲；为 `None` 时只推算行末状态。
     tokens: Option<&'a mut Vec<Token>>,
+    /// 代码括号（`()`、`[]`、`{}`）在行首的嵌套层数，扫描中随之增减，行末写回调用方。
+    ///
+    /// 字符串和注释中的括号不计：这些结构在上面各自的分支里整段消费，走不到计数的兜底路径。
+    /// 括号着色据此把同一层级的配对括号涂成同一种颜色。
+    bracket_depth: &'a mut i32,
     /// `chars[0]` 在所在行中的位置（字符偏移，从 0 起），记录 token 时加上；内嵌代码之外为 0。
     base: usize,
     /// 当前所在的字符串插值的嵌套层数（层）；0 表示不在插值中。
@@ -510,18 +536,21 @@ struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    /// 创建分析 `chars` 的临时状态；`base` 的含义见 [`Lexer::base`]。
+    /// 创建分析 `chars` 的临时状态；`base` 的含义见 [`Lexer::base`]，`depth` 的含义见
+    /// [`Lexer::depth`]。
     fn new(
         language: &'a Language,
         chars: &'a [char],
         tokens: Option<&'a mut Vec<Token>>,
         base: usize,
+        bracket_depth: &'a mut i32,
     ) -> Self {
         Lexer {
             language,
             chars,
             tokens,
             base,
+            bracket_depth,
             depth: 0,
             closes_known: false,
             heredoc: None,
@@ -732,6 +761,13 @@ impl Lexer<'_> {
                 self.retag(before, TokenKind::Property);
             }
             return Ok(end);
+        }
+
+        // 代码中的成对括号（`()`、`[]`、`{}`）在这里计数：字符串、注释、字符字面量等结构
+        // 在上面各自的分支里整段消费，走不到这里，其中的括号不会计入。Markdown 与标记语言
+        // 的括号不是代码括号，同样不计。
+        if !self.language.markdown && self.language.markup == Markup::None {
+            *self.bracket_depth = (*self.bracket_depth + bracket_delta(self.chars[i])).max(0);
         }
 
         Ok(self.token(i))

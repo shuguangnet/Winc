@@ -141,7 +141,7 @@ impl Cx<'_, '_> {
         let mut colors = vec![text_color; chars.len()];
         if let Some(language) = language {
             let mut tokens = Vec::new();
-            *state = winc_syntax::highlight_line(language, &chars, *state, &mut tokens);
+            *state = winc_syntax::highlight_line(language, &chars, *state, &mut tokens, &mut 0);
             for token in &tokens {
                 let color = (self.token)(token.kind);
                 for c in &mut colors[token.start.min(chars.len())..token.end.min(chars.len())] {

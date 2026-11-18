@@ -65,12 +65,13 @@ pub(super) fn draw_sticky(app: &mut App, frame: &mut Frame<'_>, index: usize) {
         // 尚未推算到该行的高亮状态时按普通文本绘制，推算完成后的下一帧显示语法着色。
         match states[i] {
             Some(state) => {
-                winc_syntax::highlight_line(language, &chars, state, &mut tokens);
+                winc_syntax::highlight_line(language, &chars, state, &mut tokens, &mut 0);
             }
             None => tokens.clear(),
         }
+        let mut depth = 0;
         draw_glyphs(
-            app, frame, &chars, &tokens, origin_x, baseline, tab_width, clip,
+            app, frame, &chars, &tokens, origin_x, baseline, tab_width, clip, &mut depth, false,
         );
     });
 }

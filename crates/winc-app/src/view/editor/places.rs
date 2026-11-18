@@ -310,6 +310,7 @@ fn draw_code(app: &App, frame: &mut Frame<'_>, place: &Place, area: Rect) {
         &chars,
         LineState::Normal,
         &mut tokens,
+        &mut 0,
     );
 
     let cell = app.metrics.cell;

@@ -337,7 +337,7 @@ impl App {
         for (i, line) in old.split_inclusive('\n').take(PREVIEW_LINES).enumerate() {
             let chars: Vec<char> = line.trim_end_matches(['\n', '\r']).chars().collect();
             let mut tokens = Vec::new();
-            state = winc_syntax::highlight_line(language, &chars, state, &mut tokens);
+            state = winc_syntax::highlight_line(language, &chars, state, &mut tokens, &mut 0);
             let words = marks
                 .as_ref()
                 .and_then(|m| m.old.get(i).cloned())

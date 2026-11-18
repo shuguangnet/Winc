@@ -70,6 +70,12 @@ pub(super) fn draw_text_area(app: &mut App, frame: &mut Frame<'_>, index: usize)
             start.or_else(|| Some(doc.approx_highlight_state(range.start)))
         })
         .collect();
+    // 每段第一行行首的括号嵌套层数，与高亮状态在同一次推算中得出；尚未推算到时按 0 起，
+    // 推算到位后（`pending` 触发的重绘）即为准确的层级。
+    let depths: Vec<Option<i32>> = segments
+        .iter()
+        .map(|range| doc.bracket_depth(range.start, HIGHLIGHT_BUDGET))
+        .collect();
     app.caches.highlight_pending |= pending;
     // 鼠标在行号栏上时，所有可折叠的行都绘制箭头（已折叠的行始终绘制）。
     let foldable: Vec<usize> = if app.pointer.hover == Hover::Gutter {
@@ -224,17 +230,28 @@ pub(super) fn draw_text_area(app: &mut App, frame: &mut Frame<'_>, index: usize)
             Rect::new(layout.editor.x, top, layout.editor.w, h.max(0.0))
         });
         // 每一段都从行首的高亮状态开始绘制：精确状态，或尚未推算到时的近似状态。
-        for (range, start) in segments.iter().zip(&states) {
+        // 括号的嵌套层数与状态在同一次推算中得出，逐行同样取用已知的精确值。
+        for ((range, start), depth) in segments.iter().zip(&states).zip(&depths) {
             let mut state = start.unwrap_or(LineState::Normal);
+            let mut depth = depth.unwrap_or(0);
             text.visit_lines(range.start, read_cap, |line, line_start, content| {
                 if line >= range.end {
                     return ControlFlow::Break(());
                 }
                 if read_cap < MAX_LINE_BYTES {
                     state = doc.known_highlight_state(line).unwrap_or(state);
+                    depth = doc.known_bracket_depth(line).unwrap_or(depth);
                 }
                 let mut draw = |frame: &mut Frame<'_>| {
-                    screen.draw_line(frame, &mut scratch, line, line_start, content, &mut state)
+                    screen.draw_line(
+                        frame,
+                        &mut scratch,
+                        line,
+                        line_start,
+                        content,
+                        &mut state,
+                        &mut depth,
+                    )
                 };
                 match curtain.filter(|_| screen.in_curtain(line)) {
                     Some(curtain) => frame.within(curtain, draw),

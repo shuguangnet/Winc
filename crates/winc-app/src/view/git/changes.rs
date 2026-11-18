@@ -224,6 +224,7 @@ pub(in crate::view) fn draw_change_popup(app: &mut App, frame: &mut Frame<'_>) {
                 let word = Rect::new(x0, row.y + 2.0, (x1 - x0).max(2.0), lh - 4.0);
                 frame.rect_clipped(word, removed.word, 3.0, clip);
             }
+            let mut depth = 0;
             draw_glyphs(
                 app,
                 frame,
@@ -233,6 +234,8 @@ pub(in crate::view) fn draw_change_popup(app: &mut App, frame: &mut Frame<'_>) {
                 baseline,
                 tab,
                 clip,
+                &mut depth,
+                false,
             );
         }
         if more > 0 {

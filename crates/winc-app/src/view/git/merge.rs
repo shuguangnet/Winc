@@ -482,7 +482,9 @@ fn draw_side_pane(
             &chars,
             state.unwrap_or_default(),
             &mut tokens,
+            &mut 0,
         );
+        let mut depth = 0;
         crate::view::editor::draw_glyphs(
             app,
             frame,
@@ -492,6 +494,8 @@ fn draw_side_pane(
             baseline,
             tab_width,
             text,
+            &mut depth,
+            false,
         );
     }
 

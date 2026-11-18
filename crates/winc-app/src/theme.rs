@@ -129,6 +129,8 @@ pub struct Palette {
     pub search_current: Color,
     /// 配对括号的底色。
     pub match_brace: Color,
+    /// 括号对着色：代码中成对括号（`()`、`[]`、`{}`）按嵌套层级循环使用的三种颜色。
+    pub brackets: [Color; 3],
     /// 光标所在的词在其他位置的出现；比选区淡得多，并与括号匹配的灰色区分开。
     pub occurrence: Color,
     /// 滚动条滑块的颜色，半透明，叠在卡片上。
@@ -448,6 +450,9 @@ impl Palette {
             search_match: t.git[1].alpha(if dark { 0.34 } else { 0.24 }),
             search_current: t.git[1].alpha(if dark { 0.62 } else { 0.46 }),
             match_brace: ink.alpha(if dark { 0.12 } else { 0.1 }),
+            // 括号对着色借用关键字、数字、函数三种语法色的色相：都是主题作者为深色、浅色背景
+            // 挑过的，与背景对比够，且和注释、字符串的灰绿明显不同。
+            brackets: [t.syntax[1], t.syntax[4], t.syntax[6]],
             occurrence: t.accent.alpha(if dark { 0.14 } else { 0.1 }),
             scrollbar: ink.alpha(if dark { 0.16 } else { 0.18 }),
             ruler_occurrence: ink.alpha(if dark { 0.34 } else { 0.24 }),

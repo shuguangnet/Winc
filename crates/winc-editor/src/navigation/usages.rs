@@ -45,7 +45,7 @@ pub(crate) fn token_kinds(
             };
             chars.clear();
             chars.extend(text.line(line).chars().filter(|&c| c != '\n' && c != '\r'));
-            winc_syntax::highlight_line(language, &chars, state, &mut tokens);
+            winc_syntax::highlight_line(language, &chars, state, &mut tokens, &mut 0);
             lexed = Some(line);
         }
         kinds[i] = tokens

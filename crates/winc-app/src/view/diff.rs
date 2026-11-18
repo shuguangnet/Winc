@@ -828,6 +828,7 @@ fn draw_body(
                 &chars,
                 state.unwrap_or_default(),
                 &mut tokens,
+                &mut 0,
             );
         }
         // 本行各字符之前的格数在首次使用时计算一次，改动的字符、查找结果、选区、光标均按列查表。
@@ -980,6 +981,7 @@ fn draw_body(
             }
         }
 
+        let mut depth = 0;
         draw_glyphs(
             app,
             frame,
@@ -989,6 +991,8 @@ fn draw_body(
             baseline,
             tab_width,
             clip,
+            &mut depth,
+            false,
         );
 
         // 其余光标与主光标同步闪烁；输入法组字只显示在主光标处，候选窗同样跟随主光标。

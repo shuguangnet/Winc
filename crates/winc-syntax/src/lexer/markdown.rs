@@ -41,8 +41,15 @@ impl Lexer<'_> {
                 self.push(0, n, TokenKind::String);
                 return Some(state);
             };
-            let next =
-                Lexer::new(code, chars, self.tokens.as_deref_mut(), self.base).run(expand(inner));
+            let mut depth = 0;
+            let next = Lexer::new(
+                code,
+                chars,
+                self.tokens.as_deref_mut(),
+                self.base,
+                &mut depth,
+            )
+            .run(expand(inner));
             return Some(LineState::Fence {
                 tilde,
                 language,

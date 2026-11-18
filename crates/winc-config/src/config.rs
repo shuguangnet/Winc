@@ -86,6 +86,8 @@ pub struct Config {
     pub outline: Option<bool>,
     /// 何时显示空格和制表符，默认为选中时。
     pub render_whitespace: Option<RenderWhitespace>,
+    /// 对代码中的成对括号（`()`、`[]`、`{}`）按嵌套层级着色，默认为是。
+    pub colorize_brackets: Option<bool>,
     /// 差异单栏显示：新旧内容上下排列，默认为否（左右并排）。
     pub diff_inline: Option<bool>,
     /// 在行号栏显示行号，默认为是；关闭后折叠箭头、书签和改动标记仍然显示。

@@ -14,7 +14,7 @@ pub use lang::{
     BlockString, Heredocs, Interpolation, Language, Markup, RawStrings, Variables, detect,
     detect_with_first_line, find, languages,
 };
-pub use lexer::{LineState, Token, TokenKind, highlight_line};
+pub use lexer::{LineState, Token, TokenKind, bracket_delta, highlight_line};
 
 /// 一个文档的高亮状态：每行行首的词法状态缓存。
 ///
@@ -27,11 +27,17 @@ pub struct Highlighter {
     ///
     /// 长度等于已推算的行数，且不小于 1。
     states: Vec<LineState>,
+    /// `depths[i]` 是第 `i` 行行首代码括号的嵌套层数（层），与 `states` 一一对应、一起推算。
+    ///
+    /// 字符串和注释中的括号不计（见 [`bracket_delta`]）；负数不会出现：多余的右括号按 0 处理。
+    depths: Vec<i32>,
     /// 大文件按 [`Self::state_near`] 推算出的一段连续行首状态：`near[i]` 是第
     /// `near_from + i` 行行首的状态，`near[0]` 从 `Normal` 开始推算。
     ///
     /// 为空时没有可用的结果。
     near: Vec<LineState>,
+    /// `near_depths[i]` 是 `near[i]` 对应行的括号嵌套层数，与 `near` 一一对应。
+    near_depths: Vec<i32>,
     /// `near` 第一项对应的行号（从 0 起）。
     near_from: usize,
     /// 推算状态时复用的字符缓冲，避免每行分配。
@@ -44,7 +50,9 @@ impl Highlighter {
         Self {
             language,
             states: vec![LineState::Normal],
+            depths: vec![0],
             near: Vec::new(),
+            near_depths: Vec::new(),
             near_from: 0,
             chars: Vec::new(),
         }
@@ -61,9 +69,20 @@ impl Highlighter {
         self.states.get(line).or_else(near).copied()
     }
 
+    /// 返回已推算出的第 `line` 行行首的括号嵌套层数，不做新的推算；尚未推算到该行时返回
+    /// `None`。
+    pub fn known_depth(&self, line: usize) -> Option<i32> {
+        if line < self.states.len() {
+            self.depths.get(line).copied()
+        } else {
+            None
+        }
+    }
+
     /// 丢弃第 `line` 行之后各行行首的状态；在第 `line` 行发生编辑后调用。
     pub fn invalidate_from(&mut self, line: usize) {
         self.states.truncate(line + 1);
+        self.depths.truncate(line + 1);
         match line.checked_sub(self.near_from) {
             Some(kept) => self.near.truncate(kept + 1),
             None => self.near.clear(),
@@ -80,7 +99,12 @@ impl Highlighter {
         let end = start + target.saturating_sub(start).min(budget);
 
         if end > start {
-            let (language, states, chars) = (self.language, &mut self.states, &mut self.chars);
+            let (language, states, depths, chars) = (
+                self.language,
+                &mut self.states,
+                &mut self.depths,
+                &mut self.chars,
+            );
 
             text.visit_short_lines(start, MAX_LINE_BYTES, |index, _, content| {
                 if index >= end {
@@ -88,7 +112,11 @@ impl Highlighter {
                 }
 
                 let state = states[states.len() - 1];
-                states.push(content.map_or(state, |line| scan(language, chars, line, state)));
+                let mut depth = depths[depths.len() - 1];
+                states.push(
+                    content.map_or(state, |line| scan(language, chars, line, state, &mut depth)),
+                );
+                depths.push(depth);
                 ControlFlow::Continue(())
             });
         }
@@ -107,8 +135,14 @@ impl Highlighter {
         if self.near.is_empty() || line < self.near_from || line > end + lookback {
             self.near_from = line.saturating_sub(lookback);
             self.near = vec![LineState::Normal];
+            self.near_depths = vec![0];
         }
-        let (language, chars, near) = (self.language, &mut self.chars, &mut self.near);
+        let (language, chars, near, near_depths) = (
+            self.language,
+            &mut self.chars,
+            &mut self.near,
+            &mut self.near_depths,
+        );
         let from = self.near_from;
         if line >= from + near.len() {
             text.visit_short_lines(
@@ -118,8 +152,14 @@ impl Highlighter {
                     if index >= line {
                         return ControlFlow::Break(());
                     }
+
                     let state = near[near.len() - 1];
-                    near.push(content.map_or(state, |line| scan(language, chars, line, state)));
+                    let mut depth = near_depths[near_depths.len() - 1];
+                    near.push(
+                        content
+                            .map_or(state, |line| scan(language, chars, line, state, &mut depth)),
+                    );
+                    near_depths.push(depth);
                     ControlFlow::Continue(())
                 },
             );
@@ -131,15 +171,22 @@ impl Highlighter {
 /// 推算第 `line` 行之后下一行行首的状态。
 ///
 /// `chars` 是复用的字符缓冲，只取行首的 `MAX_LINE_CHARS` 个字符。超过该长度的行只扫描开头，
-/// 此时直接返回 `state`，避免截断位置落在字符串或块注释中间时后续整个文件都按字符串着色。
-fn scan(language: &Language, chars: &mut Vec<char>, line: &str, state: LineState) -> LineState {
+/// 此时直接返回 `state`，避免截断位置落在字符串或块注释中间时后续整个文件都按字符串着色；
+/// 括号深度同样不变（截断处之后的括号不计，与着色只处理行首一段的规则一致）。
+fn scan(
+    language: &Language,
+    chars: &mut Vec<char>,
+    line: &str,
+    state: LineState,
+    depth: &mut i32,
+) -> LineState {
     chars.clear();
     let mut all = line.chars();
     chars.extend(all.by_ref().take(MAX_LINE_CHARS));
     if all.next().is_some() {
         return state;
     }
-    lexer::scan_line(language, chars, state)
+    lexer::scan_line(language, chars, state, depth)
 }
 
 #[cfg(test)]

@@ -15,6 +15,7 @@ const OCCURRENCE_MARGIN: usize = 256;
 impl Screen<'_> {
     /// 绘制行 `line`：`line_start` 是行首的字符偏移，`content` 是本行的文字，`state` 是行首的
     /// 高亮状态，绘制后更新为下一行行首的状态。
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_line(
         &self,
         frame: &mut Frame<'_>,
@@ -23,6 +24,7 @@ impl Screen<'_> {
         line_start: usize,
         content: &str,
         state: &mut LineState,
+        depth: &mut i32,
     ) {
         let Scratch {
             chars,
@@ -170,7 +172,13 @@ impl Screen<'_> {
             tokens.clear();
         }
         self.draw_whitespace(frame, &row);
-        let cells = self.draw_content(frame, &row, tokens);
+        // 括号对着色只用于普通代码行：跨行结构（字符串、注释、heredoc……）与 Markdown、标记
+        // 语言里的括号不计层级（与词法器维护的深度一致，见 `Lexer::bracket_depth`）。
+        let colorize = self.app.config.colorize_brackets != Some(false)
+            && *state == LineState::Normal
+            && self.language.markup == winc_syntax::Markup::None
+            && !self.language.markdown;
+        let cells = self.draw_content(frame, &row, tokens, depth, colorize);
         self.draw_tail(frame, &row, cells, (folded_hits, long_hits));
         self.draw_carets(frame, &row, ime_cursor);
     }
@@ -327,7 +335,16 @@ impl Screen<'_> {
     }
 
     /// 绘制文字，`tokens` 是本行的高亮结果；返回最后一段绘制到的单元格数。
-    fn draw_content(&self, frame: &mut Frame<'_>, row: &Row<'_>, tokens: &[Token]) -> usize {
+    ///
+    /// `depth` 是行首的括号嵌套层数，行内逐字符推进；`colorize` 为真时括号按层级着色。
+    fn draw_content(
+        &self,
+        frame: &mut Frame<'_>,
+        row: &Row<'_>,
+        tokens: &[Token],
+        depth: &mut i32,
+        colorize: bool,
+    ) -> usize {
         let (app, origin_x, tab_width, text_rect) =
             (self.app, self.origin_x, self.tab_width, self.text_rect);
         let (chars, breaks) = (row.chars, &row.breaks);
@@ -354,6 +371,8 @@ impl Screen<'_> {
                     base,
                     tab_width,
                     text_rect,
+                    depth,
+                    colorize,
                 );
             }
             // 折叠标记 `⋯` 和截断说明绘制在最后一段之后。
@@ -376,6 +395,8 @@ impl Screen<'_> {
                     row.baseline,
                     tab_width,
                     text_rect,
+                    depth,
+                    colorize,
                 ),
                 None => draw_glyphs(
                     app,
@@ -386,6 +407,8 @@ impl Screen<'_> {
                     row.baseline,
                     tab_width,
                     text_rect,
+                    depth,
+                    colorize,
                 ),
             }
         }

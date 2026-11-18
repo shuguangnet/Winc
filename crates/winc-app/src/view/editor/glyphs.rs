@@ -30,6 +30,7 @@ fn token_font(kind: TokenKind) -> FontKind {
 
 /// 绘制自动换行时一行中的一段（`range` 范围内的字符），从第 `start` 格开始（后续各段先留出缩进），
 /// 返回绘制结束时的格数。
+#[allow(clippy::too_many_arguments)]
 pub(super) fn draw_glyph_run(
     app: &App,
     frame: &mut Frame<'_>,
@@ -38,6 +39,8 @@ pub(super) fn draw_glyph_run(
     baseline: f32,
     tab_width: usize,
     clip: Rect,
+    depth: &mut i32,
+    colorize: bool,
 ) -> usize {
     let p = app.palette;
     let cell = app.metrics.cell;
@@ -48,12 +51,6 @@ pub(super) fn draw_glyph_run(
     let mut behind = text::Behind::before(chars, range.start);
     for col in range {
         let c = chars[col];
-        let width = behind.cells(c, cells, tab_width);
-        let x = origin_x + cells as f32 * cell;
-        cells += width;
-        if c == ' ' || c == '\t' || x > clip.right() || col < joined {
-            continue;
-        }
         while tokens.get(token).is_some_and(|t| t.end <= col) {
             token += 1;
         }
@@ -61,8 +58,20 @@ pub(super) fn draw_glyph_run(
             .get(token)
             .filter(|t| t.start <= col)
             .map_or(TokenKind::Text, |t| t.kind);
+        // 括号的层级在裁剪之前推进：同一段里被裁掉的部分也计入，右边的括号才接得上。
+        let color = if colorize && kind == TokenKind::Text {
+            bracket_ink(p, depth, c)
+        } else {
+            p.token(kind)
+        };
+        let width = behind.cells(c, cells, tab_width);
+        let x = origin_x + cells as f32 * cell;
+        cells += width;
+        if c == ' ' || c == '\t' || x > clip.right() || col < joined {
+            continue;
+        }
         let font = (token_font(kind), app.fonts.code, cell);
-        let (at, color) = ((x, baseline), p.token(kind));
+        let at = (x, baseline);
         joined = col + draw_grid_char(frame, font, at, (chars, col), color, clip);
     }
     cells
@@ -167,6 +176,9 @@ pub(in crate::view) fn draw_whitespace_mark(
 }
 
 /// 绘制一行的字符，按 `tokens` 着色，返回本行占用的格数。
+///
+/// `colorize` 为真时，代码里的成对括号（`()`、`[]`、`{}`）按 `depth`（行首的嵌套层数）推算
+/// 的层级着色，同一层级的配对括号同色；裁剪掉的字符同样推进层级。
 #[allow(clippy::too_many_arguments)]
 pub(in crate::view) fn draw_glyphs(
     app: &App,
@@ -177,6 +189,8 @@ pub(in crate::view) fn draw_glyphs(
     baseline: f32,
     tab_width: usize,
     clip: Rect,
+    depth: &mut i32,
+    colorize: bool,
 ) -> usize {
     let p = app.palette;
     let cell = app.metrics.cell;
@@ -187,6 +201,19 @@ pub(in crate::view) fn draw_glyphs(
     let mut behind = text::Behind::default();
 
     for (col, &c) in chars.iter().enumerate() {
+        while tokens.get(token).is_some_and(|t| t.end <= col) {
+            token += 1;
+        }
+        let kind = tokens
+            .get(token)
+            .filter(|t| t.start <= col)
+            .map_or(TokenKind::Text, |t| t.kind);
+        // 括号的层级在裁剪之前推进：行首被裁掉的部分也计入，右边的括号才接得上。
+        let color = if colorize && kind == TokenKind::Text {
+            bracket_ink(p, depth, c)
+        } else {
+            p.token(kind)
+        };
         let width = behind.cells(c, cells, tab_width);
         let x = origin_x + cells as f32 * cell;
         cells += width;
@@ -203,19 +230,28 @@ pub(in crate::view) fn draw_glyphs(
             continue;
         }
 
-        while tokens.get(token).is_some_and(|t| t.end <= col) {
-            token += 1;
-        }
-
-        let kind = tokens
-            .get(token)
-            .filter(|t| t.start <= col)
-            .map_or(TokenKind::Text, |t| t.kind);
         let font = (token_font(kind), app.fonts.code, cell);
-        let (at, color) = ((x, baseline), p.token(kind));
+        let at = (x, baseline);
         joined = col + draw_grid_char(frame, font, at, (chars, col), color, clip);
     }
     cells
+}
+
+/// 返回括号字符的颜色：按 `depth`（所在行此前的嵌套层数）循环取 [`Palette::brackets`]，
+/// 并把行内到此为止的深度写回 `depth`。
+fn bracket_ink(p: &crate::theme::Palette, depth: &mut i32, c: char) -> Color {
+    match c {
+        '(' | '[' | '{' => {
+            let level = (*depth).max(0);
+            *depth += 1;
+            p.brackets[level as usize % p.brackets.len()]
+        }
+        ')' | ']' | '}' => {
+            *depth = (*depth - 1).max(0);
+            p.brackets[*depth as usize % p.brackets.len()]
+        }
+        _ => p.syntax_text,
+    }
 }
 
 /// 绘制 CSV、TSV 的一行：每个字符绘制在对齐之后的单元格内，每一列使用一种颜色（循环使用
@@ -281,7 +317,7 @@ impl App {
         tokens: &mut Vec<winc_syntax::Token>,
     ) -> LineState {
         if chars.len() < LONG_TOKENS_MIN {
-            return winc_syntax::highlight_line(language, chars, state, tokens);
+            return winc_syntax::highlight_line(language, chars, state, tokens, &mut 0);
         }
         let key = (doc.id, doc.revision, line, chars.len(), state, language.id);
         let mut cache = self.caches.line_tokens.borrow_mut();
@@ -293,7 +329,7 @@ impl App {
             cache.entries.push(entry);
             return next;
         }
-        let next = winc_syntax::highlight_line(language, chars, state, tokens);
+        let next = winc_syntax::highlight_line(language, chars, state, tokens, &mut 0);
         if cache.entries.len() >= LONG_TOKENS_LINES {
             cache.entries.remove(0);
         }

@@ -351,7 +351,7 @@ impl App {
                 let current = root.and_then(|r| self.state.recent.iter().position(|p| p == r));
                 let mut menu: Vec<MenuEntry> = Vec::new();
                 menu.extend(project_menu(
-                    self.state.recent.len(),
+                    self.state.recent.len().min(winc_config::RECENT_IN_MENU),
                     current,
                     root.is_some(),
                     crate::system::wsl_distributions().len(),
@@ -369,7 +369,10 @@ impl App {
                     .as_ref()
                     .is_some_and(|w| w.multi_selected()) =>
             {
-                tree_selection_menu(self.tree_selected_files().len())
+                let targets = self.tree_targets();
+                let remote =
+                    !targets.is_empty() && targets.iter().all(|p| winc_backend::is_remote(p));
+                tree_selection_menu(self.tree_selected_files().len(), remote)
             }
             MenuTarget::Tree(path) => {
                 // 目录自己的一行和空白处一样：不能改名、剪切、删除。
@@ -381,7 +384,8 @@ impl App {
                     ws.row_of(p).map(|i| ws.rows()[i].kind)
                 });
                 let can_paste = self.can_paste_into_tree();
-                let mut menu = tree_menu(kind, can_paste);
+                let remote = path.as_deref().is_some_and(winc_backend::is_remote);
+                let mut menu = tree_menu(kind, can_paste, remote);
                 if kind.is_none() {
                     menu.extend(self.folder_items(folder));
                 }
@@ -707,7 +711,8 @@ impl App {
         };
         let entries = match place {
             Some(path) if winc_backend::is_remote(path) => {
-                without_local_only(entries, self.terminal_enabled())
+                let mounted = self.local_folder(path).is_some();
+                without_local_only(entries, self.terminal_enabled(), mounted)
             }
             _ => entries,
         };

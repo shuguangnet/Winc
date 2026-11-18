@@ -198,6 +198,8 @@ pub enum MenuCommand {
     Cut,
     Copy,
     Paste,
+    /// 远端的文件树：把这一项（多选时选中的各项）下载到本机的一个目录。
+    Download,
     GoToDefinition,
     FindReferences,
     /// 在当前行添加书签。
@@ -409,6 +411,8 @@ pub enum MenuCommand {
     GraphOpenFiles,
     /// 提交图里的提交：收起展开的文件列表。
     GraphHideFiles,
+    /// 编辑区：列出当前文件的本地历史（各次保存的快照）。
+    LocalHistory,
     /// 编辑区：开关逐行追溯（开着时打勾）。
     ToggleBlame,
     /// 提交视图「⋯」：储藏改动（输入说明）。
@@ -540,6 +544,7 @@ impl MenuCommand {
             MenuCommand::CopyReference => t!("cmd-copy-reference"),
             MenuCommand::Rename => t!("cmd-rename-file"),
             MenuCommand::Delete => t!("cmd-delete-file"),
+            MenuCommand::Download => t!("menu-download"),
             MenuCommand::Close => t!("common-close"),
             MenuCommand::CloseOthers => t!("cmd-close-other-tabs"),
             MenuCommand::CloseRight => t!("menu-close-tabs-right"),
@@ -624,6 +629,7 @@ impl MenuCommand {
             MenuCommand::GraphShowInLog => t!("menu-graph-show-in-log"),
             MenuCommand::GraphOpenFiles => t!("menu-graph-open-files"),
             MenuCommand::GraphHideFiles => t!("menu-graph-hide-files"),
+            MenuCommand::LocalHistory => t!("menu-editor-history"),
             MenuCommand::LogCopyMessage => t!("menu-log-copy-message"),
             MenuCommand::LogCopyPatch => t!("menu-log-copy-patch"),
             MenuCommand::LogCompareWithLocal => t!("menu-log-compare-with-local"),

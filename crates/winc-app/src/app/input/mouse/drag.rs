@@ -35,6 +35,10 @@ impl App {
                     self.drag_settings_scrollbar(y, grab);
                     true
                 }
+                Drag::SettingsCard { grab } => {
+                    self.drag_settings_card(x, y, grab);
+                    true
+                }
                 _ => false,
             };
             let part = (!dragging).then(|| self.settings_part_at(x, y)).flatten();
@@ -441,7 +445,8 @@ impl App {
 
                 self.request_redraw();
             }
-            Drag::None => {}
+            // 设置卡片在上面设置浮层打开时的分支中拖动；浮层已关闭时不再处理。
+            Drag::None | Drag::SettingsCard { .. } => {}
         }
     }
 

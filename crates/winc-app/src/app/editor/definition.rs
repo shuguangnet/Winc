@@ -47,6 +47,8 @@ pub enum PlacesKind {
     Usages,
     /// 一个文件中的书签。
     Bookmarks,
+    /// 一个文件的本地历史（各次保存的快照）。
+    LocalHistory,
 }
 
 impl PlacesKind {
@@ -56,6 +58,7 @@ impl PlacesKind {
             PlacesKind::Definitions => t!("editor-places-definitions-count", count = n),
             PlacesKind::Usages => t!("editor-places-usages-count", count = n),
             PlacesKind::Bookmarks => t!("editor-places-bookmarks-count", count = n),
+            PlacesKind::LocalHistory => t!("editor-places-history-count", count = n),
         }
     }
 }
@@ -321,17 +324,13 @@ impl App {
         self.request_redraw();
     }
 
-    /// 返回当前文档相对于已打开目录的路径；没有路径或不在目录中时返回文档名。
+    /// 返回当前文档与项目搜索结果同样写法的相对路径；没有路径或没有打开目录时返回文档名。
     fn relative_name(&self) -> String {
         let Some(doc) = self.editor.active() else {
             return String::new();
         };
-        match (doc.path.as_deref(), self.editor.root()) {
-            (Some(path), Some(root)) => path
-                .strip_prefix(root)
-                .unwrap_or(path)
-                .display()
-                .to_string(),
+        match (doc.path.as_deref(), self.editor.workspace.as_ref()) {
+            (Some(path), Some(workspace)) => workspace.labelled_path(path),
             _ => doc.name().into_owned(),
         }
     }
@@ -369,10 +368,11 @@ impl App {
         self.start_place_search(search, &root, &query);
     }
 
-    /// 在 `root` 下后台开始搜索 `query`，搜索进展由 [`Self::poll_definitions`] 处理。
+    /// 在 `root` 和附加目录下后台开始搜索 `query`，搜索进展由 [`Self::poll_definitions`] 处理。
     ///
     /// 未保存的文档按内存中的内容搜索。
     fn start_place_search(&mut self, mut search: DefinitionSearch, root: &Path, query: &Query) {
+        search.engine.set_extra_folders(self.extra_folders());
         let dirty = self.dirty_ropes();
         let proxy = self.link.proxy.clone();
         let wake = move || {
@@ -572,6 +572,7 @@ impl App {
         let origin = self.relative_name();
         self.finish_name_input();
         self.overlays.picker.places_out = None;
+        self.overlays.picker.history_files = None;
         self.jumps.name_hint = None;
         self.overlays.picker.places_wheel = 0.0;
         self.overlays.picker.places_in = self.clock(POPUP_IN);
@@ -627,12 +628,36 @@ impl App {
             return;
         };
         let place = places.items.swap_remove(i);
+        // 历史快照不跳转：打开它与当前内容的差异（快照文件在浮窗构建时一并记下）。
+        if places.kind == PlacesKind::LocalHistory {
+            let snapshot = self
+                .overlays
+                .picker
+                .history_files
+                .take_if(|files| i < files.len())
+                .and_then(|files| files.get(i).cloned());
+            self.close_picker();
+            if let Some(snapshot) = snapshot {
+                let time = place.relative.clone();
+                self.open_history_snapshot(snapshot, place.path, time);
+            }
+            return;
+        }
         // 列表已经取走，关闭面板时不保留淡出的影子：选中一项后就跳转过去，视图已经换了位置，
         // 影子没有意义。
         self.close_picker();
         if places.kind == PlacesKind::Bookmarks {
-            // 书签只跳转到所在行，不选中文字。
-            self.jump_to(place.line, 0, 0);
+            // 书签跳到所在行；文件不是当前文档时先打开它（尚未读入时等读入完成）。
+            let same =
+                self.editor.active().and_then(|d| d.path.as_deref()) == Some(place.path.as_path());
+            if same {
+                self.jump_to(place.line, place.col.unwrap_or(0), 0);
+            } else {
+                let (line, col) = (place.line, place.col.unwrap_or(0));
+                self.open_path(&place.path);
+                self.focus = Focus::Editor;
+                self.when_loaded(move |app| app.go_to(line, col, 0));
+            }
         } else {
             self.open_place(&place, &places.name);
         }

@@ -66,25 +66,63 @@ impl App {
         }
     }
 
-    /// 在快速打开的卡片中列出当前文档的书签（`⌥⌘L`）。
+    /// 在快速打开的卡片中列出书签（`⌥⌘L`）：当前文档的最前，其余打开的文档随后，未打开
+    /// 文件的书签（随目录会话保存的）按路径排在最后。
     ///
-    /// 输入内容可筛选，回车跳转到选中的书签所在行；没有书签时在状态栏提示。
+    /// 输入内容可筛选，回车跳转：文件已打开（或就是当前文档）时跳到那一行，尚未打开的先打开
+    /// 该文件再跳转；没有任何书签时在状态栏提示。
     pub(in crate::app) fn list_bookmarks(&mut self) {
-        let Some(doc) = self.editor.active() else {
-            return;
-        };
-        let items: Vec<Place> = doc
-            .bookmark_lines()
+        let active = self
+            .editor
+            .active()
+            .map_or(winc_editor::DocumentId(u64::MAX), |d| d.id);
+        let mut items: Vec<Place> = Vec::new();
+        // 打开的文档：当前文档最前，其余按标签顺序。
+        let mut open: Vec<&winc_editor::Document> = self.editor.documents.iter().collect();
+        open.sort_by_key(|doc| doc.id != active);
+        for doc in open {
+            if doc.path.is_none() && doc.id != active {
+                // 未命名文档的书签只在它自己打开时有效，跳不过去，不列出。
+                continue;
+            }
+            let path = doc.path.clone().unwrap_or_default();
+            let relative = doc.name().into_owned();
+            for &line in doc.bookmark_lines() {
+                items.push(Place {
+                    path: path.clone(),
+                    relative: relative.clone(),
+                    line,
+                    col: None,
+                    preview: doc.bookmark_preview(line),
+                    marks: Vec::new(),
+                });
+            }
+        }
+        // 未打开的文件：随目录会话保存的书签（打开着的文档不在这里，避免重复）。
+        let open_paths: Vec<&Path> = self
+            .editor
+            .documents
             .iter()
-            .map(|&line| Place {
-                path: doc.path.clone().unwrap_or_default(),
-                relative: doc.name().into_owned(),
-                line,
-                col: None,
-                preview: doc.bookmark_preview(line),
-                marks: Vec::new(),
-            })
+            .filter_map(|doc| doc.path.as_deref())
             .collect();
+        for (path, marks) in &self.editor.bookmarks {
+            if open_paths.contains(&path.as_path()) {
+                continue;
+            }
+            let relative = self
+                .relative_path(path)
+                .unwrap_or_else(|| winc_editor::display_name(path).into_owned());
+            for &line in marks.lines() {
+                items.push(Place {
+                    path: path.clone(),
+                    relative: relative.clone(),
+                    line,
+                    col: None,
+                    preview: String::new(),
+                    marks: Vec::new(),
+                });
+            }
+        }
         if items.is_empty() {
             self.flash(t!("editor-bookmark-none"));
             return;

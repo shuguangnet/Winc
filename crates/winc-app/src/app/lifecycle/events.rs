@@ -31,11 +31,7 @@ impl ApplicationHandler<UserEvent> for App {
             .workspace
             .as_ref()
             .map_or(crate::layout::PRODUCT_NAME, |w| w.name.as_str());
-        // 测量时窗口大小必须固定，测量结果才可比较。
-        let saved = self
-            .state
-            .window
-            .filter(|_| self.config.restore_window != Some(false) && !self.frame.bench.silent());
+        let saved = self.saved_window_frame();
         // 从已有窗口打开的新窗口使用记录的大小（没有记录时使用默认大小），位置相对来源窗口向
         // 右下方偏移。偏移后的位置与记录的位置都按当前显示器校验，不在任何显示器上时由系统决定。
         let cascade = self.opening.cascade.take().map(|(at, scale)| WindowFrame {
@@ -509,6 +505,7 @@ impl App {
                 self.request_redraw();
             }
             UserEvent::TerminalPaste(id, text) => self.confirmed_terminal_paste(id, text),
+            UserEvent::TerminalUploaded(id, result) => self.terminal_uploaded(id, result),
             UserEvent::TerminalQuit(ok) => {
                 if let Some(request) = self.closing.confirming.take()
                     && ok
@@ -546,13 +543,13 @@ impl App {
             UserEvent::OpenFolderIn(path, new_window, never_ask) => {
                 self.open_folder_in(&path, new_window, never_ask);
             }
-            UserEvent::Pasted(result, copying) => {
-                // 取消的那一项不算失败：不提示原因，之前粘贴好的各项照常显示。
-                let result = match self.copy_finished(&copying) {
-                    true => Ok(result.unwrap_or_default()),
-                    false => result,
-                };
-                self.pasted_into_tree(result);
+            UserEvent::Pasted(done, failure, copying) => {
+                self.copy_finished(&copying);
+                self.pasted_into_tree(done, failure);
+            }
+            UserEvent::Downloaded(done, failure, copying) => {
+                self.copy_finished(&copying);
+                self.downloaded(done, failure);
             }
             UserEvent::Copied(copies, failures, copying) => {
                 self.copy_finished(&copying);
@@ -594,7 +591,7 @@ impl App {
                     self.run_menu_command(command);
                 }
             }
-            UserEvent::Delete(paths) => self.delete_entries(&paths),
+            UserEvent::Delete(paths, permanent) => self.delete_entries(&paths, permanent),
             UserEvent::Formatted => self.poll_formatting(),
             UserEvent::ToolChoice(answer) => self.answer_tool_choice(answer),
             UserEvent::GitTrust(root, fingerprint, trusted) => {

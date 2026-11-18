@@ -299,7 +299,7 @@ pub(crate) fn history_title(path: &Path) -> String {
 }
 
 /// 后台返回的结果。
-pub(super) enum Loaded {
+pub(in crate::app) enum Loaded {
     /// 「转到提交号、分支或标签」的解析结果：完整的提交号，以及它是否在不筛选的日志中。
     GoTo {
         revision: String,
@@ -390,7 +390,7 @@ pub(super) enum Loaded {
 
 /// 从日志打开的差异所属的提交或比较。
 #[derive(PartialEq, Eq)]
-pub(super) struct LogDiffSource {
+pub(in crate::app) struct LogDiffSource {
     /// 所在仓库的根目录。
     root: PathBuf,
     /// 旧的一侧的提交；根提交没有父提交，为 `None`。
@@ -405,7 +405,7 @@ pub(super) struct LogDiffSource {
 
 /// 日志标签的状态：与后台之间的通道和点击区域；标签的数据存放在 `Document::log` 中。
 pub(crate) struct LogState {
-    pub(super) results: (Sender<Loaded>, Receiver<Loaded>),
+    pub(in crate::app) results: (Sender<Loaded>, Receiver<Loaded>),
     /// 标题栏的筛选输入框（按说明查找）。
     ///
     /// 所有日志标签共用一个输入框，切换标签时换为该标签的筛选文字。

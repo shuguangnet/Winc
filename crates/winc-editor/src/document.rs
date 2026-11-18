@@ -1042,6 +1042,31 @@ impl Document {
         self.highlighter.known_state(line)
     }
 
+    /// 返回第 `line` 行（从 0 起）行首代码括号（`()`、`[]`、`{}`）的嵌套层数；尚未推算到该行
+    /// 时返回 `None`。
+    ///
+    /// 括号着色据此推算行内每个括号的层级。深度与高亮状态在同一次推算中得出（见
+    /// [`Self::highlight_state`]），先调用它再取深度即可。
+    pub fn bracket_depth(&mut self, line: usize, budget: usize) -> Option<i32> {
+        match &self.text {
+            Content::Rope(rope) => self
+                .highlighter
+                .state_at(rope, line, budget)
+                .and_then(|_| self.highlighter.known_depth(line)),
+            Content::Large(large) => {
+                self.highlighter
+                    .state_near(&**large, line, HIGHLIGHT_LOOKBACK);
+                self.highlighter.known_depth(line)
+            }
+        }
+    }
+
+    /// 返回已推算出的第 `line` 行（从 0 起）行首的括号嵌套层数，不触发新的推算；尚未推算到时
+    /// 返回 `None`。
+    pub fn known_bracket_depth(&self, line: usize) -> Option<i32> {
+        self.highlighter.known_depth(line)
+    }
+
     /// 返回编辑区显示 `rows` 各行时固定在顶部的块（粘滞滚动，从外层到内层，最多 `max` 个），
     /// 以及高亮是否已推算到位。
     ///

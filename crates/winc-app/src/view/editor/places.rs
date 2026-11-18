@@ -207,6 +207,7 @@ fn draw_header(
         PlacesKind::Usages => (places.name.as_str(), t!("editor-places-usages-suffix")),
         PlacesKind::Definitions => (places.name.as_str(), t!("editor-places-definitions-suffix")),
         PlacesKind::Bookmarks => (t!("editor-places-bookmarks"), ""),
+        PlacesKind::LocalHistory => (t!("editor-places-history"), ""),
     };
     let title = ellipsize(frame, title, app.fonts.ui, (clip.right() - x) * 0.5);
     x = ui_text(frame, app, x, bar, &title, p.text, clip);
@@ -310,6 +311,7 @@ fn draw_code(app: &App, frame: &mut Frame<'_>, place: &Place, area: Rect) {
         &chars,
         LineState::Normal,
         &mut tokens,
+        &mut 0,
     );
 
     let cell = app.metrics.cell;

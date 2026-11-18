@@ -751,6 +751,8 @@ pub struct Picker {
     pub(crate) places_in: Option<crate::app::animation::Clock>,
     /// 位置浮窗关闭后的淡出状态；不在淡出时为 `None`。
     pub(crate) places_out: Option<PlacesGhost>,
+    /// 本地历史浮窗中各项对应的快照文件（`places.items` 的下标一一对应）；其他浮窗为 `None`。
+    pub(in crate::app) history_files: Option<Vec<PathBuf>>,
 }
 
 impl Default for Picker {
@@ -784,6 +786,7 @@ impl Default for Picker {
             places_wheel: 0.0,
             places_in: None,
             places_out: None,
+            history_files: None,
         }
     }
 }

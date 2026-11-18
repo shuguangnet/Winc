@@ -7,20 +7,17 @@ use std::path::{Path, PathBuf};
 
 use crate::json::Json;
 
-/// 最近目录和各目录现场的最大数量（个）。
-///
-/// 取 10（经验值），作用于最近项目菜单、每个目录现场的保存数量和徽章颜色分配。
-pub const MAX_RECENT: usize = 10;
+/// 最近打开的目录的最大数量（个），全部列在「打开最近的目录」中。
+pub const MAX_RECENT: usize = 50;
+
+/// 项目名菜单列出的最近目录数（个），与徽章颜色数相同：菜单中的目录颜色互不相同。
+pub const RECENT_IN_MENU: usize = BADGE_COLORS;
+
+/// 保存现场的目录数和退出时记下的其他窗口数的上限（个）。
+pub const MAX_SESSIONS: usize = 10;
 
 /// 项目徽章的颜色数量（种）。
-///
-/// 取 10（经验值）：最近列表里的目录各用一种颜色，互不相同，因此 [`MAX_RECENT`] 不能超过
-/// 该值。
 pub const BADGE_COLORS: usize = 10;
-const _: () = assert!(
-    MAX_RECENT <= BADGE_COLORS,
-    "最近列表中的每个目录必须使用不同的颜色"
-);
 
 /// 记住的提交信息的条数上限，与输入框的输入历史相同。
 pub const MAX_COMMIT_MESSAGES: usize = 50;
@@ -42,7 +39,7 @@ impl State {
 pub struct State {
     /// 最近打开的目录，最新的在前，不重复。
     pub recent: Vec<PathBuf>,
-    /// 每个目录上次的现场，最近的在前，每个目录一条，最多 [`MAX_RECENT`] 条。
+    /// 每个目录上次的现场，最近的在前，每个目录一条，最多 [`MAX_SESSIONS`] 条。
     pub sessions: Vec<Session>,
     /// 上次退出时开着的目录；退出时没有打开目录则为 `None`，下次启动显示开始页。
     pub last: Option<PathBuf>,
@@ -104,10 +101,11 @@ pub struct State {
     /// 从磁盘映像等位置运行时不询问是否移到「应用程序」文件夹：用户曾选择不移动并勾选「不再
     /// 询问」。仅在 macOS 上使用。
     pub stay_outside_applications: bool,
-    /// 最近列表里每个目录的徽章颜色（值在 `0..BADGE_COLORS` 之内），互不相同。
+    /// 最近列表前 [`BADGE_COLORS`] 个目录的徽章颜色（值在 `0..BADGE_COLORS` 之内），互不相同；
+    /// 更早的目录按名字取色。
     ///
-    /// 目录第一次进入最近列表时，选一个其他目录未使用的颜色，之后保持不变，使项目名旁和最近
-    /// 项目菜单中始终显示同一种颜色。
+    /// 目录进入这一段时选一个其他目录未使用的颜色，之后保持不变，使项目名旁和最近项目菜单中
+    /// 始终显示同一种颜色。
     badges: Vec<(PathBuf, usize)>,
     /// 用户对项目自带格式化工具（位于 `node_modules/.bin` 等目录）的确认结果，最近的在前。
     ///
@@ -195,6 +193,8 @@ pub struct Session {
     pub readonly_all: bool,
     /// 侧栏是否收起；没有记录过的目录为 `false`，打开时显示文件树。
     pub sidebar_hidden: bool,
+    /// 开着这个目录的窗口关闭时的大小和位置；没有记录时用 [`State::window`]。
+    pub window: Option<WindowFrame>,
 }
 
 /// 现场里的终端面板：各标签的工作目录（按标签栏中的顺序）、正在看的标签、面板开着没有、大小。
@@ -429,6 +429,7 @@ impl State {
                 readonly_all: s.get("readOnlyAll").and_then(Json::as_bool) == Some(true),
                 name: s.get("name").and_then(Json::as_str).map(str::to_owned),
                 sidebar_hidden: (s.get("sidebarHidden").and_then(Json::as_bool)).unwrap_or(false),
+                window: (s.get("window").and_then(Json::as_object)).and_then(window_frame),
             })
         };
 
@@ -511,7 +512,7 @@ impl State {
             .filter_map(session)
         {
             if !state.sessions.iter().any(|old| old.folder == s.folder)
-                && state.sessions.len() < MAX_RECENT
+                && state.sessions.len() < MAX_SESSIONS
             {
                 state.sessions.push(s);
             }
@@ -581,7 +582,7 @@ impl State {
             .filter(|m| matches!(*m, "split" | "preview"))
             .map(str::to_owned);
         for path in paths(root.get("otherWindows")) {
-            if !state.others.contains(&path) && state.others.len() < MAX_RECENT {
+            if !state.others.contains(&path) && state.others.len() < MAX_SESSIONS {
                 state.others.push(path);
             }
         }
@@ -614,11 +615,11 @@ impl State {
 
     /// 记录一个目录的现场并移到最前面。
     ///
-    /// 同目录的旧记录被替换，超出 [`MAX_RECENT`] 的从末尾移除。
+    /// 同目录的旧记录被替换，超出 [`MAX_SESSIONS`] 的从末尾移除。
     pub fn set_session(&mut self, session: Session) {
         self.sessions.retain(|s| s.folder != session.folder);
         self.sessions.insert(0, session);
-        self.sessions.truncate(MAX_RECENT);
+        self.sessions.truncate(MAX_SESSIONS);
     }
 
     /// 把 Vim 模式的大写标记与两种历史加入状态文件的字段 `fields`，为空的不加。
@@ -717,17 +718,7 @@ impl State {
             fields.push(("setupPending", Json::Bool(true)));
         }
         if let Some(frame) = &self.window {
-            let mut window = vec![
-                ("width", Json::Number(frame.width)),
-                ("height", Json::Number(frame.height)),
-                ("scale", Json::Number(frame.scale)),
-                ("maximized", Json::Bool(frame.maximized)),
-            ];
-            if let Some((x, y)) = frame.position {
-                window.push(("x", Json::Number(x)));
-                window.push(("y", Json::Number(y)));
-            }
-            fields.push(("window", Json::object(window)));
+            fields.push(("window", window_json(frame)));
         }
 
         let badges = self.badges.iter().map(|(folder, color)| {
@@ -823,6 +814,9 @@ impl State {
             // 展开是默认状态，不写。
             if session.sidebar_hidden {
                 items.push(("sidebarHidden", Json::Bool(true)));
+            }
+            if let Some(frame) = &session.window {
+                items.push(("window", window_json(frame)));
             }
             Json::object(items)
         });
@@ -966,8 +960,8 @@ impl State {
         self.trusted_repos.truncate(MAX_TOOL_CHOICES);
     }
 
-    /// 返回目录 `folder` 的徽章颜色（值在 `0..BADGE_COLORS` 之内）；不在最近列表中时按名字
-    /// 计算一个。
+    /// 返回目录 `folder` 的徽章颜色（值在 `0..BADGE_COLORS` 之内）；不在最近列表的前
+    /// [`BADGE_COLORS`] 个中时按名字计算一个。
     pub fn badge_color(&self, folder: &Path) -> usize {
         self.badges
             .iter()
@@ -975,10 +969,9 @@ impl State {
             .map_or_else(|| preferred_color(folder), |&(_, color)| color)
     }
 
-    /// 使最近列表里的目录各有一个互不相同的颜色。
+    /// 使最近列表前 [`BADGE_COLORS`] 个目录各有一个互不相同的颜色。
     ///
-    /// 已有的颜色保持不变，新来的目录从按名字算出的颜色起向后取第一个未占用的颜色；列表
-    /// 最多 [`MAX_RECENT`] 个，且 `MAX_RECENT <= BADGE_COLORS`，颜色一定够用。
+    /// 已有的颜色保持不变，新来的目录从按名字算出的颜色起向后取第一个未占用的颜色。
     fn assign_badges(&mut self) {
         // 先保留已有的颜色，再给新来的目录分配：新来的目录排在列表最前面，先分配会占用其他
         // 目录已有的颜色。
@@ -986,6 +979,7 @@ impl State {
         let mut colors: Vec<Option<usize>> = self
             .recent
             .iter()
+            .take(BADGE_COLORS)
             .map(|folder| {
                 let color = self
                     .badges
@@ -1114,6 +1108,21 @@ fn vim_marks(
     marks.sort();
     marks.dedup_by_key(|mark| mark.0);
     marks
+}
+
+/// 返回写进 `state.json` 的窗口大小和位置，格式见 [`window_frame`]。
+fn window_json(frame: &WindowFrame) -> Json {
+    let mut window = vec![
+        ("width", Json::Number(frame.width)),
+        ("height", Json::Number(frame.height)),
+        ("scale", Json::Number(frame.scale)),
+        ("maximized", Json::Bool(frame.maximized)),
+    ];
+    if let Some((x, y)) = frame.position {
+        window.push(("x", Json::Number(x)));
+        window.push(("y", Json::Number(y)));
+    }
+    Json::object(window)
 }
 
 /// 从 `state.json` 的 `window` 一节读出窗口的大小和位置；缺项或者数值不合理时为 `None`。

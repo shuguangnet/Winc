@@ -239,11 +239,13 @@ impl Lexer<'_> {
         let end = (from..chars.len()).find(|&k| closes(k));
         let stop = end.unwrap_or(chars.len());
         let base = self.base + from;
+        let mut depth = 0;
         let next = Lexer::new(
             embedded(script),
             &chars[from..stop],
             self.tokens.as_deref_mut(),
             base,
+            &mut depth,
         )
         .run(expand(inner));
         end.ok_or(LineState::Embedded {

@@ -72,6 +72,12 @@ editor-places-no-match = 无匹配的位置
 editor-places-usages-suffix = { " " }的用法
 editor-places-definitions-suffix = { " " }的定义
 editor-places-bookmarks = 书签
+editor-places-history = 本地历史
+editor-places-history-count = { $count } 个保存点
+editor-history-none = 此文件还没有本地历史
+editor-history-side = 「{ $time }」的快照
+editor-history-tab-title = 本地历史「{ $name }」
+editor-history-read-failed = 读取历史快照失败：{ $error }
 
 ## 差异视图。
 

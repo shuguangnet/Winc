@@ -47,6 +47,8 @@ pub enum PlacesKind {
     Usages,
     /// 一个文件中的书签。
     Bookmarks,
+    /// 一个文件的本地历史（各次保存的快照）。
+    LocalHistory,
 }
 
 impl PlacesKind {
@@ -56,6 +58,7 @@ impl PlacesKind {
             PlacesKind::Definitions => t!("editor-places-definitions-count", count = n),
             PlacesKind::Usages => t!("editor-places-usages-count", count = n),
             PlacesKind::Bookmarks => t!("editor-places-bookmarks-count", count = n),
+            PlacesKind::LocalHistory => t!("editor-places-history-count", count = n),
         }
     }
 }
@@ -572,6 +575,7 @@ impl App {
         let origin = self.relative_name();
         self.finish_name_input();
         self.overlays.picker.places_out = None;
+        self.overlays.picker.history_files = None;
         self.jumps.name_hint = None;
         self.overlays.picker.places_wheel = 0.0;
         self.overlays.picker.places_in = self.clock(POPUP_IN);
@@ -627,6 +631,21 @@ impl App {
             return;
         };
         let place = places.items.swap_remove(i);
+        // 历史快照不跳转：打开它与当前内容的差异（快照文件在浮窗构建时一并记下）。
+        if places.kind == PlacesKind::LocalHistory {
+            let snapshot = self
+                .overlays
+                .picker
+                .history_files
+                .take_if(|files| i < files.len())
+                .and_then(|files| files.get(i).cloned());
+            self.close_picker();
+            if let Some(snapshot) = snapshot {
+                let time = place.relative.clone();
+                self.open_history_snapshot(snapshot, place.path, time);
+            }
+            return;
+        }
         // 列表已经取走，关闭面板时不保留淡出的影子：选中一项后就跳转过去，视图已经换了位置，
         // 影子没有意义。
         self.close_picker();

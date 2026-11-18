@@ -513,6 +513,7 @@ impl App {
         }
         match command {
             MenuCommand::ToggleBlame => self.toggle_blame(),
+            MenuCommand::LocalHistory => self.list_local_history(),
             MenuCommand::GitAction(action) => {
                 self.run_action(action);
             }

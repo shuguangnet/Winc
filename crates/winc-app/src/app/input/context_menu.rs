@@ -409,6 +409,8 @@ pub enum MenuCommand {
     GraphOpenFiles,
     /// 提交图里的提交：收起展开的文件列表。
     GraphHideFiles,
+    /// 编辑区：列出当前文件的本地历史（各次保存的快照）。
+    LocalHistory,
     /// 编辑区：开关逐行追溯（开着时打勾）。
     ToggleBlame,
     /// 提交视图「⋯」：储藏改动（输入说明）。
@@ -624,6 +626,7 @@ impl MenuCommand {
             MenuCommand::GraphShowInLog => t!("menu-graph-show-in-log"),
             MenuCommand::GraphOpenFiles => t!("menu-graph-open-files"),
             MenuCommand::GraphHideFiles => t!("menu-graph-hide-files"),
+            MenuCommand::LocalHistory => t!("menu-editor-history"),
             MenuCommand::LogCopyMessage => t!("menu-log-copy-message"),
             MenuCommand::LogCopyPatch => t!("menu-log-copy-patch"),
             MenuCommand::LogCompareWithLocal => t!("menu-log-compare-with-local"),

@@ -181,6 +181,7 @@ const EDITOR: &[Field] = &[
     bool_field!("minimap", minimap),
     bool_field!("outline", outline),
     bool_field!("colorizeBrackets", colorize_brackets),
+    bool_field!("localHistory", local_history),
     Field {
         key: "renderWhitespace",
         read: |config, value, name, problems| {

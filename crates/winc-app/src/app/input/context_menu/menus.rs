@@ -449,6 +449,7 @@ pub fn editor_menu(editable: bool, selected: bool, bookmarked: bool) -> Vec<Menu
         Item(AddBookmark, !bookmarked),
         Item(RemoveBookmark, bookmarked),
         Item(ListBookmarks, true),
+        Item(LocalHistory, true),
         Separator,
         Item(Format, editable),
     ];

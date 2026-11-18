@@ -88,6 +88,8 @@ pub struct Config {
     pub render_whitespace: Option<RenderWhitespace>,
     /// 对代码中的成对括号（`()`、`[]`、`{}`）按嵌套层级着色，默认为是。
     pub colorize_brackets: Option<bool>,
+    /// 每次保存把内容快照到本地历史（可在编辑区菜单里浏览），默认为是。
+    pub local_history: Option<bool>,
     /// 差异单栏显示：新旧内容上下排列，默认为否（左右并排）。
     pub diff_inline: Option<bool>,
     /// 在行号栏显示行号，默认为是；关闭后折叠箭头、书签和改动标记仍然显示。

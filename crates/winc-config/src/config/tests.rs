@@ -258,6 +258,8 @@ fn round_trips_through_json() {
         word_wrap: Some(true),
         whole_lines: Some(true),
         minimap: Some(true),
+        colorize_brackets: Some(false),
+        local_history: Some(false),
         outline: Some(false),
         render_whitespace: Some(RenderWhitespace::Trailing),
         diff_inline: Some(true),

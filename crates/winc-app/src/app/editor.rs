@@ -15,6 +15,7 @@ pub(super) mod find;
 pub(super) mod folding;
 pub(super) mod format;
 pub(super) mod hint;
+pub(super) mod history;
 pub(super) mod navigation;
 pub(super) mod paste;
 pub(super) mod scrollbar;

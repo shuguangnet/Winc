@@ -87,6 +87,15 @@ editor-places-no-match = No matching locations
 editor-places-usages-suffix = { " " }usages
 editor-places-definitions-suffix = { " " }definitions
 editor-places-bookmarks = Bookmarks
+editor-places-history = Local History
+editor-places-history-count = { $count ->
+        [one] { $count } save point
+       *[other] { $count } save points
+    }
+editor-history-none = No local history for this file yet
+editor-history-side = Snapshot of { $time }
+editor-history-tab-title = Local History “{ $name }”
+editor-history-read-failed = Failed to read the history entry: { $error }
 
 ## Diff view.
 

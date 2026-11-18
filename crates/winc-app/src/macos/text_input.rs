@@ -75,6 +75,7 @@ extern "C-unwind" fn insert_text(
     // SAFETY: `AppKit` 在主线程调用本方法，`this` 是有效的内容视图，`text` 是 NSString 或
     // NSAttributedString；`currentEvent` 可能为空，判空后再使用；字符串由 `rust_string` 立即
     // 拷贝。
+    crate::trace::key("appkit: insertText 被调用");
     unsafe {
         let marked: Bool = msg_send![this, hasMarkedText];
         let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
@@ -87,6 +88,7 @@ extern "C-unwind" fn insert_text(
             && key_down
             && let Some(text) = text.as_ref()
         {
+            crate::trace::key("appkit: insertText 无标记、按键中");
             let attributed: Bool = msg_send![text, isKindOfClass: class!(NSAttributedString)];
             let string: *mut AnyObject = if attributed.as_bool() {
                 msg_send![text, string]
@@ -94,6 +96,10 @@ extern "C-unwind" fn insert_text(
                 (text as *const AnyObject).cast_mut()
             };
             let inserted = string.as_ref().and_then(|string| rust_string(string));
+            crate::trace::key(format!(
+                "appkit: insertText marked={} key_down={key_down} inserted={inserted:?}",
+                marked.as_bool()
+            ));
             INSERTED.with_borrow_mut(|slot| *slot = inserted);
         }
     }

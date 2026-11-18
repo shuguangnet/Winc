@@ -7,6 +7,7 @@ impl App {
     /// 把字节写给正在看的标签里的程序：回到最新的输出；程序的输出到了下一帧马上能发，不等这一帧
     /// 画完。
     pub(in crate::app) fn terminal_input(&mut self, bytes: Vec<u8>) {
+        crate::trace::key(format!("terminal_input: {bytes:02x?}"));
         let t = &mut self.terminal;
         let (Some(client), Some(tab)) = (&t.client, t.tabs.get_mut(t.active)) else {
             return;
@@ -170,6 +171,13 @@ impl App {
         if event.state != ElementState::Pressed {
             return;
         }
+        crate::trace::key(format!(
+            "on_key_terminal: key={:?} modes={:?} crashed={} ended={:?}",
+            event.logical_key,
+            self.terminal.tab().map(|t| t.modes),
+            self.terminal.crashed,
+            self.terminal.tab().map(|t| t.ended.is_some())
+        ));
         if !matches!(
             event.logical_key,
             Key::Named(
@@ -247,6 +255,21 @@ impl App {
 
     /// 把一次按键编码成写给终端的字节；这个键在终端里没有意义时返回 `None`。
     fn encode_terminal_key(&self, event: &KeyEvent, modes: Modes, keyboard: u8) -> Option<Vec<u8>> {
+        let encoded = self.encode_terminal_key_traced(event, modes, keyboard);
+        crate::trace::key(format!(
+            "encode: key={:?} text={:?} -> {encoded:02x?}",
+            event.logical_key, event.text
+        ));
+        encoded
+    }
+
+    /// [`App::encode_terminal_key`] 的本体；外面那层只多写一行日志。
+    fn encode_terminal_key_traced(
+        &self,
+        event: &KeyEvent,
+        modes: Modes,
+        keyboard: u8,
+    ) -> Option<Vec<u8>> {
         let m = self.pointer.modifiers;
         let option = m.alt_key();
         let mods = self.terminal_mods();

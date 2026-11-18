@@ -328,6 +328,7 @@ impl ApplicationHandler<UserEvent> for App {
                 }
             }
             WindowEvent::Focused(focused) => {
+                crate::trace::key(format!("window: focused={focused}"));
                 self.window.focused = focused;
                 self.update_foreground(focused);
                 // 离开窗口时停止录制按键，菜单项的快捷键随之恢复，不影响别的窗口和应用。
@@ -387,6 +388,10 @@ impl ApplicationHandler<UserEvent> for App {
                 is_synthetic: false,
                 ..
             } => {
+                crate::trace::key(format!(
+                    "window: state={:?} key={:?} text={:?} physical={:?} location={:?}",
+                    event.state, event.logical_key, event.text, event.physical_key, event.location
+                ));
                 // 以输入法在按键时直接提交的文字（如拼音输入法下的中文标点）代替按键本身的字符。
                 #[cfg(target_os = "macos")]
                 let event = crate::macos::with_inserted_text(event);

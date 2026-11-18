@@ -32,6 +32,15 @@ impl App {
     /// 处理顺序：取消文件树拖动、关闭「⋯」菜单、设置浮层（模态）、键位表中的快捷键，
     /// 最后按焦点分发。
     pub(in crate::app) fn on_key(&mut self, event: &KeyEvent) {
+        crate::trace::key(format!(
+            "on_key: focus={:?} state={:?} key={:?} text={:?} mods={:?} ime={:?}",
+            self.focus,
+            event.state,
+            event.logical_key,
+            event.text,
+            self.pointer.modifiers,
+            self.ime.preedit
+        ));
         if event.state != ElementState::Pressed {
             return;
         }
@@ -109,6 +118,10 @@ impl App {
         if let Some(stroke) = stroke
             && self.on_shortcut(stroke)
         {
+            crate::trace::key(format!(
+                "on_key: 被快捷键吃掉 stroke={stroke:?} key={:?}",
+                event.logical_key
+            ));
             // 快捷键把焦点挪走了：标签上正在改的名字照输入的算。
             if self.focus != Focus::TerminalRename {
                 self.finish_terminal_rename(true);

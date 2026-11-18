@@ -112,6 +112,17 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Args, String> {
                 _ => {}
             }
         }
+        // 系统打开 `winc://` 链接时把整个链接作为参数传进来（Windows、Linux）。
+        let text = arg.to_string_lossy();
+        if let Some((scheme, _)) = text.split_once("://")
+            && scheme.eq_ignore_ascii_case(LINK_SCHEME)
+        {
+            let Some(target) = link(&text) else {
+                return Err(t!("cmd-cli-bad-link", link = text.as_ref()).to_owned());
+            };
+            parsed.targets.push(target);
+            continue;
+        }
         parsed.targets.push(target(arg));
     }
     if let Some(distro) = &distro {
@@ -148,6 +159,47 @@ pub fn without_launcher_flag(args: impl IntoIterator<Item = OsString>) -> Vec<Os
 /// 返回命令行用法说明。
 pub fn usage() -> String {
     t!("cmd-cli-usage").to_owned()
+}
+
+/// 打开文件或目录的链接的前缀，链接为 `winc://file/<绝对路径>[:行[:列]]`。
+pub const LINK_SCHEME: &str = "winc";
+
+/// 把 `winc://file/<绝对路径>[:行[:列]]` 链接解析为要打开的 [`Target`]，行号和列号从 1 起。
+///
+/// 路径按百分号编码解码；查询和片段（`?`、`#` 之后）忽略。Windows 路径写作
+/// `winc://file/C:/目录/文件`。不是这种链接、路径不是绝对路径或解码后不是 UTF-8 时返回 `None`。
+pub fn link(url: &str) -> Option<Target> {
+    let (scheme, rest) = url.split_once("://")?;
+    let rest = rest.strip_prefix("file")?;
+    if !scheme.eq_ignore_ascii_case(LINK_SCHEME) || !rest.starts_with('/') {
+        return None;
+    }
+    let end = rest.find(['?', '#']).unwrap_or(rest.len());
+    let path = percent_decode(&rest[..end])?;
+    // `/C:/…` 是 Windows 盘符路径，去掉开头的斜杠。
+    let path = match path.as_bytes() {
+        [b'/', drive, b':', ..] if drive.is_ascii_alphabetic() => path[1..].to_owned(),
+        _ => path,
+    };
+    let target = target(OsString::from(path));
+    target.path.is_absolute().then_some(target)
+}
+
+/// 解码百分号编码（`%20` 为空格）；编码不完整或结果不是 UTF-8 时返回 `None`。
+fn percent_decode(text: &str) -> Option<String> {
+    let mut bytes = Vec::with_capacity(text.len());
+    let mut rest = text.as_bytes();
+    while let Some((&byte, tail)) = rest.split_first() {
+        if byte == b'%' {
+            let hex = std::str::from_utf8(tail.get(..2)?).ok()?;
+            bytes.push(u8::from_str_radix(hex, 16).ok()?);
+            rest = &tail[2..];
+        } else {
+            bytes.push(byte);
+            rest = tail;
+        }
+    }
+    String::from_utf8(bytes).ok()
 }
 
 /// 把一个命令行参数解析为 [`Target`]，识别 `路径:行:列` 和 `路径:行`。

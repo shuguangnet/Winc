@@ -10,6 +10,13 @@ impl App {
     pub(crate) fn adopt_config(&mut self, config: Config) {
         let old = std::mem::replace(&mut self.config, config);
         let new = &self.config;
+        if old.keymap != new.keymap || old.shortcuts != new.shortcuts {
+            for problem in crate::keymap::install_from(new) {
+                eprintln!("winc: {problem}");
+            }
+            self.keymap_changed();
+        }
+        let new = &self.config;
         let zoom = old.ui_zoom != new.ui_zoom;
         let fonts = (old.editor_font != new.editor_font || old.ui_font != new.ui_font)
             || (old.editor_size != new.editor_size || old.ui_size != new.ui_size)
@@ -36,6 +43,9 @@ impl App {
         let glyph_language = old.language != new.language
             && crate::set_locale(new.language.unwrap_or_default().resolve());
         let git = old.git_enabled != new.git_enabled;
+        let git_program = old.git_path != new.git_path;
+        let forget_credentials = old.git_remember_credentials != Some(false)
+            && new.git_remember_credentials == Some(false);
         let title_bar = old.ui_native_title_bar != new.ui_native_title_bar;
         let stop_terminal =
             old.terminal_enabled != new.terminal_enabled && new.terminal_enabled == Some(false);
@@ -82,6 +92,11 @@ impl App {
         }
         if git {
             self.git_folder_changed();
+        } else if git_program {
+            self.git_program_changed();
+        }
+        if forget_credentials {
+            crate::app::git::question::forget_credentials();
         }
         if stop_terminal {
             self.stop_terminal();

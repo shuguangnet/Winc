@@ -51,6 +51,11 @@ impl App {
             | CommitTarget::StashFile(_)
             | CommitTarget::StashApply(_)
             | CommitTarget::StashMenu(_) => self.press_commit_stash(target),
+            CommitTarget::Worktrees
+            | CommitTarget::WorktreeNew
+            | CommitTarget::WorktreeRow(_)
+            | CommitTarget::WorktreeMenu(_)
+            | CommitTarget::WorktreeMore => self.press_commit_worktree(target),
             CommitTarget::Group(_)
             | CommitTarget::GroupCheck(_)
             | CommitTarget::GroupRevert(_)
@@ -70,7 +75,9 @@ impl App {
                 self.toggle_other_fold(Some(repo), Some(group))
             }
             CommitTarget::OtherFold(repo) => self.toggle_other_fold(Some(repo), None),
-            CommitTarget::CurrentRepository => self.toggle_other_fold(None, None),
+            CommitTarget::CurrentFold => self.toggle_other_fold(None, None),
+            CommitTarget::CurrentRepository => self.focus = Focus::CommitList,
+            CommitTarget::QuietRepositories => self.toggle_quiet_repositories(),
             CommitTarget::CurrentCheck => {
                 let entries = self.git.status.iter().flat_map(|s| &s.entries);
                 let paths: Vec<PathBuf> = entries.map(|e| e.path.clone()).collect();
@@ -126,7 +133,7 @@ impl App {
                 let at = (graph.right() - 8.0, graph.y + GRAPH_HEADER);
                 self.open_button_menu(MenuButton::GraphCompare, MenuTarget::GraphCompare, at);
             }
-            CommitTarget::Location => self.open_worktree_picker(),
+            CommitTarget::Location => self.open_places(true),
             CommitTarget::Branch => self.open_branch_picker(GitAnchor::Branch),
             CommitTarget::Sync => self.git_sync(),
             // 按住 ⌥ 时按钮写的是「提交并推送」（见 `App::commit_pushes`）。

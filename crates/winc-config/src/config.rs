@@ -57,14 +57,18 @@ pub struct Config {
     ///
     /// 可用范围见 [`Config::TAB_WIDTH_RANGE`]。
     pub tab_width: Option<usize>,
-    /// 是否在切换标签或窗口失去焦点时保存修改，默认为否。
-    pub auto_save: Option<bool>,
+    /// 什么时候自动保存修改，默认不保存。
+    pub auto_save: Option<AutoSave>,
     /// 热退出：退出时不逐个询问是否保存，未保存的内容在下次启动时恢复，默认为开。
     pub hot_exit: Option<bool>,
+    /// 关闭窗口或退出前是否先确认，默认为否。
+    pub confirm_close: Option<bool>,
     /// 启动时打开上次退出时打开的目录和标签，默认为开。
     ///
     /// 关闭后每次启动都显示开始页；命令行指定了目录或文件时仍然打开。
     pub restore_folder: Option<bool>,
+    /// 把目录拖进已打开目录的窗口时怎样处理，默认每次询问。
+    pub drop_folder: Option<FolderDrop>,
     /// 已经打开了目录的窗口里再打开另一个目录时，`true` 在新窗口打开，`false` 在此窗口打开
     /// （替换当前目录）；没写时每次询问。
     ///
@@ -191,12 +195,18 @@ pub struct Config {
     pub terminal_application_priority: Option<bool>,
     /// 是否启用远程模块（经 `ssh` 打开其他主机上的目录），默认为否。
     pub remote_enabled: Option<bool>,
+    /// 键位方案：`idea` 或 `vscode`；没写时用 `idea`。
+    pub keymap: Option<String>,
+    /// 改过的快捷键：命令名 → 按键写法的数组，空数组表示不设快捷键。
+    pub shortcuts: BTreeMap<String, Vec<String>>,
     /// 是否启用 Git 模块（文件状态、分支、变更视图），默认为否。
     pub git_enabled: Option<bool>,
     /// 发布、推送或同步分支前是否先确认目标远程仓库，默认为是。
     ///
     /// 提示框上勾选「不再询问」后写成 `false`，可在设置中重新打开。
     pub git_confirm_push: Option<bool>,
+    /// 是否允许把通过验证的 HTTP(S) 密码保存在系统的凭据存储中，默认为是；关闭时清除已保存的。
+    pub git_remember_credentials: Option<bool>,
     /// `git` 访问网络时是否跟随系统的代理设置，默认为是；`git` 自己配置了代理或环境里已有代理
     /// 变量时以它们为准。
     pub git_system_proxy: Option<bool>,
@@ -216,6 +226,11 @@ pub struct Config {
     /// 开头的 `~/` 指仓库所在系统（本机或 WSL 发行版）中用户的主目录，相对路径相对于主工作树。
     /// 未设置，或者该目录与仓库不在同一系统中时，存放在仓库旁边的 `<仓库名>.worktrees` 中。
     pub git_worktree_root: Option<String>,
+    /// `git` 程序：完整路径，或在 `PATH` 里查找的程序名；未设置时在 `PATH` 里找 `git`。只用于
+    /// 本机的仓库。
+    pub git_path: Option<String>,
+    /// 点击工作树时在哪个窗口打开它，默认每次询问。
+    pub git_open_worktree: Option<WorktreeOpen>,
     /// 新建工作树时复制过去的被忽略的文件（gitignore 写法的 glob，如 `.env*`），默认不复制。
     pub git_worktree_copy: Vec<String>,
     /// 保存时先格式化，默认为否。
@@ -282,6 +297,57 @@ pub enum VimClipboard {
 impl VimClipboard {
     /// 全部取值，按设置菜单中的顺序排列。
     pub const ALL: [Self; 3] = [Self::Register, Self::Yank, Self::Always];
+}
+
+/// 什么时候自动保存有修改的文档。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AutoSave {
+    /// 不自动保存。
+    #[default]
+    Off,
+    /// 切换标签、编辑区失去焦点（例如切到终端）或窗口失去焦点时保存。
+    OnFocusChange,
+    /// 停止输入一段时间后保存，切换焦点时也保存。
+    AfterDelay,
+}
+
+impl AutoSave {
+    /// 全部取值，按设置菜单中的顺序排列。
+    pub const ALL: [Self; 3] = [Self::Off, Self::OnFocusChange, Self::AfterDelay];
+}
+
+/// 把目录拖进已打开目录的窗口时怎样处理。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FolderDrop {
+    /// 每次询问。
+    #[default]
+    Ask,
+    /// 加为窗口的附加目录。
+    Add,
+    /// 不添加，按落点处理：落在编辑区时打开该目录，落在文件树上时复制进目标目录。
+    Open,
+}
+
+impl FolderDrop {
+    /// 全部取值，按设置菜单中的顺序排列。
+    pub const ALL: [Self; 3] = [Self::Ask, Self::Add, Self::Open];
+}
+
+/// 点击工作树时在哪个窗口打开它。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WorktreeOpen {
+    /// 每次询问。
+    #[default]
+    Ask,
+    /// 在新窗口中打开，当前窗口不变。
+    NewWindow,
+    /// 在当前窗口中打开，替换当前打开的目录。
+    CurrentWindow,
+}
+
+impl WorktreeOpen {
+    /// 全部取值，按设置菜单中的顺序排列。
+    pub const ALL: [Self; 3] = [Self::Ask, Self::NewWindow, Self::CurrentWindow];
 }
 
 /// Vim 模式下映射生效的模式。

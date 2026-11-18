@@ -5,6 +5,7 @@
 
 mod adopt;
 mod formatters;
+pub(super) mod shortcuts;
 
 use std::ops::RangeInclusive;
 
@@ -18,7 +19,7 @@ use super::editor::format::{task_commands, task_commands_mut};
 use super::input::context_menu::{MenuTarget, menu_below, tool_setting as tool_setting_of};
 use super::*;
 use crate::keymap::{self, Os, Stroke};
-use crate::layout::{KeysLayout, SettingsView, ToolLanguages};
+use crate::layout::{KeyRows, KeysLayout, SettingsView, ToolLanguages};
 
 /// 设置浮层的状态。
 #[derive(Debug, Default)]
@@ -65,6 +66,12 @@ pub struct SettingsState {
     pub recording: bool,
     /// 搜索框中的内容是否为录制的按键（按键搜索，而不是按名称搜索）。
     pub keys_recorded: bool,
+    /// 「快捷键」页中正在修改的一行。
+    pub(crate) key_edit: Option<shortcuts::KeyEdit>,
+    /// 「快捷键」页中一行展开、收起的过渡：同时收起的另一行和时钟；展开的是 `key_edit` 的一行。
+    pub key_slide: Option<(Option<keymap::Action>, super::animation::Clock)>,
+    /// 「导入…」菜单列出的来源，打开菜单时查找。
+    pub(crate) import_sources: Vec<crate::keymap::import::Source>,
     /// 浮层正在出现（`true`）或消失（`false`）的动画：出现时遮罩淡入，卡片整张淡入、从 95%
     /// 放大到原大；消失时整张淡出、略微缩小。
     ///
@@ -236,6 +243,7 @@ impl App {
         }
 
         self.settings_cancel_field();
+        self.cancel_key_edit();
         self.settings.open = false;
         self.settings.motion = self
             .clock(super::animation::DIALOG_OUT)
@@ -267,14 +275,11 @@ impl App {
     /// 链接不可点击。
     pub(super) fn settings_part_at(&self, x: f32, y: f32) -> Option<SettingsPart> {
         let layout = self.settings_layout();
-        if layout.page == SettingsPage::Keys && !layout.searching {
-            let (search, record) = KeysLayout::header(layout.body);
-            if record.contains(x, y) {
-                return Some(SettingsPart::Record);
-            }
-            if search.contains(x, y) {
-                return Some(SettingsPart::KeySearch);
-            }
+        if layout.page == SettingsPage::Keys
+            && !layout.searching
+            && let Some(part) = self.keys_part_at(layout.body, x, y)
+        {
+            return Some(part);
         }
         let link = self
             .hits
@@ -474,19 +479,28 @@ impl App {
 
     /// 返回快捷键页当前帧的几何布局，内容按搜索框中的文字筛选。
     pub(crate) fn keys_layout(&self) -> KeysLayout {
+        let open = self.settings.key_edit.as_ref().map(|edit| edit.action);
+        let (closing, t) = match self.settings.key_slide {
+            Some((closing, clock)) => (closing, clock.progress()),
+            None => (None, 1.0),
+        };
+        self.keys_layout_with(KeyRows { open, closing, t })
+    }
+
+    /// 返回快捷键页各行高度按 `rows` 计算时的几何布局。
+    pub(crate) fn keys_layout_with(&self, rows: KeyRows) -> KeysLayout {
         let query = self.settings.keys_query.text();
         let recorded = self.settings.keys_recorded;
-        let groups = keymap::current_rows()
-            .iter()
-            .map(|(group, rows)| {
-                let rows = rows
-                    .iter()
-                    .filter(|row| keymap::row_matches(row, query, Os::CURRENT, recorded))
-                    .collect();
-                (*group, rows)
-            })
-            .collect();
-        KeysLayout::compute(self.settings_layout().body, groups, self.settings.scroll)
+        let keep = |row: &keymap::Row| keymap::row_matches(row, query, Os::CURRENT, recorded);
+        let body = self.settings_layout().body;
+        let scroll = self.settings.scroll;
+        let layout = KeysLayout::compute(body, keymap::current_rows(), keep, rows, scroll);
+        // 收起一行后列表变短，滚动量超出范围时内容贴住底部。
+        let max = layout.max_scroll();
+        if scroll <= max {
+            return layout;
+        }
+        KeysLayout::compute(body, keymap::current_rows(), keep, rows, max)
     }
 
     /// 录制按键时处理一次按键 `stroke`：写入搜索框。
@@ -592,7 +606,8 @@ impl App {
     /// 按滚轮增量 `dy`（逻辑像素）滚动当前页，滚动位置限制在有效范围内。
     pub(in crate::app) fn settings_scroll_by(&mut self, dy: f32) {
         let (_, max) = self.settings_scroll_area();
-        self.settings.scroll = (self.settings.scroll - dy).clamp(0.0, max);
+        // 列表收短后（如快捷键页收起一行）滚动量可能超出范围，从有效范围内的位置起算。
+        self.settings.scroll = (self.settings.scroll.min(max) - dy).clamp(0.0, max);
         self.settings.scrolled_at = Some(Instant::now());
         self.request_redraw();
     }
@@ -734,8 +749,8 @@ impl App {
         match setting {
             Setting::FormatOnSave => self.config.format_on_save == Some(true),
             Setting::FixOnSave => self.config.fix_on_save == Some(true),
-            Setting::AutoSave => self.config.auto_save == Some(true),
             Setting::HotExit => self.config.hot_exit != Some(false),
+            Setting::ConfirmClose => self.config.confirm_close == Some(true),
             Setting::RestoreFolder => self.config.restore_folder != Some(false),
             Setting::StickyScroll => self.config.sticky_scroll != Some(false),
             Setting::VimMode => self.config.vim_enabled == Some(true),
@@ -758,6 +773,7 @@ impl App {
             Setting::SystemTitleBar => self.config.ui_native_title_bar == Some(true),
             Setting::GitModule => self.git_enabled(),
             Setting::GitConfirmPush => self.config.git_confirm_push != Some(false),
+            Setting::GitRememberCredentials => self.config.git_remember_credentials != Some(false),
             Setting::GitSystemProxy => self.config.git_system_proxy != Some(false),
             Setting::GitInlineBlame => self.config.git_inline_blame != Some(false),
             Setting::GitAutoFetch => self.config.git_auto_fetch == Some(true),
@@ -794,8 +810,8 @@ impl App {
         match setting {
             Setting::FormatOnSave => self.config.format_on_save = Some(on),
             Setting::FixOnSave => self.config.fix_on_save = Some(on),
-            Setting::AutoSave => self.config.auto_save = Some(on),
             Setting::HotExit => self.config.hot_exit = Some(on),
+            Setting::ConfirmClose => self.config.confirm_close = Some(on),
             Setting::RestoreFolder => self.config.restore_folder = Some(on),
             Setting::StickyScroll => self.config.sticky_scroll = Some(on),
             Setting::VimMode => {
@@ -822,6 +838,12 @@ impl App {
             Setting::SystemTitleBar => self.config.ui_native_title_bar = Some(on),
             Setting::GitModule => self.config.git_enabled = Some(on),
             Setting::GitConfirmPush => self.config.git_confirm_push = Some(on),
+            Setting::GitRememberCredentials => {
+                self.config.git_remember_credentials = Some(on);
+                if !on {
+                    crate::app::git::question::forget_credentials();
+                }
+            }
             Setting::GitTree if on == self.git.commit.flat() => self.toggle_commit_layout(),
             Setting::GitTree => {}
             Setting::GitSystemProxy => {
@@ -915,6 +937,7 @@ impl App {
         let current = match tool_setting(setting) {
             Some((task, id)) => task_commands(&self.config, task).get(id).cloned(),
             None if setting == Setting::TerminalShell => self.config.terminal_shell.clone(),
+            None if setting == Setting::GitPath => self.config.git_path.clone(),
             None => self.font_setting(setting).clone(),
         };
         let mut field = TextField::default();
@@ -1027,6 +1050,13 @@ impl App {
                 self.settings.error = None;
                 self.focus = Focus::Settings;
                 self.set_terminal_shell(value);
+            }
+            None if setting == Setting::GitPath => {
+                self.settings.editing = None;
+                self.settings.editing_original = None;
+                self.settings.error = None;
+                self.focus = Focus::Settings;
+                self.set_git_path(value);
             }
             None => self.settings_commit_font(setting, value),
         }
@@ -1330,6 +1360,24 @@ impl App {
             // 汉字改按新的语言选字形，字体要重新加载；新字体总能加载，失败时留着原来的字体。
             let _ = self.apply_fonts();
         }
+        self.save_config();
+        self.request_redraw();
+    }
+
+    /// 设置 `git` 程序的路径；`None` 表示在 `PATH` 里查找。随后重新查找 `git` 并刷新。
+    pub(in crate::app) fn set_git_path(&mut self, path: Option<String>) {
+        if self.config.git_path == path {
+            return;
+        }
+        self.config.git_path = path;
+        self.save_config();
+        self.git_program_changed();
+        self.request_redraw();
+    }
+
+    /// 设置点击工作树时在哪个窗口打开它。
+    pub(in crate::app) fn set_open_worktree(&mut self, choice: winc_config::WorktreeOpen) {
+        self.config.git_open_worktree = Some(choice);
         self.save_config();
         self.request_redraw();
     }

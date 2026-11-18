@@ -16,6 +16,7 @@ cmd-new-file = 新建文件
 cmd-new-window = 新建窗口
 cmd-open-file = 打开…
 cmd-open-folder = 打开目录…
+cmd-add-folder = 添加目录到窗口…
 cmd-remote-connect = 远程：连接到 SSH 主机…
 cmd-remote-disconnect = 远程：断开连接
 cmd-open-recent = 打开最近的目录…
@@ -229,6 +230,8 @@ cmd-unfold-output = 终端：展开命令的输出
 cmd-next-error = 终端：下一处错误
 cmd-previous-error = 终端：上一处错误
 cmd-send-to-terminal = 终端：运行选中的代码
+cmd-toggle-read-only-all = 切换全部只读
+cmd-toggle-read-only = 切换只读
 cmd-toggle-preview = 切换预览
 
 ## 执行命令时的提示
@@ -254,6 +257,7 @@ cmd-cli-usage =
       -h, --help            显示帮助
       -v, --version         显示版本号
 cmd-cli-unknown-option = 无法识别的选项「{ $flag }」
+cmd-cli-bad-link = 无法打开链接「{ $link }」：应为 winc://file/ 加绝对路径
 cmd-cli-wait-needs-file = --wait 需要指定文件
 cmd-cli-wsl-needs-name = --wsl 需要指定发行版名称
 cmd-cli-wait-needs-openable-file = --wait 需要至少一个可打开的文件

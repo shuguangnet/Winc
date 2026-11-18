@@ -594,18 +594,17 @@ impl Winc {
         self.open_targets(event_loop, &launch.targets, launch.token);
     }
 
-    /// 系统交来了要打开的 `paths`（拖到程序坞的图标上、文件管理器里的「打开方式」），和之后启动的
-    /// `winc` 交来的一样按 [`Self::open_targets`] 打开。
+    /// 系统交来了要打开的 `targets`（拖到程序坞的图标上、文件管理器里的「打开方式」、`winc://`
+    /// 链接），和之后启动的 `winc` 交来的一样按 [`Self::open_targets`] 打开。
     ///
     /// 正在退出时不理会。
-    fn opened(&mut self, event_loop: &ActiveEventLoop, paths: &[PathBuf]) {
+    fn opened(&mut self, event_loop: &ActiveEventLoop, targets: &[Target]) {
         if self.quitting.is_some() {
             return;
         }
-        let targets = paths.iter().map(|path| Target {
-            path: crate::instance::absolute(path),
-            line: None,
-            col: None,
+        let targets = targets.iter().map(|target| Target {
+            path: crate::instance::absolute(&target.path),
+            ..target.clone()
         });
         self.open_targets(event_loop, &targets.collect::<Vec<_>>(), None);
     }
@@ -816,7 +815,7 @@ impl ApplicationHandler<Envelope> for Winc {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, envelope: Envelope) {
         match envelope.event {
             UserEvent::Launched(launch, answer) => self.launched(event_loop, launch, answer),
-            UserEvent::Opened(paths) => self.opened(event_loop, &paths),
+            UserEvent::Opened(targets) => self.opened(event_loop, &targets),
             UserEvent::UpdateFound(version) => {
                 *self.shared.update.borrow_mut() = version;
                 for slot in &mut self.windows {

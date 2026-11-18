@@ -6,6 +6,7 @@
 use super::*;
 
 mod history;
+mod locate;
 
 fn root() -> PathBuf {
     PathBuf::from("/repo")
@@ -1216,6 +1217,7 @@ fn operations_ask_through_the_askpass_program_and_keep_their_output() {
     let git = git.with_askpass(Some(Askpass {
         program,
         endpoint: "the-endpoint".into(),
+        credential_helper: false,
     }));
     assert!(git.operate(&root, &args).is_err());
     let auth = received

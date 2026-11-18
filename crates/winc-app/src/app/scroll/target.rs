@@ -136,7 +136,7 @@ impl App {
                 .commit_parts()
                 .stashes
                 .is_some_and(|stashes| stashes.contains(x, y))
-            && self.git.commit.stash_open
+            && self.git.commit.stashes.open
         {
             ScrollTarget::Stash
         } else if self.commit_shown() && in_list(self) {
@@ -243,7 +243,7 @@ impl App {
                 // 横向滚动落在比正文宽的表格上时滚动该表格，其余按竖直方向滚动预览。
                 let table =
                     sx != 0.0 && crate::app::preview::markdown::laid::scroll_table(self, x, y, sx);
-                if !table {
+                if !table && !self.scroll_toc((x, y), dy) {
                     self.scroll_pane_by(target, dy);
                 }
             }

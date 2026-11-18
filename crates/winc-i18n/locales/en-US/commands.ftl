@@ -16,6 +16,7 @@ cmd-new-file = New File
 cmd-new-window = New Window
 cmd-open-file = Open…
 cmd-open-folder = Open Folder…
+cmd-add-folder = Add Folder to Window…
 cmd-remote-connect = Remote: Connect to SSH Host…
 cmd-remote-disconnect = Remote: Disconnect
 cmd-open-recent = Open Recent Folder…
@@ -229,6 +230,8 @@ cmd-unfold-output = Terminal: Unfold Command Output
 cmd-next-error = Terminal: Next Error
 cmd-previous-error = Terminal: Previous Error
 cmd-send-to-terminal = Terminal: Run Selected Code
+cmd-toggle-read-only-all = Toggle Read-Only for All Files
+cmd-toggle-read-only = Toggle Read-Only
 cmd-toggle-preview = Toggle Preview
 
 ## Command feedback
@@ -254,6 +257,7 @@ cmd-cli-usage =
       -h, --help            Show this help
       -v, --version         Show the version
 cmd-cli-unknown-option = Unrecognized option “{ $flag }”
+cmd-cli-bad-link = Can’t open the link “{ $link }”: expected winc://file/ followed by an absolute path
 cmd-cli-wait-needs-file = --wait requires a file
 cmd-cli-wsl-needs-name = --wsl requires a distribution name
 cmd-cli-wait-needs-openable-file = --wait requires at least one file that can be opened

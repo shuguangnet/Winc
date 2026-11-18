@@ -1,10 +1,10 @@
 //! 并排差异标签的绘制：标题栏（两侧标题、改动处数、增删行数和导航按钮），左右两栏的代码和行号，
-//! 中间连接对应改动的带子，以及滚动条上每处改动的位置。
+//! 以及滚动条上每处改动的位置。
 //!
-//! 两侧分别绘制各自的行，行号靠近中间的带子。每段改动按类型使用主题中的柔和色（新增为绿、删除为灰、
-//! 修改为蓝），两侧底色与带子同色；一侧没有行时，在该侧的插入位置绘制一道线；改动的字符再加深
-//! 一层。并排时「»」和改动勾选框位于带子上，「»」用左侧的一段替换右侧；行勾选框位于行号栏靠近
-//! 文字的一侧。折叠的一段同样用带子连接。
+//! 两侧分别绘制各自的行，行号靠近中间的缝。每段改动在左侧用红（拿掉了什么）、右侧用绿（加了
+//! 什么）着色，两侧都有行的修改因此左右一红一绿；改动的字符再加深一层。一侧没有行时，在该侧的
+//! 插入位置绘制一道线。并排时「»」和改动勾选框位于中间的缝里，「»」用左侧的一段替换右侧；行勾
+//! 选框位于行号栏靠近文字的一侧。
 
 mod sticky;
 
@@ -41,6 +41,16 @@ const BUTTON: f32 = 24.0;
 /// 返回一处改动使用的颜色：仅右侧有的新增为绿，仅左侧有的删除为灰，两侧都有的修改为蓝。
 pub(super) fn hunk_shade(p: &Palette, hunk: &winc_core::diff::LineHunk) -> DiffShade {
     kind_shade(p, HunkKind::of(hunk))
+}
+
+/// 第 `side` 侧一段改动的颜色：两侧都有行的修改，在左侧按删除（红）、右侧按新增（绿）着色，
+/// 改动是拿掉了什么、又加了什么，一眼分得开。
+fn side_shade(p: &Palette, hunk: &winc_core::diff::LineHunk, side: usize) -> DiffShade {
+    match (HunkKind::of(hunk), side) {
+        (HunkKind::Modified, LEFT) => p.diff_deleted,
+        (HunkKind::Modified, _) => p.diff_added,
+        (kind, _) => kind_shade(p, kind),
+    }
 }
 
 fn kind_shade(p: &Palette, kind: HunkKind) -> DiffShade {
@@ -98,7 +108,6 @@ fn draw_fade(
             frame.rect_clipped(line, shade.edge, 0.0, parts.body);
         }
     }
-    draw_ribbon(frame, parts.ribbon, spans[0], spans[1], shade, parts.body);
 }
 
 /// 标出跳转到的改动：在该侧边缘绘制强调色竖线，该侧没有行时在插入位置绘制横线；刚跳转时
@@ -561,16 +570,16 @@ fn draw_pane_rules(
     let p = app.palette;
     let body = parts.body;
     let rule = p.separator.alpha(p.separator.a * 0.7);
-    for (side, x) in [
-        (LEFT, parts.panes[LEFT].text.right()),
-        (RIGHT, parts.panes[RIGHT].text.x - 1.0),
-    ] {
-        if view.is_unified() && side == LEFT {
-            continue;
-        }
-        let end = ends[side].clamp(body.y, body.bottom());
+    if view.is_unified() {
+        let x = parts.panes[LEFT].text.right();
+        let end = ends[LEFT].clamp(body.y, body.bottom());
         frame.rect(Rect::new(x, body.y, 1.0, end - body.y), rule);
+        return;
     }
+    // 并排：两侧之间那道缝的中间一条竖线，画到两侧最后一行中靠下的一行下面。
+    let x = parts.ribbon.x + (parts.ribbon.w / 2.0).floor();
+    let end = ends[LEFT].max(ends[RIGHT]).clamp(body.y, body.bottom());
+    frame.rect(Rect::new(x, body.y, 1.0, end - body.y), rule);
 }
 
 /// 在 `pane` 的行号栏中靠文字一侧右对齐绘制行号（`line` 从 0 起，显示时加 1）。
@@ -647,8 +656,8 @@ fn draw_body(
 
     draw_fade(app, frame, view, parts, &row_y);
 
-    // 先绘制文字区和中间一栏之间的分隔线，使改动行的底色覆盖分隔线，一段改动左右连续，
-    // 不被竖线切开。分隔线只绘制到该侧最后一行的下沿，不延伸到下方的空白。
+    // 先绘制分隔线：并排时是两侧之间那道缝中间的一条竖线，只画到最后一行下面，下方的空白不画；
+    // 单栏时是行号栏与文字之间的线。改动行的底色随后绘制，不会被线切开。
     let ends = [LEFT, RIGHT].map(|side| row_y(side, view.rows[side].len()));
     draw_pane_rules(app, frame, view, parts, ends);
 
@@ -689,7 +698,7 @@ fn draw_body(
             SideRow::Line { line, hunk, part } => (line, hunk, part),
         };
 
-        // 单栏时左右两侧的行上下排列，需要以颜色区分：删除行与新增行使用不同的颜色。
+        // 单栏时左右两侧的行上下排列，需要以颜色区分：删除行红、新增行绿；并排时左侧红、右侧绿。
         let row_shade = |view: &DiffView, h: usize| {
             if unified {
                 kind_shade(
@@ -701,7 +710,7 @@ fn draw_body(
                     },
                 )
             } else {
-                hunk_shade(p, &view.hunks[h])
+                side_shade(p, &view.hunks[h], side)
             }
         };
         let shade = hunk.map(|h| row_shade(view, h));
@@ -722,6 +731,14 @@ fn draw_body(
                 shade.line
             };
             frame.rect_clipped(band, fill, 0.0, body);
+            // 行号左边的色条：这段改动在这一侧的颜色；不提交的行淡一些。
+            let bar = Rect::new(parts.bars[side].x, y, parts.bars[side].w, lh);
+            let mark = if line_skipped {
+                shade.mark.alpha(shade.mark.a * SKIPPED_LINE_ALPHA)
+            } else {
+                shade.mark
+            };
+            frame.rect_clipped(bar, mark, 0.0, body);
             // 单栏时行勾选框显示在加减号的位置。
             let line_check = hunk
                 .and_then(|h| inclusions.get(h))
@@ -1062,25 +1079,7 @@ fn draw_body(
         ui_text_small(frame, app, x, row, note, p.text_dim, text);
     }
 
-    // 带子：每段改动从左侧的改动行连接到右侧的改动行；一侧没有行时该侧绘制一道线。
-    let ribbon = parts.ribbon;
-    // 折叠的一段在两侧的位置不一定相同：用与折叠行相同的淡色底连接，表示两侧为同一段。
-    if !unified {
-        let fill = p.hover.alpha(p.hover.a * 0.6);
-        let shade = DiffShade {
-            line: fill,
-            word: fill,
-            edge: fill,
-            mark: fill,
-        };
-        for &(left, right) in &view.fold_rows {
-            let (l0, r0) = (row_y(LEFT, left), row_y(RIGHT, right));
-            if (l0 + lh).max(r0 + lh) < body.y || l0.min(r0) > body.bottom() {
-                continue;
-            }
-            draw_ribbon(frame, ribbon, (l0, l0 + lh), (r0, r0 + lh), shade, body);
-        }
-    }
+    // 每段改动在各侧的底色已在上面绘制；一侧没有行时，在该侧绘制一道线表示此处缺了行。
     let hunks = if view.one_side_empty() {
         &[][..]
     } else {
@@ -1093,12 +1092,9 @@ fn draw_body(
         if l1.max(r1) < body.y || l0.min(r0) > body.bottom() {
             continue;
         }
-        let shade = hunk_shade(p, hunk);
-        if !unified {
-            draw_ribbon(frame, ribbon, (l0, l1), (r0, r1), shade, body);
-        }
         for (side, (y0, y1)) in [(LEFT, (l0, l1)), (RIGHT, (r0, r1))] {
             if y0 == y1 && !unified {
+                let shade = side_shade(p, hunk, side);
                 let pane = parts.panes[side];
                 let line = Rect::new(pane.rect.x, y0 - 0.5, pane.rect.w, 1.0);
                 frame.rect_clipped(line, shade.edge, 0.0, body);
@@ -1152,7 +1148,7 @@ fn draw_body(
                     body,
                 ),
             }
-            let rect = Rect::new(c.0 - 10.0, c.1 - 10.0, 20.0, 20.0);
+            let rect = Rect::new(c.0 - 8.0, c.1 - 8.0, 16.0, 16.0);
             hits.push((rect.intersect(body), DiffTarget::Include(h)));
         }
     }
@@ -1178,7 +1174,7 @@ fn draw_body(
             let c = (parts.revert_x, mid);
             let hovered = app.pointer.hover == Hover::Diff(DiffTarget::Revert(h));
             icons::line_replace(frame, c, hovered.then_some(p.hover), p.accent, body);
-            let rect = Rect::new(c.0 - 10.0, c.1 - 10.0, 20.0, 20.0);
+            let rect = Rect::new(c.0 - 8.0, c.1 - 8.0, 16.0, 16.0);
             hits.push((rect.intersect(body), DiffTarget::Revert(h)));
         }
     }

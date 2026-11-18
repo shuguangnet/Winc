@@ -357,10 +357,10 @@ const fn mix(fg: Color, bg: Color, t: f32) -> Color {
 ///
 /// 四档比例依次用于行、行内改动的字、边线和行号栏标记；深色主题叠得浓一些，否则在深色底上
 /// 看不出来。比例取自调参，按两种配色下改动可见程度相当校准。
-/// 深色主题下差异里删除的颜色：比编辑区底色亮、不带色相的灰。
-const DELETED_DARK: Color = palettes::hex(0x9DA1A8);
-/// 浅色主题下差异里删除的颜色：比编辑区底色暗、不带色相的灰。
-const DELETED_LIGHT: Color = palettes::hex(0x70737D);
+/// 深色主题下差异里删除的颜色：红。删除与新增用红绿对照，和大多数编辑器的差异视图一致。
+const DELETED_DARK: Color = palettes::hex(0xE06C75);
+/// 浅色主题下差异里删除的颜色：红。
+const DELETED_LIGHT: Color = palettes::hex(0xD1483F);
 
 const fn shade(mark: Color, card: Color, dark: bool) -> DiffShade {
     let t = if dark {
@@ -462,7 +462,7 @@ impl Palette {
             git_conflict: t.git[3],
             diff_modified: shade(t.git[0], t.card, dark),
             diff_added: shade(t.git[1], t.card, dark),
-            // 删除用中性灰，不随主题的 Git 状态色变红：红色留给合并冲突。
+            // 删除与新增一红一绿：改动是「拿掉了什么」还是「加了什么」，一眼分得开。
             diff_deleted: shade(
                 if dark { DELETED_DARK } else { DELETED_LIGHT },
                 t.card,

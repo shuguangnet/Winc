@@ -650,8 +650,17 @@ impl App {
         // 影子没有意义。
         self.close_picker();
         if places.kind == PlacesKind::Bookmarks {
-            // 书签只跳转到所在行，不选中文字。
-            self.jump_to(place.line, 0, 0);
+            // 书签跳到所在行；文件不是当前文档时先打开它（尚未读入时等读入完成）。
+            let same =
+                self.editor.active().and_then(|d| d.path.as_deref()) == Some(place.path.as_path());
+            if same {
+                self.jump_to(place.line, place.col.unwrap_or(0), 0);
+            } else {
+                let (line, col) = (place.line, place.col.unwrap_or(0));
+                self.open_path(&place.path);
+                self.focus = Focus::Editor;
+                self.when_loaded(move |app| app.go_to(line, col, 0));
+            }
         } else {
             self.open_place(&place, &places.name);
         }

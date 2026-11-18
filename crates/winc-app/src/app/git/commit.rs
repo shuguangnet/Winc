@@ -576,10 +576,12 @@ pub enum CommitTarget {
     LastCommit,
     /// 合并、变基暂停时说明条右端的「中止」按钮。
     Abort,
-    /// 提交图里的第几行（提交图里 `Commit` 的下标）：在 Git 日志标签中打开这个提交。
+    /// 提交图里的第几行（提交图里 `Commit` 的下标）：展开或收起它改动的文件。
     ///
     /// 见 [`crate::app::git::graph`]。
     GraphRow(usize),
+    /// 提交图展开的文件列表里的第几个文件（`GraphPart::files` 的下标）：打开当前内容。
+    GraphFile(usize),
     /// 提交图标题行右端的「获取」：获取远程更新。
     GraphFetch,
     /// 提交图标题行右端的「拉取」：从上游拉取。

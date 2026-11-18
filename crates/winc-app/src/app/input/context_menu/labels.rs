@@ -150,28 +150,29 @@ impl App {
     }
 
     /// 日志里提交菜单的文字：有本地分支指着这个提交时「签出「dev」」；拣选写明拣到哪个分支。
+    /// 提交图里的提交菜单（[`MenuTarget::GraphCommit`]）与日志共用一套命令，文字相同。
     fn log_commit_label(&self, command: MenuCommand) -> MenuLabel {
-        let Some(ContextMenu {
-            target: MenuTarget::LogCommit(oid),
-            ..
-        }) = &self.overlays.context_menu
-        else {
+        let Some(ContextMenu { target, .. }) = &self.overlays.context_menu else {
             return MenuLabel::plain(command.label());
         };
+        let (MenuTarget::LogCommit(oid) | MenuTarget::GraphCommit(oid)) = target else {
+            return MenuLabel::plain(command.label());
+        };
+        let oid = oid.clone();
         match command {
-            MenuCommand::LogCheckout => match self.log_checkout_branch(oid) {
+            MenuCommand::LogCheckout => match self.log_checkout_branch(&oid) {
                 Some(branch) => MenuLabel::plain(&t!("menu-log-checkout-branch", branch = branch)),
                 None => MenuLabel::plain(command.label()),
             },
             // 有能签出的本地分支指着它时签出那个分支，否则游离地签出提交；建在哪儿写在下面。
             MenuCommand::LogNewWorktree => {
-                let branch = self.log_checkout_branch(oid);
+                let branch = self.log_checkout_branch(&oid);
                 let branch = branch.and_then(|b| self.log_worktree_branch(&b));
                 let (title, dir) = match branch {
                     Some(b) => (t!("menu-log-new-worktree-branch", branch = &b.name), b.name),
                     None => (
                         command.label().to_owned(),
-                        crate::app::git::log::short(oid).into(),
+                        crate::app::git::log::short(&oid).into(),
                     ),
                 };
                 MenuLabel {

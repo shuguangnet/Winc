@@ -43,6 +43,8 @@ impl App {
         }
         match target {
             CommitTarget::GraphRow(index) => self.begin_graph_pan(Some(index)),
+            // 展开的文件列表点一下就打开，不参与拖动。
+            CommitTarget::GraphFile(index) => self.press_graph_file(index),
             // 空白处按下也能拖：不用先找一行才开始滚。
             CommitTarget::GraphBlank => self.begin_graph_pan(None),
             CommitTarget::GraphDivider => self.begin_graph_resize(),

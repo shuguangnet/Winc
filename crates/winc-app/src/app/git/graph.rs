@@ -15,16 +15,19 @@
 //! 以从标题行的对比控件换成任意本地分支或远程分支（见 [`App::graph_compare_base`]）。
 
 use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use crate::app::git::commit::DRAG_SLOP;
 use winc_core::graph::{Graph, GraphRow};
-use winc_editor::git::{Commit, Divergence, LogQuery};
+use winc_editor::format::Cancel;
+use winc_editor::git::{Commit, CommitFile, Divergence, LogQuery};
 use winc_i18n::t;
 
-use super::log::Loaded;
+use super::log::menus::local_diff;
+use super::log::{Loaded, short};
 use super::unusable;
 use crate::app::input::context_menu::{MenuCommand, MenuEntry, MenuLabel};
-use crate::app::{App, CommitTarget, Drag, Rect, UserEvent};
+use crate::app::{App, CommitTarget, Drag, Focus, Rect, UserEvent};
 
 /// 提交视图里的提交图取多少个提交（个）。
 ///
@@ -52,6 +55,14 @@ pub(crate) struct GraphPart {
     pub base: Option<String>,
     /// 与基准的对比结果；没有上游、也没手动选基准时为 `None`。
     pub compare: Option<GraphCompare>,
+    /// 展开的提交（完整的提交号）：点了它，它改动的文件就地列在这一行下面。
+    pub expanded: Option<String>,
+    /// 展开的提交改动的文件；还在读取、读取失败时为空。
+    pub files: Vec<CommitFile>,
+    /// 展开的提交的文件还在读取。
+    pub files_loading: bool,
+    /// 读取文件的版本号：发出请求与返回不一致时丢弃结果。
+    files_generation: u64,
     /// 上一次读取时的 `HEAD`（空仓库时是空串）：`HEAD` 不变的失败或空结果不重复读。
     head: Option<String>,
     /// 读取期间又要重新读取：读回的这一批已经过时，读完再读一次。
@@ -175,6 +186,14 @@ impl App {
                 self.git.graph.commits = commits;
                 self.git.graph.error = None;
                 self.git.graph.scroll = self.git.graph.scroll.max(0.0);
+                // 图重读后展开的提交可能已经不在列表里（改写历史、切换分支）：收起。
+                if let Some(oid) = &self.git.graph.expanded
+                    && !self.git.graph.commits.iter().any(|c| &c.oid == oid)
+                {
+                    self.git.graph.expanded = None;
+                    self.git.graph.files = Vec::new();
+                    self.git.graph.files_loading = false;
+                }
             }
             Err(error) => self.git.graph.error = Some(error),
         }
@@ -184,7 +203,8 @@ impl App {
         self.request_redraw();
     }
 
-    /// 点中提交图里的第 `index` 行：在 Git 日志标签中打开这个提交。
+    /// 点中提交图里的第 `index` 行：展开（或收起）它改动的文件，文件就地列在这一行下面，点
+    /// 其中的文件直接打开。
     ///
     /// 按下时只记住起点（见 [`Self::begin_graph_pan`]），松开时没拖动过才走到这里。
     pub(in crate::app) fn press_graph_row(&mut self, index: usize) {
@@ -192,7 +212,108 @@ impl App {
             return;
         };
         let oid = oid.to_owned();
-        self.show_log_commit(&oid, false);
+        // 再点一次同一行：收起。
+        if self.git.graph.expanded.as_deref() == Some(oid.as_str()) {
+            self.collapse_graph_files();
+            return;
+        }
+        self.expand_graph_commit(&oid);
+    }
+
+    /// 展开提交 `oid`：先记下展开状态并清掉上一次的文件，后台读取它改动的文件。
+    pub(in crate::app) fn expand_graph_commit(&mut self, oid: &str) {
+        let Some(root) = self.git.root.clone() else {
+            return;
+        };
+        // 文件对照第一个父提交算（根提交与空树比），与日志详情一致。
+        let parent = self
+            .graph_commit(oid)
+            .and_then(|c| c.parents.first().cloned());
+        let oid = oid.to_owned();
+        self.git.graph.expanded = Some(oid.clone());
+        self.git.graph.files = Vec::new();
+        self.git.graph.files_loading = true;
+        self.git.graph.files_generation += 1;
+        let generation = self.git.graph.files_generation;
+        let sender = self.git.log.results.0.clone();
+        self.spawn_git(UserEvent::GitLog, move |tool| {
+            let read = |git: winc_editor::git::Git| {
+                git.commit_files(&root, parent.as_deref(), &oid, &Cancel::default())
+            };
+            let result = tool.map_err(|e| unusable(&e)).and_then(read);
+            let _ = sender.send(Loaded::GraphFiles {
+                generation,
+                oid,
+                result,
+            });
+        });
+        self.request_redraw();
+    }
+
+    /// 收起展开的文件列表。
+    pub(in crate::app) fn collapse_graph_files(&mut self) {
+        self.git.graph.expanded = None;
+        self.git.graph.files = Vec::new();
+        self.git.graph.files_loading = false;
+        self.request_redraw();
+    }
+
+    /// 后台读回的展开提交的文件列表（见 [`Loaded::GraphFiles`]）：换上；已经展开别的提交
+    /// （版本号不一致）时丢弃。
+    pub(in crate::app) fn graph_files_arrived(
+        &mut self,
+        generation: u64,
+        _oid: String,
+        result: Result<Vec<CommitFile>, String>,
+    ) {
+        if generation != self.git.graph.files_generation {
+            return;
+        }
+        self.git.graph.files_loading = false;
+        if let Ok(files) = result {
+            self.git.graph.files = files;
+        }
+        self.request_redraw();
+    }
+
+    /// 点中展开列表里的第 `index` 个文件：文件在工作区里就直接打开它（当前内容），方便查看；
+    /// 已被删除的到日志里看这个提交的差异。
+    pub(in crate::app) fn press_graph_file(&mut self, index: usize) {
+        let Some(path) = self.git.graph.files.get(index).map(|f| f.path.clone()) else {
+            return;
+        };
+        if self.may_be_file(&path) {
+            self.open_path(&path);
+            self.focus = Focus::Editor;
+        } else if let Some(oid) = self.git.graph.expanded.clone() {
+            self.show_log_commit(&oid, false);
+        }
+        self.request_redraw();
+    }
+
+    /// 提交图里提交号是 `oid` 的提交；日志里的提交菜单在日志没有这个提交时也回退到这里找。
+    pub(crate) fn graph_commit(&self, oid: &str) -> Option<Commit> {
+        self.git
+            .graph
+            .commits
+            .iter()
+            .find(|c| c.oid == oid)
+            .cloned()
+    }
+
+    /// 展开的文件列表里第 `index` 个文件显示的文字：路径相对于打开的目录，改了名的按
+    /// 「旧名 → 新名」写。
+    pub(crate) fn graph_file_label(&self, index: usize) -> Option<String> {
+        let file = self.git.graph.files.get(index)?;
+        let name = |path: &Path| {
+            self.relative_path(path)
+                .unwrap_or_else(|| winc_editor::display_name(path).into_owned())
+        };
+        let mut text = name(&file.path);
+        if let Some(from) = &file.from {
+            text = format!("{} → {}", name(from), text);
+        }
+        Some(text)
     }
 
     /// 提交图读哪些引用：当前分支，加上对比的基准。
@@ -406,11 +527,16 @@ impl App {
         self.request_redraw();
     }
 
-    /// 提交图最多能滚动多远（逻辑像素）：行数乘以行高，减去 `rows`（[`graph_rows`] 的结果）
-    /// 里看得到的那部分。
+    /// 提交图最多能滚动多远（逻辑像素）：提交的行数加上展开列表的行数，乘以行高，减去
+    /// `rows`（[`graph_rows`] 的结果）里看得到的那部分。
     pub(crate) fn graph_scroll_max(&self, rows: Rect) -> f32 {
-        let rows_count = self.git.graph.commits.len() as f32;
-        (rows_count * GRAPH_ROW - rows.h.max(0.0)).max(0.0)
+        let count = self.git.graph.commits.len()
+            + match self.git.graph.expanded.as_deref() {
+                // 正在读取时先留出一行「正在读取」的提示。
+                Some(_) => self.git.graph.files.len() + usize::from(self.git.graph.files_loading),
+                None => 0,
+            };
+        ((count as f32) * GRAPH_ROW - rows.h.max(0.0)).max(0.0)
     }
 
     /// 在提交图上按下第 `row` 行：开始上下拖动，内容跟着指针走。
@@ -436,7 +562,7 @@ impl App {
         self.request_redraw();
     }
 
-    /// 松开提交图上的拖动：移动不到 [`DRAG_SLOP`] 时按点击处理，打开按下的那一行。
+    /// 松开提交图上的拖动：移动不到 [`DRAG_SLOP`] 时按点击处理，展开按下的那一行。
     ///
     /// 拖过一段距离时停在这里，不回到整行：与滚轮一样按像素滚动，行可以停在屏幕中间。
     pub(in crate::app) fn release_graph_pan(&mut self, start: (f32, f32), row: Option<usize>) {
@@ -447,6 +573,105 @@ impl App {
         if let Some(row) = row {
             self.press_graph_row(row);
         }
+    }
+
+    /// 右键点在提交图的一行提交上：返回它的提交号。
+    pub(in crate::app) fn graph_context_target(&mut self, x: f32, y: f32) -> Option<String> {
+        if !self.commit_shown() {
+            return None;
+        }
+        let CommitTarget::GraphRow(i) = crate::layout::hit(&self.hits.commit, x, y)? else {
+            return None;
+        };
+        self.focus = Focus::CommitList;
+        let oid = self.git.graph.oid(i)?.to_owned();
+        Some(oid)
+    }
+
+    /// 右键点在提交图展开的文件列表里：返回（提交号，文件的路径）。
+    pub(in crate::app) fn graph_file_context_target(
+        &mut self,
+        x: f32,
+        y: f32,
+    ) -> Option<(String, PathBuf)> {
+        if !self.commit_shown() {
+            return None;
+        }
+        let CommitTarget::GraphFile(i) = crate::layout::hit(&self.hits.commit, x, y)? else {
+            return None;
+        };
+        let path = self.git.graph.files.get(i)?.path.clone();
+        Some((self.git.graph.expanded.clone()?, path))
+    }
+
+    /// 提交图提交菜单里的命令：展开、收起、在日志中查看是提交图自己的，其余与日志的提交命令
+    /// 共用一套（拣选、还原、复制提交号与说明……）。
+    pub(in crate::app) fn run_graph_commit_command(&mut self, command: MenuCommand, oid: &str) {
+        match command {
+            MenuCommand::GraphShowInLog => self.show_log_commit(oid, false),
+            MenuCommand::GraphOpenFiles => self.expand_graph_commit(oid),
+            MenuCommand::GraphHideFiles => {
+                if self.git.graph.expanded.as_deref() == Some(oid) {
+                    self.collapse_graph_files();
+                }
+            }
+            command => self.run_log_commit_command(command, oid),
+        }
+        self.request_redraw();
+    }
+
+    /// 提交图展开列表里一个文件的右键菜单命令：打开当前文件、与工作区比较、文件历史、显示
+    /// 位置、复制路径。
+    pub(in crate::app) fn run_graph_file_command(
+        &mut self,
+        command: MenuCommand,
+        oid: &str,
+        path: PathBuf,
+    ) {
+        match command {
+            MenuCommand::GitOpenFile => {
+                if self.may_be_file(&path) {
+                    self.open_path(&path);
+                    self.focus = Focus::Editor;
+                }
+            }
+            // 文件在这个提交里的版本和工作区里的版本并排比较。
+            MenuCommand::LogCompareWithLocal => self.compare_graph_file_with_local(oid, path),
+            MenuCommand::FileHistory => self.git_file_history(&path),
+            MenuCommand::CopyPath | MenuCommand::CopyRelativePath => {
+                self.copy_path(&path, command == MenuCommand::CopyRelativePath);
+            }
+            MenuCommand::Reveal => self.reveal_in_file_manager(&path),
+            MenuCommand::RevealInTree => {
+                self.show_files();
+                self.reveal_path(&path);
+            }
+            _ => {}
+        }
+        self.request_redraw();
+    }
+
+    /// 把文件 `path` 在提交 `oid` 里的版本和工作区里的版本并排比较，在后台读取，打开为新
+    /// 标签（与日志的「与工作区比较」打开的是同一类标签，见 [`Loaded::LocalDiff`]）。
+    pub(in crate::app) fn compare_graph_file_with_local(&mut self, oid: &str, path: PathBuf) {
+        let Some(root) = self.git.root.clone() else {
+            return;
+        };
+        let rev = oid.to_owned();
+        let name = winc_editor::display_name(&path).into_owned();
+        let title = t!(
+            "git-log-local-diff-title",
+            name = name.as_str(),
+            rev = short(&rev)
+        );
+        let sender = self.git.log.results.0.clone();
+        self.spawn_git(UserEvent::GitLog, move |tool| {
+            let view = tool
+                .map_err(|e| unusable(&e))
+                .and_then(|git| local_diff(&git, &root, &rev, &path))
+                .map(Box::new);
+            let _ = sender.send(Loaded::LocalDiff { title, view });
+        });
     }
 }
 

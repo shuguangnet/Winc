@@ -57,6 +57,7 @@ git-graph-compare-none = Choose a base to compare with
 git-graph-no-remote = This repository has no remote
 git-graph-compare-auto-none = Automatic (no upstream branch)
 git-graph-compare-log = Compare the Changed Files in the Log
+git-graph-files-loading = Loading the changed files…
 git-stash-group = Stashes
 git-stash-more-files = { $count ->
     [one] { $count } more file

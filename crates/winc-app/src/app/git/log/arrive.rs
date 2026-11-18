@@ -19,6 +19,11 @@ impl App {
                     base,
                     result,
                 } => self.graph_compare_arrived(generation, base, result),
+                Loaded::GraphFiles {
+                    generation,
+                    oid,
+                    result,
+                } => self.graph_files_arrived(generation, oid, result),
                 Loaded::Commits {
                     doc,
                     generation,

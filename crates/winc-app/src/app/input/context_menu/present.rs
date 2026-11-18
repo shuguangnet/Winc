@@ -151,6 +151,10 @@ impl App {
             target
         } else if let Some(path) = self.commit_context_target(x, y) {
             MenuTarget::CommitFile(path)
+        } else if let Some(oid) = self.graph_context_target(x, y) {
+            MenuTarget::GraphCommit(oid)
+        } else if let Some((oid, path)) = self.graph_file_context_target(x, y) {
+            MenuTarget::GraphFile(oid, path)
         } else if let Some((i, path)) = self.log_file_context_target(x, y) {
             MenuTarget::LogFile(i, path)
         } else if let Some(index) = self.log_branch_context_target(x, y) {
@@ -657,6 +661,23 @@ impl App {
                         .is_some_and(|s| s.operation.is_some());
                 log_commit_menu(!busy, &self.current_branch_label(), &tags)
             }
+            MenuTarget::GraphCommit(oid) => {
+                let commit = self.graph_commit(oid);
+                let tags: Vec<&str> = (commit.iter().flat_map(|c| &c.refs))
+                    .filter_map(crate::app::git::log::menus::tag_name)
+                    .collect();
+                let busy = self.git.branch.running.is_some()
+                    || self
+                        .git
+                        .status
+                        .as_ref()
+                        .is_some_and(|s| s.operation.is_some());
+                let expanded = self.git.graph.expanded.as_deref() == Some(oid.as_str());
+                graph_commit_menu(!busy, expanded, &self.current_branch_label(), &tags)
+            }
+            MenuTarget::GraphFile(_, path) => {
+                log_file_menu(self.may_exist(path), self.relative_path(path).is_some())
+            }
             MenuTarget::LogColumns => self.log_columns_menu(),
             MenuTarget::LogDate | MenuTarget::LogPath | MenuTarget::LogAuthor => {
                 self.log_filter_menu(&target)
@@ -681,6 +702,7 @@ impl App {
             MenuTarget::Tree(path) => path.as_deref().or(self.editor.root()),
             MenuTarget::Tab(id) => (self.editor.document(*id)).and_then(|d| d.path.as_deref()),
             MenuTarget::CommitFile(path) | MenuTarget::LogFile(_, path) => Some(path.as_path()),
+            MenuTarget::GraphFile(_, path) => Some(path.as_path()),
             _ => None,
         };
         let entries = match place {

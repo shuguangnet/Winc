@@ -336,6 +336,14 @@ pub(super) enum Loaded {
         base: String,
         result: Result<Divergence, String>,
     },
+    /// 提交图里展开的提交改动的文件（[`super::graph`]）。
+    GraphFiles {
+        /// 发出请求时的版本号；不一致时结果已过时。
+        generation: u64,
+        /// 展开的提交号；展开的行已经换了时结果直接丢弃。
+        oid: String,
+        result: Result<Vec<CommitFile>, String>,
+    },
     /// 一个文件在某个版本里与工作区里的并排差异，打开为新标签。
     LocalDiff {
         title: String,

@@ -403,6 +403,12 @@ pub enum MenuCommand {
     LogGoTo,
     /// 日志里的提交：与输入的提交号、分支或标签比较。
     LogCompareRevision,
+    /// 提交图里的提交：在 Git 日志标签里查看。
+    GraphShowInLog,
+    /// 提交图里的提交：就地展开它改动的文件。
+    GraphOpenFiles,
+    /// 提交图里的提交：收起展开的文件列表。
+    GraphHideFiles,
     /// 编辑区：开关逐行追溯（开着时打勾）。
     ToggleBlame,
     /// 提交视图「⋯」：储藏改动（输入说明）。
@@ -615,6 +621,9 @@ impl MenuCommand {
             MenuCommand::LogCopyShortOid => t!("menu-log-copy-short-oid"),
             MenuCommand::LogGoTo => t!("menu-log-go-to"),
             MenuCommand::LogCompareRevision => t!("menu-log-compare-revision"),
+            MenuCommand::GraphShowInLog => t!("menu-graph-show-in-log"),
+            MenuCommand::GraphOpenFiles => t!("menu-graph-open-files"),
+            MenuCommand::GraphHideFiles => t!("menu-graph-hide-files"),
             MenuCommand::LogCopyMessage => t!("menu-log-copy-message"),
             MenuCommand::LogCopyPatch => t!("menu-log-copy-patch"),
             MenuCommand::LogCompareWithLocal => t!("menu-log-compare-with-local"),
@@ -976,6 +985,10 @@ pub enum MenuTarget {
     LogPath,
     /// 日志里的一个提交（完整的提交号）。
     LogCommit(String),
+    /// 提交视图底部提交图里的一个提交（完整的提交号）：右键弹出提交的菜单。
+    GraphCommit(String),
+    /// 提交图里展开的改动文件之一：完整的提交号和文件的路径，右键弹出文件的菜单。
+    GraphFile(String, PathBuf),
     /// 日志详情（或比较）里改动的一个文件：文件列表里的下标和文件的路径。
     LogFile(usize, PathBuf),
     /// 终端标签栏上的一个标签（编号）。

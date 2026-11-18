@@ -1,4 +1,4 @@
-//! 提交视图底部提交图的测试：位置、各行、点击打开提交、滚轮滚动、拖动、获取与对比。
+//! 提交视图底部提交图的测试：位置、各行、点击展开提交改动的文件、滚轮滚动、拖动、获取与对比。
 
 use super::*;
 
@@ -37,12 +37,19 @@ fn the_commit_graph_lists_recent_commits_below_the_changes() {
     assert_eq!(rows[0], 0);
     assert!(rows.windows(2).all(|pair| pair[1] == pair[0] + 1));
 
-    // 点一行在 Git 日志标签里打开这个提交。
+    // 点一行：就地展开这个提交改动的文件（文件列表随后台读取同步返回）。
     let oid = commits[0].oid.clone();
     app.press_graph_row(0);
-    let view = app.editor.active().and_then(|d| d.log.as_deref());
-    let view = view.expect("打开 Git 日志标签");
-    assert!(view.commits.iter().any(|commit| commit.oid == oid));
+    assert_eq!(
+        app.git.graph.expanded.as_deref(),
+        Some(oid.as_str()),
+        "展开点中的提交"
+    );
+    assert!(!app.git.graph.files.is_empty(), "文件列表已经取回");
+    // 再点一次：收起。
+    app.press_graph_row(0);
+    assert!(app.git.graph.expanded.is_none(), "收起展开的文件列表");
+    assert!(app.git.graph.files.is_empty());
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -377,7 +384,7 @@ fn the_commit_graph_follows_the_pointer_while_dragged() {
 }
 
 #[test]
-fn a_click_without_moving_opens_the_commit() {
+fn a_click_without_moving_expands_the_commit() {
     let Some((mut app, root)) = git_app("git-commit-graph-click", false) else {
         return;
     };
@@ -388,18 +395,18 @@ fn a_click_without_moving_opens_the_commit() {
     let rows = graph_rows(graph);
     let commits = app.git.graph.commits.clone();
     let oid = commits[2].oid.clone();
-    // 按下再松开、中间没有移动：打开按下的那一行。
+    // 按下再松开、中间没有移动：展开按下的那一行。
     let (x, y) = (graph.x + 40.0, rows.y + 2.5 * GRAPH_ROW);
     app.pointer.mouse = (x, y);
     app.on_mouse_down(MouseButton::Left);
-    assert!(
-        app.editor.active().and_then(|d| d.log.as_deref()).is_none(),
-        "按下时不打开提交"
-    );
+    assert!(app.git.graph.expanded.is_none(), "按下时不展开");
     app.on_mouse_up(MouseButton::Left);
-    let view = app.editor.active().and_then(|d| d.log.as_deref());
-    let view = view.expect("松开时打开 Git 日志标签");
-    assert!(view.commits.iter().any(|commit| commit.oid == oid));
+    assert_eq!(
+        app.git.graph.expanded.as_deref(),
+        Some(oid.as_str()),
+        "松开时展开按下的那一行"
+    );
+    assert!(!app.git.graph.files.is_empty(), "文件列表已经取回");
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -690,6 +697,100 @@ fn the_graph_buttons_run_fetch_pull_and_push() {
         "对比控件的提示写明基准与领先、落后的个数"
     );
     let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 展开的提交：文件就地列在这一行下面，点一个文件打开它的当前内容。
+#[test]
+fn the_expanded_files_open_in_the_editor() {
+    let Some((mut app, root)) = git_app("git-commit-graph-files", false) else {
+        return;
+    };
+    history_repo(&root, 40);
+    many_commits(&root, 24);
+    app.run_action(Action::ShowCommit);
+    app.git_refresh();
+    paint(&mut app);
+    // 展开最近的一个提交：它改动的文件列在下面，各有一个命中范围。
+    app.press_graph_row(0);
+    paint(&mut app);
+    let files = app.git.graph.files.clone();
+    assert!(!files.is_empty(), "文件列表取回来了");
+    let hits: Vec<(Rect, CommitTarget)> = app
+        .hits
+        .commit
+        .iter()
+        .filter_map(|(r, t)| matches!(t, CommitTarget::GraphFile(_)).then_some((*r, *t)))
+        .collect();
+    assert_eq!(hits.len(), files.len(), "每个文件一行，都点得到");
+    // 展开的列表计入滚动范围：滚得比不展开时更远。
+    let graph = app.commit_parts().graph.expect("显示提交图");
+    let rows = graph_rows(graph);
+    let expanded = app.graph_scroll_max(rows);
+    app.collapse_graph_files();
+    assert!(
+        expanded > app.graph_scroll_max(rows),
+        "展开时滚得更远：{expanded}"
+    );
+    // 点第一个文件：编辑区打开它的当前内容。
+    let first = app.git.graph.commits[0].oid.clone();
+    app.expand_graph_commit(&first);
+    paint(&mut app);
+    let first = files[0].path.clone();
+    app.press_commit(CommitTarget::GraphFile(0));
+    let opened = app
+        .editor
+        .active()
+        .and_then(|d| d.path.clone())
+        .expect("点开的文件在编辑区里打开");
+    assert_eq!(opened, first);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 提交图里提交的右键菜单：展开文件、到日志中查看，以及与日志菜单共用的一套
+/// （拣选、复制提交号与说明……）。
+#[test]
+fn the_graph_right_click_menu_offers_the_log_actions() {
+    let Some((mut app, root)) = git_app("git-commit-graph-menu", false) else {
+        return;
+    };
+    history_repo(&root, 40);
+    app.run_action(Action::ShowCommit);
+    paint(&mut app);
+    let oid = app.git.graph.commits[1].oid.clone();
+    app.open_context_menu(MenuTarget::GraphCommit(oid.clone()), (0.0, 0.0));
+    let commands = menu_commands(&app);
+    let has = |commands: &[(MenuCommand, bool)], command: MenuCommand| {
+        commands.iter().any(|(c, _)| *c == command)
+    };
+    assert!(has(&commands, MenuCommand::GraphShowInLog));
+    assert!(has(&commands, MenuCommand::GraphOpenFiles));
+    // 与日志的提交菜单同一套命令。
+    assert!(has(&commands, MenuCommand::LogCherryPick));
+    assert!(has(&commands, MenuCommand::LogCopyOid));
+    assert!(has(&commands, MenuCommand::LogCopyShortOid));
+    assert!(has(&commands, MenuCommand::LogCopyMessage));
+    assert!(has(&commands, MenuCommand::LogRevert));
+    app.dismiss_popup();
+    // 复制提交号：剪贴板里是完整的提交号。
+    app.open_context_menu(MenuTarget::GraphCommit(oid.clone()), (0.0, 0.0));
+    app.run_menu_command(MenuCommand::LogCopyOid);
+    assert_eq!(
+        app.clipboard.copied.as_deref(),
+        Some(oid.as_str()),
+        "复制了完整的提交号"
+    );
+    app.dismiss_popup();
+    // 菜单里点「展开改动的文件」：与点击这一行一样展开。
+    app.open_context_menu(MenuTarget::GraphCommit(oid.clone()), (0.0, 0.0));
+    app.run_menu_command(MenuCommand::GraphOpenFiles);
+    assert_eq!(app.git.graph.expanded.as_deref(), Some(oid.as_str()));
+    app.dismiss_popup();
+    // 再开一次菜单：已展开的提交写的是「收起文件列表」。
+    app.open_context_menu(MenuTarget::GraphCommit(oid), (0.0, 0.0));
+    let commands = menu_commands(&app);
+    assert!(has(&commands, MenuCommand::GraphHideFiles));
+    app.dismiss_popup();
     let _ = std::fs::remove_dir_all(&root);
 }
 

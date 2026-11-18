@@ -31,6 +31,8 @@ impl App {
             MenuTarget::Tab(id) => self.run_tab_command(command, id),
             MenuTarget::CommitFile(path) => self.run_commit_file_command(command, path),
             MenuTarget::LogCommit(oid) => self.run_log_commit_command(command, &oid),
+            MenuTarget::GraphCommit(oid) => self.run_graph_commit_command(command, &oid),
+            MenuTarget::GraphFile(oid, path) => self.run_graph_file_command(command, &oid, path),
             MenuTarget::LogFile(i, path) => self.run_log_file_command(command, i, path),
             MenuTarget::SearchResult(path, m) => self.run_search_result_command(command, path, m),
             // 分支、储藏的下标按弹出菜单时的列表解释：菜单打开期间状态刷新后，

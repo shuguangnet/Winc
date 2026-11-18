@@ -277,6 +277,35 @@ pub fn log_commit_menu(enabled: bool, branch: &str, tags: &[&str]) -> Vec<MenuEn
     menu
 }
 
+/// 提交视图底部提交图里一个提交的右键菜单：在日志中查看、就地展开（或收起）它改动的文件，
+/// 其余与日志里的提交菜单相同（签出、拣选、还原、复制提交号与说明……），命令共用一套。
+///
+/// `enabled` 的含义见 [`log_commit_menu`]；`expanded` 是这一行当前是否已展开文件列表。
+pub fn graph_commit_menu(
+    enabled: bool,
+    expanded: bool,
+    branch: &str,
+    tags: &[&str],
+) -> Vec<MenuEntry> {
+    use MenuCommand::*;
+    use MenuEntry::{Item, Separator};
+
+    let mut menu = vec![
+        Item(GraphShowInLog, true),
+        Item(
+            if expanded {
+                GraphHideFiles
+            } else {
+                GraphOpenFiles
+            },
+            true,
+        ),
+        Separator,
+    ];
+    menu.extend(log_commit_menu(enabled, branch, tags));
+    menu
+}
+
 /// 日志详情里一个改动文件的右键菜单：显示这次的差异、打开工作区里的文件、显示文件历史，
 /// 在文件树、文件管理器中显示，复制路径。
 ///

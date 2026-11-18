@@ -57,6 +57,7 @@ git-graph-compare-none = 选择对比的基准
 git-graph-no-remote = 没有远程仓库
 git-graph-compare-auto-none = 自动（没有上游分支）
 git-graph-compare-log = 在日志中比较改动的文件
+git-graph-files-loading = 正在读取改动的文件…
 git-stash-group = 储藏
 git-stash-more-files = 还有 { $count } 个文件
 git-stash-no-files = 此储藏中无可显示的更改

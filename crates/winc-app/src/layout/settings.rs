@@ -180,7 +180,6 @@ impl SettingsPage {
                     Setting::GitConfirmPush,
                     Setting::GitRememberCredentials,
                     Setting::GitAutoFetch,
-                    Setting::GitSystemProxy,
                 ]),
             ],
             SettingsPage::Modules => vec![plain(vec![
@@ -220,7 +219,11 @@ impl SettingsPage {
             SettingsPage::Keys => Vec::new(),
             SettingsPage::About => vec![
                 plain(vec![Setting::Version]),
-                plain(vec![Setting::Updates, Setting::CheckUpdates]),
+                plain(vec![
+                    Setting::Updates,
+                    Setting::CheckUpdates,
+                    Setting::SystemProxy,
+                ]),
                 plain(vec![
                     Setting::ReleaseNotes,
                     Setting::Website,
@@ -333,6 +336,8 @@ pub enum Setting {
     MarkdownLineNumbers,
     /// 定时检查更新。
     CheckUpdates,
+    /// 联网的命令跟随系统的代理设置（`network.systemProxy`）。
+    SystemProxy,
     /// 「关于」页的版本号，只读。
     Version,
     /// 「关于」页的更新状态和「检查更新」按钮。
@@ -399,8 +404,6 @@ pub enum Setting {
     GitConfirmPush,
     /// 允许记住 HTTP(S) 密码（`git.rememberCredentials`）。
     GitRememberCredentials,
-    /// `git` 跟随系统的代理设置（`git.systemProxy`）。
-    GitSystemProxy,
     /// 光标所在行末尾的追溯提示（`git.inlineBlame`）。
     GitInlineBlame,
     /// 定时在后台获取（`git.autoFetch`）。
@@ -503,6 +506,7 @@ impl Setting {
             Setting::Version
             | Setting::Updates
             | Setting::CheckUpdates
+            | Setting::SystemProxy
             | Setting::ReleaseNotes
             | Setting::Website
             | Setting::Repository
@@ -531,7 +535,6 @@ impl Setting {
             | Setting::GitPath
             | Setting::GitConfirmPush
             | Setting::GitRememberCredentials
-            | Setting::GitSystemProxy
             | Setting::GitInlineBlame
             | Setting::GitAutoFetch
             | Setting::GitTree
@@ -615,7 +618,7 @@ impl Setting {
             Setting::GitModule => "Git",
             Setting::GitConfirmPush => t!("settings-git-confirm-push"),
             Setting::GitRememberCredentials => t!("settings-git-remember-credentials"),
-            Setting::GitSystemProxy => t!("settings-git-system-proxy"),
+            Setting::SystemProxy => t!("settings-system-proxy"),
             Setting::GitInlineBlame => t!("settings-git-inline-blame"),
             Setting::GitAutoFetch => t!("settings-git-auto-fetch"),
             Setting::GitTree => t!("settings-git-tree"),
@@ -680,7 +683,7 @@ impl Setting {
             Setting::RemoteModule => Some(t!("settings-remote-module-desc")),
             Setting::GitConfirmPush => Some(t!("settings-git-confirm-push-desc")),
             Setting::GitRememberCredentials => Some(t!("settings-git-remember-credentials-desc")),
-            Setting::GitSystemProxy => Some(t!("settings-git-system-proxy-desc")),
+            Setting::SystemProxy => Some(t!("settings-system-proxy-desc")),
             Setting::GitInlineBlame => Some(t!("settings-git-inline-blame-desc")),
             Setting::GitAutoFetch => Some(t!("settings-git-auto-fetch-desc")),
             Setting::GitTree => Some(t!("settings-git-tree-desc")),
@@ -742,7 +745,7 @@ impl Setting {
             | Setting::GitModule
             | Setting::GitConfirmPush
             | Setting::GitRememberCredentials
-            | Setting::GitSystemProxy
+            | Setting::SystemProxy
             | Setting::GitInlineBlame
             | Setting::GitAutoFetch
             | Setting::GitTree
@@ -1008,6 +1011,28 @@ pub struct SettingsView<'a> {
     pub editing: Option<Setting>,
     /// 正文的滚动量（像素）。
     pub scroll: f32,
+    /// 卡片相对窗口中央的偏移（逻辑像素），见 [`settings_card`]。
+    pub offset: (f32, f32),
+}
+
+/// 返回设置卡片在窗口 `window` 中的位置：从中央移动 `offset`，四周至少留出 `SETTINGS_MARGIN`。
+pub fn settings_card(window: Rect, (dx, dy): (f32, f32)) -> Rect {
+    let w = SETTINGS_W.min(window.w - SETTINGS_MARGIN * 2.0).max(0.0);
+    let h = SETTINGS_H.min(window.h - SETTINGS_MARGIN * 2.0).max(0.0);
+    // 窗口过小时上下限颠倒，以下限为准，不用 `clamp`。
+    let place = |start: f32, span: f32, size: f32, d: f32| {
+        let centered = start + (span - size) / 2.0 + d;
+        centered
+            .min(start + span - SETTINGS_MARGIN - size)
+            .max(start + SETTINGS_MARGIN)
+            .round()
+    };
+    Rect::new(
+        place(window.x, window.w, w, dx),
+        place(window.y, window.h, h, dy),
+        w,
+        h,
+    )
 }
 
 /// 返回搜索 `query` 时正文列出的各组：各页中名称或说明含有 `query` 的设置项
@@ -1115,16 +1140,10 @@ impl SettingsLayout {
             git,
             editing,
             scroll,
+            offset,
         } = view;
         let searching = !query.trim().is_empty();
-        let w = SETTINGS_W.min(window.w - SETTINGS_MARGIN * 2.0).max(0.0);
-        let h = SETTINGS_H.min(window.h - SETTINGS_MARGIN * 2.0).max(0.0);
-        let card = Rect::new(
-            (window.x + (window.w - w) / 2.0).round(),
-            (window.y + (window.h - h) / 2.0).round(),
-            w,
-            h,
-        );
+        let card = settings_card(window, offset);
 
         let nav = Rect::new(card.x, card.y, SETTINGS_NAV_W.min(card.w), card.h);
         // 搜索框与右侧标题行垂直居中对齐，各页列在其下。「终端」一项的高度按显示比例收放，
@@ -1260,6 +1279,11 @@ impl SettingsLayout {
     /// 返回正文的最大滚动量（像素）。
     pub fn max_scroll(&self) -> f32 {
         (self.content_h - self.body.h).max(0.0)
+    }
+
+    /// 卡片顶部与标题行同高的一条，横跨两栏：其中没有部件的地方可以拖动卡片。
+    pub fn title_strip(&self) -> Rect {
+        Rect::new(self.card.x, self.card.y, self.card.w, self.header.h)
     }
 
     /// 返回 `(x, y)` 处可点击的部件；落在控件之外时返回 `None`。

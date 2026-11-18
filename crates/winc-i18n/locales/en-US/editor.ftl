@@ -2,6 +2,7 @@
 
 editor-preview-failed = Couldn’t show the preview: { $reason }
 editor-show-source = Show Source
+editor-no-comment = { $language } has no comment syntax
 editor-reading = Reading “{ $name }”…
 editor-reading-failed = Couldn’t load “{ $name }”
 editor-open-in-browser = View in Browser
@@ -135,6 +136,7 @@ editor-encoding-unencodable = “{ $char }” can’t be saved in { $encoding };
 editor-file-no-path = The file has no path yet
 editor-original-changed = The file on disk was changed by another program after it was opened
 editor-large-identity = The file has multiple hard links or belongs to another user, and saving a large file replaces it, which would break the links or change the owner
+editor-large-handed-save = Large files can’t be saved as administrator
 editor-moved-while-saving = The file was moved while it was being saved
 editor-large-cannot-compare = The file is too large to compare
 editor-large-utf8-only = The file is too large; it can only be opened as UTF-8
@@ -232,6 +234,7 @@ editor-paste-copied-items = { $count ->
         [one] Copied { $count } item
        *[other] Copied { $count } items
     }
+editor-paste-cut-copied-across-hosts = Items can’t be moved between hosts, so they were copied
 editor-paste-cut-item = Cut “{ $name }”
 editor-paste-cut-items = { $count ->
         [one] Cut { $count } item
@@ -243,5 +246,6 @@ editor-paste-image-save-first = Save this file first; the image will be saved in
 editor-paste-image-markdown-only = Images can only be pasted into Markdown files or the file tree
 editor-paste-image-save-failed = Couldn’t save the image: { $error }
 editor-paste-clipboard-empty = The clipboard is empty
+editor-paste-clipboard-unavailable = Couldn’t write to the system clipboard
 editor-paste-copy-name = { $stem } copy{ $ext }
 editor-paste-copy-name-numbered = { $stem } copy { $number }{ $ext }

@@ -198,6 +198,8 @@ pub enum MenuCommand {
     Cut,
     Copy,
     Paste,
+    /// 远端的文件树：把这一项（多选时选中的各项）下载到本机的一个目录。
+    Download,
     GoToDefinition,
     FindReferences,
     /// 在当前行添加书签。
@@ -542,6 +544,7 @@ impl MenuCommand {
             MenuCommand::CopyReference => t!("cmd-copy-reference"),
             MenuCommand::Rename => t!("cmd-rename-file"),
             MenuCommand::Delete => t!("cmd-delete-file"),
+            MenuCommand::Download => t!("menu-download"),
             MenuCommand::Close => t!("common-close"),
             MenuCommand::CloseOthers => t!("cmd-close-other-tabs"),
             MenuCommand::CloseRight => t!("menu-close-tabs-right"),

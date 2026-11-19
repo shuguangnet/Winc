@@ -167,6 +167,7 @@ impl App {
             text_content_w: 0.0,
             preview_tab: None,
             clipboard: Default::default(),
+            diagnostics_running: false,
             vim,
             bars: crate::app::editor::InputBars {
                 search: Search::default(),

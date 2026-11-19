@@ -52,6 +52,8 @@ pub enum PlacesKind {
     LocalHistory,
     /// 两个目录的对比：合并的差异文件，选中一项打开文件对比或文件本身。
     FolderDiff,
+    /// 「检查问题」解析出的诊断：选中一项跳到所在位置。
+    Diagnostics,
 }
 
 impl PlacesKind {
@@ -63,6 +65,7 @@ impl PlacesKind {
             PlacesKind::Bookmarks => t!("editor-places-bookmarks-count", count = n),
             PlacesKind::LocalHistory => t!("editor-places-history-count", count = n),
             PlacesKind::FolderDiff => t!("editor-places-folderdiff-count", count = n),
+            PlacesKind::Diagnostics => t!("editor-places-diagnostics-count", count = n),
         }
     }
 }

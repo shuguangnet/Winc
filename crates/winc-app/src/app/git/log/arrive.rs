@@ -19,6 +19,9 @@ impl App {
                     base,
                     result,
                 } => self.graph_compare_arrived(generation, base, result),
+                Loaded::Diagnostics { result } => {
+                    self.diagnostics_arrived(result.unwrap_or_default())
+                }
                 Loaded::GraphFiles {
                     generation,
                     oid,

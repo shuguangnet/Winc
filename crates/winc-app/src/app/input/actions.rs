@@ -100,6 +100,7 @@ impl App {
             GoToDefinition => self.go_to_definition(),
             FindReferences => self.find_references(),
             RenameSymbol => self.rename_symbol_prompt(),
+            CheckProblems => self.run_checks(),
             // 有日志标签且可以后退时先在日志里后退；日志里已经找不到的提交（例如被跳过的
             // 父提交）直接跳过，继续找回更早的记录。
             GoBack if self.log_navigate(false) => {}

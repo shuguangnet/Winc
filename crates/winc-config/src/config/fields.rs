@@ -182,6 +182,21 @@ const EDITOR: &[Field] = &[
     bool_field!("minimap", minimap),
     bool_field!("outline", outline),
     bool_field!("colorizeBrackets", colorize_brackets),
+    Field {
+        key: "checkCommand",
+        read: |config, value, name, problems| match value.as_str() {
+            Some(text) if !text.trim().is_empty() => {
+                config.check_command = Some(text.trim().to_owned())
+            }
+            _ => problems.push(t!("config-check-command-invalid", name = name)),
+        },
+        write: |config| {
+            config
+                .check_command
+                .as_deref()
+                .map(|command| Json::String(command.to_owned()))
+        },
+    },
     bool_field!("localHistory", local_history),
     Field {
         key: "renderWhitespace",

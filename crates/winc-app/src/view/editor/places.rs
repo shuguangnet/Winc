@@ -208,6 +208,7 @@ fn draw_header(
         PlacesKind::Definitions => (places.name.as_str(), t!("editor-places-definitions-suffix")),
         PlacesKind::Bookmarks => (t!("editor-places-bookmarks"), ""),
         PlacesKind::FolderDiff => (t!("editor-places-folderdiff"), ""),
+        PlacesKind::Diagnostics => (t!("editor-places-diagnostics"), ""),
         PlacesKind::LocalHistory => (t!("editor-places-history"), ""),
     };
     let title = ellipsize(frame, title, app.fonts.ui, (clip.right() - x) * 0.5);

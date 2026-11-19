@@ -336,6 +336,10 @@ pub(in crate::app) enum Loaded {
         base: String,
         result: Result<Divergence, String>,
     },
+    /// 「检查问题」解析出的诊断列表，浮窗卡片中列出。
+    Diagnostics {
+        result: Result<Vec<crate::app::editor::definition::Place>, String>,
+    },
     /// 提交图里展开的提交改动的文件（[`super::graph`]）。
     GraphFiles {
         /// 发出请求时的版本号；不一致时结果已过时。

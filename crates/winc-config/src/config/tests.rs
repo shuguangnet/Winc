@@ -303,6 +303,7 @@ fn round_trips_through_json() {
         whole_lines: Some(true),
         minimap: Some(true),
         colorize_brackets: Some(false),
+        check_command: Some("cargo check".to_owned()),
         local_history: Some(false),
         outline: Some(false),
         render_whitespace: Some(RenderWhitespace::Trailing),

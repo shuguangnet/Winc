@@ -10,6 +10,7 @@ pub(crate) mod clipboard;
 pub(super) mod conflict;
 pub(super) mod cursors;
 pub(crate) mod definition;
+pub(super) mod diagnostics;
 pub(super) mod editing;
 pub(super) mod find;
 pub(super) mod folding;

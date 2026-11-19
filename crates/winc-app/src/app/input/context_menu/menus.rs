@@ -461,6 +461,7 @@ pub fn editor_menu(editable: bool, selected: bool, bookmarked: bool) -> Vec<Menu
         Item(GoToDefinition, true),
         Item(FindReferences, true),
         Item(RenameSymbol, true),
+        Item(CheckProblems, true),
         Separator,
         Item(AddBookmark, !bookmarked),
         Item(RemoveBookmark, bookmarked),

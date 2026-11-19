@@ -422,6 +422,8 @@ pub enum MenuCommand {
     LocalHistory,
     /// 编辑区：重命名光标所在的符号（定义与全部用法）。
     RenameSymbol,
+    /// 编辑区：运行检查命令并把诊断列成卡片（错误在前），选中一项跳到所在位置。
+    CheckProblems,
     /// 主题菜单：选用数据目录 `themes/` 里的自定义主题（`id` 已随主题固化）。
     SetThemeId {
         dark: bool,
@@ -652,6 +654,7 @@ impl MenuCommand {
             MenuCommand::GraphHideFiles => t!("menu-graph-hide-files"),
             MenuCommand::LocalHistory => t!("menu-editor-history"),
             MenuCommand::RenameSymbol => t!("cmd-rename-symbol"),
+            MenuCommand::CheckProblems => t!("cmd-check-problems"),
             MenuCommand::SetThemeId { id, .. } => crate::theme::custom::name(id).unwrap_or(id),
             MenuCommand::LogCopyMessage => t!("menu-log-copy-message"),
             MenuCommand::LogCopyPatch => t!("menu-log-copy-patch"),

@@ -101,6 +101,15 @@ editor-places-folderdiff-count = { $count ->
         [one] { $count } difference
        *[other] { $count } differences
     }
+editor-places-diagnostics = Problems
+editor-places-diagnostics-count = { $count ->
+        [one] { $count } problem
+       *[other] { $count } problems
+    }
+editor-check-running = Checking, hang on…
+editor-check-clean = No problems found
+editor-check-invalid-command = No check command is configured
+editor-check-run-failed = The check command failed to run: { $error }
 editor-places-history-count = { $count ->
         [one] { $count } save point
        *[other] { $count } save points

@@ -7,6 +7,7 @@ cmd-go-to-line = 转到行…
 cmd-go-to-definition = 转到定义
 cmd-find-references = 查找引用
 cmd-rename-symbol = 重命名符号
+cmd-check-problems = 检查问题
 cmd-go-back = 后退
 cmd-go-forward = 前进
 cmd-settings = 设置

@@ -929,6 +929,8 @@ pub struct App {
     // 编辑区
     /// 剪贴板。
     pub(crate) clipboard: editor::clipboard::Clipboard,
+    /// 「检查问题」是否正在后台运行：运行中不再发起重复的检查。
+    pub(crate) diagnostics_running: bool,
     /// Vim 模式的状态；Vim 模式关闭时为 `None`。
     pub(crate) vim: Option<Box<vim::VimState>>,
 

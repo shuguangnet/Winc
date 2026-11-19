@@ -96,6 +96,11 @@ editor-rename-button = Rename
 editor-rename-invalid = The new name is not a valid identifier in this language
 editor-rename-done = Renamed { $count } occurrences in { $files } files
 editor-rename-failed = { $count } files failed to update
+editor-places-folderdiff = Folder Comparison
+editor-places-folderdiff-count = { $count ->
+        [one] { $count } difference
+       *[other] { $count } differences
+    }
 editor-places-history-count = { $count ->
         [one] { $count } save point
        *[other] { $count } save points

@@ -128,6 +128,7 @@ pub enum MenuCommand {
     OpenFiles,
     /// 文件树里正好选中两个文件时：并排比较它们。
     CompareFiles,
+    CompareFolders,
     Close,
     CloseOthers,
     CloseRight,
@@ -570,6 +571,7 @@ impl MenuCommand {
             MenuCommand::CloseLeft => t!("menu-close-tabs-left"),
             MenuCommand::OpenFiles => t!("cmd-open-selected"),
             MenuCommand::CompareFiles => t!("menu-compare-selected"),
+            MenuCommand::CompareFolders => t!("menu-compare-folders"),
             MenuCommand::CommitCheck(true) => t!("menu-commit-check"),
             MenuCommand::CommitCheck(false) => t!("menu-commit-uncheck"),
             MenuCommand::CloseSaved => t!("menu-close-saved-tabs"),

@@ -50,6 +50,8 @@ pub enum PlacesKind {
     Bookmarks,
     /// 一个文件的本地历史（各次保存的快照）。
     LocalHistory,
+    /// 两个目录的对比：合并的差异文件，选中一项打开文件对比或文件本身。
+    FolderDiff,
 }
 
 impl PlacesKind {
@@ -60,6 +62,7 @@ impl PlacesKind {
             PlacesKind::Usages => t!("editor-places-usages-count", count = n),
             PlacesKind::Bookmarks => t!("editor-places-bookmarks-count", count = n),
             PlacesKind::LocalHistory => t!("editor-places-history-count", count = n),
+            PlacesKind::FolderDiff => t!("editor-places-folderdiff-count", count = n),
         }
     }
 }
@@ -593,7 +596,12 @@ impl App {
     }
 
     /// 在挂在光标所在名字下方的浮窗中列出 `items`，直接打字可以筛选。
-    pub(super) fn show_places(&mut self, kind: PlacesKind, name: String, items: Vec<Place>) {
+    pub(in crate::app) fn show_places(
+        &mut self,
+        kind: PlacesKind,
+        name: String,
+        items: Vec<Place>,
+    ) {
         let Some(doc) = self.editor.active() else {
             return;
         };
@@ -605,6 +613,7 @@ impl App {
         self.finish_name_input();
         self.overlays.picker.places_out = None;
         self.overlays.picker.history_files = None;
+        self.overlays.picker.compare_pairs = None;
         self.jumps.name_hint = None;
         self.overlays.picker.places_wheel = 0.0;
         self.overlays.picker.places_in = self.clock(POPUP_IN);
@@ -660,6 +669,25 @@ impl App {
             return;
         };
         let place = places.items.swap_remove(i);
+        // 目录对比的每一项：两边都有就打开文件对比，只有一边就打开那边的文件。
+        if places.kind == PlacesKind::FolderDiff {
+            let pair = self
+                .overlays
+                .picker
+                .compare_pairs
+                .take_if(|pairs| i < pairs.len())
+                .and_then(|pairs| pairs.get(i).cloned());
+            self.close_picker();
+            if let Some((left, right)) = pair {
+                match (left, right) {
+                    (Some(left), Some(right)) => self.compare_files(&left, &right),
+                    (Some(only), None) => self.open_path(&only),
+                    (None, Some(only)) => self.open_path(&only),
+                    (None, None) => {}
+                }
+            }
+            return;
+        }
         // 历史快照不跳转：打开它与当前内容的差异（快照文件在浮窗构建时一并记下）。
         if places.kind == PlacesKind::LocalHistory {
             let snapshot = self

@@ -177,13 +177,16 @@ pub fn tree_menu(kind: Option<EntryKind>, can_paste: bool, remote: bool) -> Vec<
 ///
 /// 新建、改名等在多项选择下没有意义的项不出现。`remote` 表示选中的各项在远端主机上，此时
 /// 可以下载到本机。
-pub fn tree_selection_menu(files: usize, remote: bool) -> Vec<MenuEntry> {
+pub fn tree_selection_menu(files: usize, dirs: usize, remote: bool) -> Vec<MenuEntry> {
     use MenuCommand::*;
     use MenuEntry::{Item, Separator};
 
     let mut menu = vec![Item(OpenFiles, files > 0)];
     if files == 2 {
         menu.push(Item(CompareFiles, true));
+    }
+    if dirs == 2 {
+        menu.push(Item(CompareFolders, true));
     }
     menu.extend([Separator, Item(Cut, true), Item(Copy, true)]);
     if remote {

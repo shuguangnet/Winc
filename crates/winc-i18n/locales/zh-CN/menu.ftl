@@ -127,6 +127,7 @@ menu-git-roll-back-change = 回滚此处更改
 menu-git-file-history = 显示文件历史
 menu-git-blame = 逐行追溯
 menu-editor-history = 本地历史…
+menu-compare-folders = 比较目录
 menu-git-stash = 储藏更改…
 menu-git-local-branches = 本地分支
 menu-git-remote-branches = 远程分支

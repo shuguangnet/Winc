@@ -753,6 +753,8 @@ pub struct Picker {
     pub(crate) places_out: Option<PlacesGhost>,
     /// 本地历史浮窗中各项对应的快照文件（`places.items` 的下标一一对应）；其他浮窗为 `None`。
     pub(in crate::app) history_files: Option<Vec<PathBuf>>,
+    /// 目录对比浮窗中各项对应的（左侧路径，右侧路径）；其他浮窗为 `None`。
+    pub(in crate::app) compare_pairs: Option<Vec<(Option<PathBuf>, Option<PathBuf>)>>,
 }
 
 impl Default for Picker {
@@ -787,6 +789,7 @@ impl Default for Picker {
             places_in: None,
             places_out: None,
             history_files: None,
+            compare_pairs: None,
         }
     }
 }

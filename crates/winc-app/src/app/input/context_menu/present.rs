@@ -391,7 +391,11 @@ impl App {
                 let targets = self.tree_targets();
                 let remote =
                     !targets.is_empty() && targets.iter().all(|p| winc_backend::is_remote(p));
-                tree_selection_menu(self.tree_selected_files().len(), remote)
+                tree_selection_menu(
+                    self.tree_selected_files().len(),
+                    self.tree_selected_dirs().len(),
+                    remote,
+                )
             }
             MenuTarget::Tree(path) => {
                 // 目录自己的一行和空白处一样：不能改名、剪切、删除。

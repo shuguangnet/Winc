@@ -452,6 +452,11 @@ impl App {
                         self.compare_files(left, right);
                     }
                 }
+                MenuCommand::CompareFolders => {
+                    if let [left, right] = &self.tree_selected_dirs()[..] {
+                        self.compare_folders(left.clone(), right.clone());
+                    }
+                }
                 MenuCommand::Cut => self.cut_entries(&self.tree_targets()),
                 MenuCommand::Copy => {
                     self.copy_entries(&self.tree_targets());
@@ -666,6 +671,19 @@ impl App {
             .iter()
             .enumerate()
             .filter(|&(i, e)| e.kind == EntryKind::File && ws.is_selected(i))
+            .map(|(_, e)| e.path.clone())
+            .collect()
+    }
+
+    /// 文件树中选中且尚未打开的各目录（多选比较目录用），按树的顺序。
+    pub(in crate::app) fn tree_selected_dirs(&self) -> Vec<PathBuf> {
+        let Some(ws) = self.editor.workspace.as_ref() else {
+            return Vec::new();
+        };
+        ws.rows()
+            .iter()
+            .enumerate()
+            .filter(|&(i, e)| e.kind == EntryKind::Dir && ws.is_selected(i))
             .map(|(_, e)| e.path.clone())
             .collect()
     }

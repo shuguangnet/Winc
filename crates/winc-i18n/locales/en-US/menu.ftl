@@ -133,6 +133,7 @@ menu-git-roll-back-change = Roll Back This Change
 menu-git-file-history = Show File History
 menu-git-blame = Blame
 menu-editor-history = Local History…
+menu-compare-folders = Compare Folders
 menu-git-stash = Stash Changes…
 menu-git-local-branches = Local Branches
 menu-git-remote-branches = Remote Branches

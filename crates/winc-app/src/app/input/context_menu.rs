@@ -421,6 +421,11 @@ pub enum MenuCommand {
     LocalHistory,
     /// 编辑区：重命名光标所在的符号（定义与全部用法）。
     RenameSymbol,
+    /// 主题菜单：选用数据目录 `themes/` 里的自定义主题（`id` 已随主题固化）。
+    SetThemeId {
+        dark: bool,
+        id: &'static str,
+    },
     /// 编辑区：开关逐行追溯（开着时打勾）。
     ToggleBlame,
     /// 提交视图「⋯」：储藏改动（输入说明）。
@@ -645,6 +650,7 @@ impl MenuCommand {
             MenuCommand::GraphHideFiles => t!("menu-graph-hide-files"),
             MenuCommand::LocalHistory => t!("menu-editor-history"),
             MenuCommand::RenameSymbol => t!("cmd-rename-symbol"),
+            MenuCommand::SetThemeId { id, .. } => crate::theme::custom::name(id).unwrap_or(id),
             MenuCommand::LogCopyMessage => t!("menu-log-copy-message"),
             MenuCommand::LogCopyPatch => t!("menu-log-copy-patch"),
             MenuCommand::LogCompareWithLocal => t!("menu-log-compare-with-local"),

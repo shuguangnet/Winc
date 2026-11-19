@@ -32,6 +32,7 @@ impl App {
             }
             files
         };
+        crate::theme::custom::load();
         let fonts = ViewFonts::of(&config);
         // 实际度量值（逻辑像素）要在创建窗口、加载字体之后才能得到，此前使用占位值。
         let placeholder = Metrics {

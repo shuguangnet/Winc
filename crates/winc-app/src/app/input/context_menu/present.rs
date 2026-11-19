@@ -319,9 +319,28 @@ impl App {
             }
             MenuTarget::SkipOnSave => skip_menu(&self.settings.languages.format),
             MenuTarget::Locale => locale_menu(),
-            MenuTarget::NamedTheme(dark) => (0..crate::theme::themes(*dark).len())
-                .map(|i| MenuEntry::Item(MenuCommand::NamedTheme(*dark, i), true))
-                .collect(),
+            MenuTarget::NamedTheme(dark) => {
+                let mut entries: Vec<MenuEntry> = (0..crate::theme::themes(*dark).len())
+                    .map(|i| MenuEntry::Item(MenuCommand::NamedTheme(*dark, i), true))
+                    .collect();
+                let custom: Vec<_> = crate::theme::custom::entries()
+                    .iter()
+                    .filter(|theme| theme.palette.dark == *dark)
+                    .collect();
+                if !custom.is_empty() {
+                    entries.push(MenuEntry::Separator);
+                    entries.extend(custom.iter().map(|theme| {
+                        MenuEntry::Item(
+                            MenuCommand::SetThemeId {
+                                dark: *dark,
+                                id: theme.id,
+                            },
+                            true,
+                        )
+                    }));
+                }
+                entries
+            }
             MenuTarget::Whitespace => whitespace_menu(),
             MenuTarget::VimClipboard => vim_clipboard_menu(),
             MenuTarget::OpenWorktree => open_worktree_menu(),
@@ -1025,6 +1044,14 @@ impl App {
                     == Some(&self.config.language.unwrap_or_default())
             }
             MenuCommand::NamedTheme(dark, i) => self.theme_slot(dark) == i,
+            MenuCommand::SetThemeId { dark, id } => {
+                let current = if dark {
+                    &self.config.dark_theme
+                } else {
+                    &self.config.light_theme
+                };
+                current.as_deref() == Some(id)
+            }
             MenuCommand::KeymapPreset(preset) => crate::keymap::current_preset() == preset,
             MenuCommand::Whitespace(i) => {
                 winc_config::RenderWhitespace::ALL.get(i)

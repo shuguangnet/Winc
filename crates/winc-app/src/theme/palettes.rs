@@ -427,6 +427,7 @@ pub static MIST: Palette = Palette::build(Tokens {
 /// 一个可以选的主题：配置文件中的 id 与对应的配色；设置里显示的名字见 [`ThemeEntry::name`]。
 ///
 /// `id` 是配置文件中的稳定标识，改名时保持不变；配色由本项目定义，并按需要的对比度调整过。
+#[derive(Clone, Copy)]
 pub struct ThemeEntry {
     /// 配置文件中的主题 id（如 `winc-night`）。
     pub id: &'static str,

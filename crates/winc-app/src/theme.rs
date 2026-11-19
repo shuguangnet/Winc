@@ -23,6 +23,21 @@ use winc_syntax::TokenKind;
 
 use crate::icons::FileGlyph;
 
+pub mod custom;
+
+/// 深色（`dark`）或浅色外观下名为 `id` 的主题：内置主题在前，自定义主题在后（只匹配同深浅的）。
+pub fn find(dark: bool, id: Option<&str>) -> Option<&'static ThemeEntry> {
+    let id = id?;
+    crate::theme::themes(dark)
+        .iter()
+        .find(|theme| theme.id == id)
+        .or_else(|| {
+            custom::entries()
+                .iter()
+                .find(|theme| theme.id == id && theme.palette.dark == dark)
+        })
+}
+
 /// 一套配色，深色（[`DARK`]）和浅色（[`LIGHT`]）各有一个实例。
 ///
 /// 颜色字段按用途分组：底色、线条与阴影、文字、交互状态、编辑区、语法高亮。

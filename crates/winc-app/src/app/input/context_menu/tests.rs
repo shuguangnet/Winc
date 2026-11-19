@@ -163,6 +163,7 @@ fn menus_depend_on_what_was_clicked() {
         [
             (GoToDefinition, true),
             (FindReferences, true),
+            (RenameSymbol, true),
             (AddBookmark, true),
             (RemoveBookmark, false),
             (ListBookmarks, true),
@@ -180,6 +181,7 @@ fn menus_depend_on_what_was_clicked() {
         [
             (GoToDefinition, true),
             (FindReferences, true),
+            (RenameSymbol, true),
             (AddBookmark, true),
             (RemoveBookmark, false),
             (ListBookmarks, true),
@@ -194,7 +196,7 @@ fn menus_depend_on_what_was_clicked() {
     );
     // 有选区时多一项「格式化选中部分」（书签三行与「本地历史」之后）。
     assert_eq!(
-        commands(editor_menu(true, true, true))[7],
+        commands(editor_menu(true, true, true))[8],
         (FormatSelection, true)
     );
     // 光标所在行已有书签时只能删除，不能重复添加。

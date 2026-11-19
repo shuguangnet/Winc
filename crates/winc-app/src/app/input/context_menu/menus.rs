@@ -457,6 +457,7 @@ pub fn editor_menu(editable: bool, selected: bool, bookmarked: bool) -> Vec<Menu
     let mut menu = vec![
         Item(GoToDefinition, true),
         Item(FindReferences, true),
+        Item(RenameSymbol, true),
         Separator,
         Item(AddBookmark, !bookmarked),
         Item(RemoveBookmark, bookmarked),

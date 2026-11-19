@@ -934,7 +934,7 @@ impl App {
     }
 
     /// 返回路径为 `path` 的已打开文档；尚未读取的不算，它的内容以磁盘为准。
-    fn document_at(&mut self, path: &Path) -> Option<&mut Document> {
+    pub(in crate::app) fn document_at(&mut self, path: &Path) -> Option<&mut Document> {
         self.editor
             .documents
             .iter_mut()

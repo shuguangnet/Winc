@@ -89,6 +89,13 @@ editor-places-usages-suffix = { " " }usages
 editor-places-definitions-suffix = { " " }definitions
 editor-places-bookmarks = Bookmarks
 editor-places-history = Local History
+editor-rename-title = Rename Symbol
+editor-rename-label = Rename “{ $name }” to:
+editor-rename-new-label = New name
+editor-rename-button = Rename
+editor-rename-invalid = The new name is not a valid identifier in this language
+editor-rename-done = Renamed { $count } occurrences in { $files } files
+editor-rename-failed = { $count } files failed to update
 editor-places-history-count = { $count ->
         [one] { $count } save point
        *[other] { $count } save points

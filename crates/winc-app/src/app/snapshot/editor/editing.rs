@@ -123,7 +123,7 @@ fn copying_without_a_selection_copies_and_pastes_whole_lines() {
 fn right_clicking_the_text_offers_format_cut_copy_paste() {
     use MenuCommand::{
         AddBookmark, Copy, CopyReference, Cut, FindReferences, Fix, Format, FormatSelection,
-        GoToDefinition, ListBookmarks, LocalHistory, Paste, RemoveBookmark,
+        GoToDefinition, ListBookmarks, LocalHistory, Paste, RemoveBookmark, RenameSymbol,
     };
 
     let dir = search_folder("editor-menu");
@@ -155,6 +155,7 @@ fn right_clicking_the_text_offers_format_cut_copy_paste() {
         [
             (GoToDefinition, true),
             (FindReferences, true),
+            (RenameSymbol, true),
             (AddBookmark, true),
             (RemoveBookmark, false),
             (ListBookmarks, true),
@@ -216,6 +217,7 @@ fn right_clicking_the_text_offers_format_cut_copy_paste() {
         [
             (GoToDefinition, true),
             (FindReferences, true),
+            (RenameSymbol, true),
             (AddBookmark, true),
             (RemoveBookmark, false),
             (ListBookmarks, true),

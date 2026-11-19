@@ -18,6 +18,7 @@ pub(super) mod hint;
 pub(super) mod history;
 pub(super) mod navigation;
 pub(super) mod paste;
+pub(super) mod rename;
 pub(super) mod scrollbar;
 pub(super) mod sticky;
 pub(super) mod symbols;

@@ -419,6 +419,8 @@ pub enum MenuCommand {
     GraphHideFiles,
     /// 编辑区：列出当前文件的本地历史（各次保存的快照）。
     LocalHistory,
+    /// 编辑区：重命名光标所在的符号（定义与全部用法）。
+    RenameSymbol,
     /// 编辑区：开关逐行追溯（开着时打勾）。
     ToggleBlame,
     /// 提交视图「⋯」：储藏改动（输入说明）。
@@ -642,6 +644,7 @@ impl MenuCommand {
             MenuCommand::GraphOpenFiles => t!("menu-graph-open-files"),
             MenuCommand::GraphHideFiles => t!("menu-graph-hide-files"),
             MenuCommand::LocalHistory => t!("menu-editor-history"),
+            MenuCommand::RenameSymbol => t!("cmd-rename-symbol"),
             MenuCommand::LogCopyMessage => t!("menu-log-copy-message"),
             MenuCommand::LogCopyPatch => t!("menu-log-copy-patch"),
             MenuCommand::LogCompareWithLocal => t!("menu-log-compare-with-local"),

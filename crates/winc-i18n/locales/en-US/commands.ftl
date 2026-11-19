@@ -6,6 +6,7 @@ cmd-go-to-symbol = Go to Symbol in File…
 cmd-go-to-line = Go to Line…
 cmd-go-to-definition = Go to Definition
 cmd-find-references = Find References
+cmd-rename-symbol = Rename Symbol
 cmd-go-back = Back
 cmd-go-forward = Forward
 cmd-settings = Settings

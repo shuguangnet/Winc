@@ -231,6 +231,7 @@ pub(super) const IDEA: &[PresetRow] = &[
     row(GoToLine, Global, &["cmd+l"], &["ctrl+g"]),
     row(GoToDefinition, Editor, &["cmd+b"], &["ctrl+b"]),
     row(FindReferences, Editor, &["alt+f7"], &["alt+f7"]),
+    row(RenameSymbol, Editor, &["f2"], &["ctrl+f2"]),
     row(
         GoBack,
         Global,
@@ -436,6 +437,7 @@ pub(super) const VSCODE: &[PresetRow] = &[
     ),
     row(GoToDefinition, Editor, &["f12"], &["f12"]),
     row(FindReferences, Editor, &["shift+f12"], &["shift+f12"]),
+    row(RenameSymbol, Editor, &["f2"], &["f2"]),
     row(Undo, Editor, &["cmd+z"], &["ctrl+z"]),
     row(Redo, Editor, &["shift+cmd+z"], &["ctrl+y", "ctrl+shift+z"]),
     row(Cut, Editor, &["cmd+x"], &["ctrl+x"]),

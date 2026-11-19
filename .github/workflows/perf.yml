@@ -1,0 +1,45 @@
+name: Bench
+
+# 性能基准：每周一 03:00（UTC）自动跑一次，也可以手动触发。基准驱动真实窗口（测量从启动进程
+# 到呈现首帧、滚动与按键的帧耗时），ubuntu 运行器没有显示服务器，因此在 macOS 运行器上执行。
+# 运行器硬件与开发机不同，数字作为趋势参考：预算超标会把该次运行标红，但不阻塞其他工作流。
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    name: Bench (macOS)
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      # Installs the version named in rust-toolchain.toml.
+      - name: Install Rust
+        run: rustup toolchain install
+
+      - name: Bench
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo xtask bench 10 2>&1 | tee bench.txt
+
+      - name: Append the report to the job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Bench（预算对照）"
+            echo '```'
+            cat bench.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

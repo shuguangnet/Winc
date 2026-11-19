@@ -173,6 +173,7 @@ impl App {
                 | Target::TerminalDivider
                 | Target::OutlineDivider
                 | Target::SplitDivider
+                | Target::PaneDivider(_)
                 | Target::Log(crate::app::git::log::LogTarget::Divider)
                 | Target::Log(crate::app::git::log::LogTarget::AuthorEdge)
         )
@@ -194,7 +195,7 @@ impl App {
             Drag::GraphPan { .. } | Drag::GraphResize { .. } | Drag::StashPan { .. } => {
                 return Hover::None;
             }
-            _ if self.tree_dragging().is_some() || self.dragged_tab().is_some() => {
+            _ if self.tree_dragging().is_some() || self.tab_dragging() => {
                 return Hover::None;
             }
             _ => {}
@@ -254,6 +255,7 @@ impl App {
             Target::TerminalDivider => Hover::TerminalDivider,
             Target::OutlineDivider => Hover::OutlineDivider,
             Target::SplitDivider => Hover::SplitDivider,
+            Target::PaneDivider(index) => Hover::PaneDivider(index),
             Target::TerminalHeader(hit) => Hover::TerminalHeader(hit),
             Target::TerminalBlock(hit) => Hover::TerminalBlock(hit),
             // 遮挡下方但没有按钮的区域，以及没有悬停效果的部件：输入条、顶栏空白、编辑区文字。
@@ -430,6 +432,9 @@ impl App {
         }
         if l.split_divider.contains(x, y) {
             return Target::SplitDivider;
+        }
+        if let Some(index) = self.pane_divider_at(x, y) {
+            return Target::PaneDivider(index);
         }
         if let Some(hit) = hit(&self.hits.terminal, x, y) {
             return Target::TerminalHeader(hit);
@@ -808,8 +813,12 @@ impl App {
                 .is_some_and(|(card, _)| card.contains(x, y))
     }
 
-    /// 根据鼠标位置和拖动状态更新鼠标指针的样式。
+    /// 根据鼠标位置和拖动状态更新鼠标指针的样式；鼠标在其他窗格上时按那个窗格判断。
     pub(in crate::app) fn update_cursor_icon(&mut self) {
+        self.in_hovered_pane(Self::place_cursor_icon);
+    }
+
+    fn place_cursor_icon(&mut self) {
         let (x, y) = self.pointer.mouse;
         // 新建工作树对话框打开时只判断对话框自身：
         // 名称输入框上显示文本光标（I 形），其余位置显示箭头。
@@ -890,6 +899,11 @@ impl App {
             || self.pointer.hover == Hover::OutlineDivider
         {
             CursorIcon::RowResize
+        } else if let Some(axis) = self.pane_divider_axis() {
+            match axis {
+                winc_editor::panes::Axis::Row => CursorIcon::ColResize,
+                winc_editor::panes::Axis::Column => CursorIcon::RowResize,
+            }
         } else if matches!(self.pointer.drag, Drag::TerminalDivider { .. })
             || self.pointer.hover == Hover::TerminalDivider
         {
@@ -1056,6 +1070,8 @@ pub(super) enum Target {
     OutlineDivider,
     /// 分栏预览中间的分隔线。
     SplitDivider,
+    /// 编辑区窗格之间的第几道分隔线。
+    PaneDivider(usize),
     /// 编辑区右侧的缩略图。
     Minimap,
     /// 终端面板标签栏上的按钮。

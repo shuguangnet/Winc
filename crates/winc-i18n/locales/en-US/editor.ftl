@@ -93,8 +93,8 @@ editor-rename-title = Rename Symbol
 editor-rename-label = Rename “{ $name }” to:
 editor-rename-new-label = New name
 editor-rename-button = Rename
-editor-rename-invalid = The new name is not a valid identifier in this language
-editor-rename-done = Renamed { $count } occurrences in { $files } files
+editor-rename-invalid = “{ $name }” is not a valid identifier in this language
+editor-rename-done = Renamed “{ $old }” to “{ $new }”: { $count } occurrences in { $files } files
 editor-rename-failed = { $count } files failed to update
 editor-places-folderdiff = Folder Comparison
 editor-places-folderdiff-count = { $count ->
@@ -109,7 +109,7 @@ editor-places-diagnostics-count = { $count ->
 editor-check-running = Checking, hang on…
 editor-check-clean = No problems found
 editor-check-invalid-command = No check command is configured
-editor-check-run-failed = The check command failed to run: { $error }
+editor-check-run-failed = The check command “{ $command }” failed to run: { $error }
 editor-places-history-count = { $count ->
         [one] { $count } save point
        *[other] { $count } save points

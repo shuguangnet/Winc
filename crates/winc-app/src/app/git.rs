@@ -196,6 +196,9 @@ pub(crate) struct GitState {
     followed: Option<DocumentId>,
     /// 各仓库最近一次读取的状态；位置选择器据此显示分支和改动数，切换仓库时先显示该状态。
     summaries: Arc<Mutex<HashMap<PathBuf, Status>>>,
+    /// 其他仓库（当前仓库之外）各文件的 Git 状态：多仓库文件夹里文件树的状态着色也覆盖它们，
+    /// 摘要（[`App::git_read_summaries`]）每次刷新时重建。
+    other_decorations: Arc<Mutex<HashMap<PathBuf, Change>>>,
     /// `summaries` 每改一次加 1（后台读到新状态、切换仓库时放进、取出）：按它缓存由这些状态
     /// 排出来的东西（见 `App::commit_other_rows`）。
     summaries_version: Arc<std::sync::atomic::AtomicU64>,
@@ -324,6 +327,7 @@ impl Default for GitState {
             repositories: Vec::new(),
             followed: None,
             summaries: Arc::default(),
+            other_decorations: Arc::default(),
             summaries_version: Arc::default(),
             summary_worktrees: Arc::default(),
             kept: HashMap::new(),
@@ -396,8 +400,26 @@ impl GitState {
     }
 
     /// 返回文件树中 `path` 显示的状态。
+    ///
+    /// 当前仓库用实时的状态（[`Self::decorations`]）；文件夹里其他仓库的文件用各自摘要状态
+    /// 换算的装饰（见 [`Self::other_decorations`]），切了分支、提交之后随摘要刷新。
     pub fn change_of(&self, path: &Path) -> Option<Change> {
-        self.decorations.get(path).copied()
+        if let Some(change) = self.decorations.get(path) {
+            return Some(*change);
+        }
+        // 当前仓库内的路径：装饰里没有的就是没有改动，不回退（摘要可能是过时的）。
+        if self
+            .root
+            .as_deref()
+            .is_some_and(|root| path.starts_with(root))
+        {
+            return None;
+        }
+        self.other_decorations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(path)
+            .copied()
     }
 
     /// `path` 是否被 Git 忽略：`path` 本身或任一上级目录位于最近一次状态的忽略列表中。
@@ -565,6 +587,11 @@ impl App {
         if !same_repository {
             self.git
                 .summaries
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clear();
+            self.git
+                .other_decorations
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clear();
@@ -844,9 +871,10 @@ impl App {
     /// 路径，因此已跟踪的文件即使匹配忽略规则，其改动仍然触发刷新。不在列表中的新文件触发一次
     /// 刷新，之后即出现在列表中；`.gitignore` 自身不被忽略，其改动触发的刷新会得到新的列表。
     pub(super) fn git_paths_changed(&mut self, paths: &[PathBuf], rescan: bool, git: bool) {
-        let Some(root) = self.git.root.as_deref() else {
+        let Some(root) = self.git.root.clone() else {
             return;
         };
+        let root = root.as_path();
         if rescan || git {
             self.git_refresh();
         } else if paths
@@ -854,6 +882,13 @@ impl App {
             .any(|p| p.starts_with(root) && !self.git.is_ignored(p))
         {
             self.git_refresh_status();
+        }
+        // 多仓库：其他仓库里的改动（在终端里切换分支、提交）不触发当前仓库的刷新，但各自的
+        // 摘要与文件树着色要跟着更新。
+        if paths.iter().any(|p| {
+            !p.starts_with(root) && self.git.repositories.iter().any(|repo| p.starts_with(repo))
+        }) {
+            self.git_read_summaries();
         }
     }
 

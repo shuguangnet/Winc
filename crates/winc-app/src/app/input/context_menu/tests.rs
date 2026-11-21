@@ -116,23 +116,30 @@ fn menus_depend_on_what_was_clicked() {
     assert!(file.contains(&Cut));
     assert!(commands(tree_menu(Some(EntryKind::Dir), true, false)).contains(&(FindInFolder, true)));
     // 多选：正好两个文件时才能比较，没有文件时「打开」灰显。
-    assert!(commands(tree_selection_menu(2, false)).contains(&(CompareFiles, true)));
+    assert!(commands(tree_selection_menu(2, 0, false)).contains(&(CompareFiles, true)));
     assert!(
-        !commands(tree_selection_menu(3, false))
+        !commands(tree_selection_menu(3, 0, false))
             .iter()
             .any(|(c, _)| *c == CompareFiles)
     );
-    assert!(commands(tree_selection_menu(0, false)).contains(&(OpenFiles, false)));
+    // 正好两个目录时提供目录对比。
+    assert!(commands(tree_selection_menu(0, 2, false)).contains(&(CompareFolders, true)));
+    assert!(
+        !commands(tree_selection_menu(0, 3, false))
+            .iter()
+            .any(|(c, _)| *c == CompareFolders)
+    );
+    assert!(commands(tree_selection_menu(0, 0, false)).contains(&(OpenFiles, false)));
     // 剪贴板中没有文件或图片时「粘贴」灰显。
     assert!(commands(tree_menu(Some(EntryKind::File), false, false)).contains(&(Paste, false)));
     // 「下载…」只在远端的文件、目录和多选上出现，本机的项和根目录没有。
     let download = |menu: Vec<MenuEntry>| commands(menu).contains(&(Download, true));
     assert!(download(tree_menu(Some(EntryKind::File), false, true)));
     assert!(download(tree_menu(Some(EntryKind::Dir), false, true)));
-    assert!(download(tree_selection_menu(2, true)));
+    assert!(download(tree_selection_menu(2, 0, true)));
     assert!(!download(tree_menu(Some(EntryKind::File), false, false)));
     assert!(!download(tree_menu(None, false, true)));
-    assert!(!download(tree_selection_menu(2, false)));
+    assert!(!download(tree_selection_menu(2, 0, false)));
 
     // 只有一个未命名的标签：关闭其他、关闭右侧、路径相关的命令都灰显。
     let only = commands(tab_menu((0, 0), 1, 1, false, false, false));
@@ -163,6 +170,8 @@ fn menus_depend_on_what_was_clicked() {
         [
             (GoToDefinition, true),
             (FindReferences, true),
+            (RenameSymbol, true),
+            (CheckProblems, true),
             (AddBookmark, true),
             (RemoveBookmark, false),
             (ListBookmarks, true),
@@ -180,6 +189,8 @@ fn menus_depend_on_what_was_clicked() {
         [
             (GoToDefinition, true),
             (FindReferences, true),
+            (RenameSymbol, true),
+            (CheckProblems, true),
             (AddBookmark, true),
             (RemoveBookmark, false),
             (ListBookmarks, true),
@@ -194,7 +205,7 @@ fn menus_depend_on_what_was_clicked() {
     );
     // 有选区时多一项「格式化选中部分」（书签三行与「本地历史」之后）。
     assert_eq!(
-        commands(editor_menu(true, true, true))[7],
+        commands(editor_menu(true, true, true))[9],
         (FormatSelection, true)
     );
     // 光标所在行已有书签时只能删除，不能重复添加。
@@ -227,7 +238,7 @@ fn local_only_items_are_left_out_for_remote_files() {
     };
     let menus = [
         tree_menu(Some(EntryKind::File), true, true),
-        tree_selection_menu(2, true),
+        tree_selection_menu(2, 0, true),
         tree_menu(None, true, false),
         tab_menu((0, 0), 1, 3, true, true, true),
         commit_file_menu(true, true, &[]),

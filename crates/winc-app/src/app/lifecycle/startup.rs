@@ -32,6 +32,7 @@ impl App {
             }
             files
         };
+        crate::theme::custom::load();
         let fonts = ViewFonts::of(&config);
         // 实际度量值（逻辑像素）要在创建窗口、加载字体之后才能得到，此前使用占位值。
         let placeholder = Metrics {
@@ -92,6 +93,7 @@ impl App {
             ime: Default::default(),
             layout: Layout::default(),
             tabs: TabBar::default(),
+            panes: Default::default(),
             diff: Default::default(),
             status: Default::default(),
             caches: crate::app::editor::EditorCaches {
@@ -165,6 +167,7 @@ impl App {
             text_content_w: 0.0,
             preview_tab: None,
             clipboard: Default::default(),
+            diagnostics_running: false,
             vim,
             bars: crate::app::editor::InputBars {
                 search: Search::default(),

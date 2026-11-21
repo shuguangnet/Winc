@@ -508,3 +508,9 @@ workspace-stdin-read-failed = Couldn’t read standard input: { $error }
 workspace-stdin-truncated = Only the first { $size } MB of standard input was read
 workspace-backup-locked = This folder is open in another Winc window; unsaved changes in this window won’t be backed up automatically
 workspace-backup-failed = Couldn’t back up unsaved changes: { $error }
+
+workspace-folderdiff-left = Only on the left
+workspace-folderdiff-right = Only on the right
+workspace-folderdiff-changed = Different contents
+workspace-folderdiff-nested = The folders are nested inside each other
+workspace-folders-identical = The two folders have identical contents

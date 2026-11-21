@@ -213,10 +213,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Remove-Item target/debug/conpty.dll, target/debug/OpenConsole.exe
 
+  deny:
+    name: Dependencies
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      # 许可证合规、漏洞通告（RUSTSEC）与重复依赖：任何一项失败都阻塞合并。
+      - name: Check licenses, advisories and bans
+        uses: EmbarkStudios/cargo-deny-action@v2
+
   result:
     name: CI
     if: always()
-    needs: [changes, format, lint, test]
+    needs: [changes, format, lint, test, deny]
     runs-on: ubuntu-24.04
     steps:
       - name: All checks passed

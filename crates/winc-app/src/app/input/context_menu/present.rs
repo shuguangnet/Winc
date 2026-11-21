@@ -319,9 +319,28 @@ impl App {
             }
             MenuTarget::SkipOnSave => skip_menu(&self.settings.languages.format),
             MenuTarget::Locale => locale_menu(),
-            MenuTarget::NamedTheme(dark) => (0..crate::theme::themes(*dark).len())
-                .map(|i| MenuEntry::Item(MenuCommand::NamedTheme(*dark, i), true))
-                .collect(),
+            MenuTarget::NamedTheme(dark) => {
+                let mut entries: Vec<MenuEntry> = (0..crate::theme::themes(*dark).len())
+                    .map(|i| MenuEntry::Item(MenuCommand::NamedTheme(*dark, i), true))
+                    .collect();
+                let custom: Vec<_> = crate::theme::custom::entries()
+                    .iter()
+                    .filter(|theme| theme.palette.dark == *dark)
+                    .collect();
+                if !custom.is_empty() {
+                    entries.push(MenuEntry::Separator);
+                    entries.extend(custom.iter().map(|theme| {
+                        MenuEntry::Item(
+                            MenuCommand::SetThemeId {
+                                dark: *dark,
+                                id: theme.id,
+                            },
+                            true,
+                        )
+                    }));
+                }
+                entries
+            }
             MenuTarget::Whitespace => whitespace_menu(),
             MenuTarget::VimClipboard => vim_clipboard_menu(),
             MenuTarget::OpenWorktree => open_worktree_menu(),
@@ -372,7 +391,11 @@ impl App {
                 let targets = self.tree_targets();
                 let remote =
                     !targets.is_empty() && targets.iter().all(|p| winc_backend::is_remote(p));
-                tree_selection_menu(self.tree_selected_files().len(), remote)
+                tree_selection_menu(
+                    self.tree_selected_files().len(),
+                    self.tree_selected_dirs().len(),
+                    remote,
+                )
             }
             MenuTarget::Tree(path) => {
                 // 目录自己的一行和空白处一样：不能改名、剪切、删除。
@@ -485,8 +508,9 @@ impl App {
                 }
                 menu
             }
-            MenuTarget::TerminalTab(_) => vec![
+            MenuTarget::TerminalTab(id) => vec![
                 MenuEntry::Item(MenuCommand::RenameTerminal, true),
+                MenuEntry::Item(MenuCommand::SplitTerminal, self.terminal_splittable(*id)),
                 MenuEntry::Separator,
                 MenuEntry::Item(MenuCommand::CloseTerminal, true),
                 MenuEntry::Item(
@@ -626,7 +650,7 @@ impl App {
             MenuTarget::CommitButton => self.commit_button_menu(),
             MenuTarget::LastCommit => self.last_commit_menu(),
             MenuTarget::TreeTools => self.tree_tools_menu(),
-            MenuTarget::TabList => (0..self.editor.documents.len())
+            MenuTarget::TabList => (0..self.editor.tab_count())
                 .map(|i| MenuEntry::Item(MenuCommand::ShowTab(i), true))
                 .collect(),
             MenuTarget::RunConfigs => (0..self.run.list.len())
@@ -1024,6 +1048,14 @@ impl App {
                     == Some(&self.config.language.unwrap_or_default())
             }
             MenuCommand::NamedTheme(dark, i) => self.theme_slot(dark) == i,
+            MenuCommand::SetThemeId { dark, id } => {
+                let current = if dark {
+                    &self.config.dark_theme
+                } else {
+                    &self.config.light_theme
+                };
+                current.as_deref() == Some(id)
+            }
             MenuCommand::KeymapPreset(preset) => crate::keymap::current_preset() == preset,
             MenuCommand::Whitespace(i) => {
                 winc_config::RenderWhitespace::ALL.get(i)

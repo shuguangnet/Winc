@@ -97,6 +97,7 @@ fn draw_card(app: &mut App, frame: &mut Frame<'_>, layout: &DialogLayout) {
         | FormKind::GoToRevision
         | FormKind::CompareRevision { .. }
         | FormKind::RenameGroup
+        | FormKind::RenameSymbol { .. }
         | FormKind::LogPath
         | FormKind::LogAuthor
         | FormKind::LogSince => {

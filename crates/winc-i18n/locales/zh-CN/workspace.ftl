@@ -427,3 +427,9 @@ workspace-stdin-read-failed = 无法读取标准输入：{ $error }
 workspace-stdin-truncated = 仅读取了标准输入的前 { $size } MB
 workspace-backup-locked = 此目录已在另一个 Winc 窗口中打开，此窗口未保存的修改不会自动备份
 workspace-backup-failed = 无法备份未保存的修改：{ $error }
+
+workspace-folderdiff-left = 仅左侧
+workspace-folderdiff-right = 仅右侧
+workspace-folderdiff-changed = 内容不同
+workspace-folderdiff-nested = 两个目录相互嵌套，无法比较
+workspace-folders-identical = 两个目录的内容一致

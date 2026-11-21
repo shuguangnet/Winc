@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, PoisonError};
 
+use winc_editor::git::Change;
 use winc_editor::git::{Branch, Head, LastCommit, Stash, Status, Worktree};
 use winc_i18n::t;
 
@@ -384,6 +385,7 @@ impl App {
         self.git.summaries_running = Some(cancel.clone());
         let repositories = self.git.repositories.clone();
         let summaries = Arc::clone(&self.git.summaries);
+        let other_decorations = Arc::clone(&self.git.other_decorations);
         let version = Arc::clone(&self.git.summaries_version);
         let worktrees = Arc::clone(&self.git.summary_worktrees);
         let divergence = Arc::clone(&self.git.summary_divergence);
@@ -397,6 +399,14 @@ impl App {
             let flush = |read: Vec<(PathBuf, Status)>| {
                 let mut summaries = summaries.lock().unwrap_or_else(PoisonError::into_inner);
                 summaries.extend(read);
+                // 多仓库的文件树着色：每个仓库的状态换算成装饰，当前仓库之外的文件用它。
+                let decorated: HashMap<PathBuf, Change> = summaries
+                    .iter()
+                    .flat_map(|(root, status)| status.decorations(root))
+                    .collect();
+                *other_decorations
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner) = decorated;
                 version.fetch_add(1, std::sync::atomic::Ordering::Release);
             };
             let mut left = SUMMARY_REPOSITORIES;

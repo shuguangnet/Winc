@@ -17,6 +17,7 @@ use winc_i18n::t;
 use winc_syntax::Language;
 
 use super::*;
+use crate::app::editor::rename::merge_rename_matches;
 use crate::layout::SidebarView;
 
 /// 一处定义的位置。
@@ -49,6 +50,10 @@ pub enum PlacesKind {
     Bookmarks,
     /// 一个文件的本地历史（各次保存的快照）。
     LocalHistory,
+    /// 两个目录的对比：合并的差异文件，选中一项打开文件对比或文件本身。
+    FolderDiff,
+    /// 「检查问题」解析出的诊断：选中一项跳到所在位置。
+    Diagnostics,
 }
 
 impl PlacesKind {
@@ -59,6 +64,8 @@ impl PlacesKind {
             PlacesKind::Usages => t!("editor-places-usages-count", count = n),
             PlacesKind::Bookmarks => t!("editor-places-bookmarks-count", count = n),
             PlacesKind::LocalHistory => t!("editor-places-history-count", count = n),
+            PlacesKind::FolderDiff => t!("editor-places-folderdiff-count", count = n),
+            PlacesKind::Diagnostics => t!("editor-places-diagnostics-count", count = n),
         }
     }
 }
@@ -105,33 +112,36 @@ impl Places {
 /// 命中（`filtering`）。
 pub struct DefinitionSearch {
     /// 后台的项目搜索。
-    engine: ProjectSearch,
+    pub(in crate::app) engine: ProjectSearch,
     /// 被查找的名字。
-    name: String,
+    pub(in crate::app) name: String,
     /// 判断命中是否算数（注释、字符串、无关语言、其他同名定义）。
-    filter: Arc<Filter>,
+    pub(in crate::app) filter: Arc<Filter>,
     /// 第二阶段：后台线程剔除不算数的命中后送回的结果；为 `None` 时还在第一阶段。
-    filtering: Option<mpsc::Receiver<Vec<FileResult>>>,
+    pub(in crate::app) filtering: Option<mpsc::Receiver<Vec<FileResult>>>,
     /// 发起查找的文件的语言，用于对结果排序。
-    language: &'static Language,
+    pub(in crate::app) language: &'static Language,
     /// 发起查找的文件。
     ///
     /// 该文件已查过，结果中排除；与该文件同一目录的结果排在前面。
-    from: PathBuf,
+    pub(in crate::app) from: PathBuf,
     /// 当前文件中的定义是否只有光标所在的这一处。
-    at_caret: bool,
+    pub(in crate::app) at_caret: bool,
     /// 找的是用法而不是定义时，光标所在的那一行（行号从 0 起）：定义本身在这一行，结果中排除。
-    usages_of: Option<usize>,
+    pub(in crate::app) usages_of: Option<usize>,
+    /// 重命名模式： Some(新名字) 时搜索完成后不列出结果，而是把「用法 + 定义」全部替换成
+    /// 新名字。
+    pub(in crate::app) rename_to: Option<String>,
     /// 成员访问的接收者类型名和当前文件中的同名定义；
     /// 不是成员访问或接收者的类型定义在当前文件中时为 `None`。
     ///
     /// 结果中有以该类型命名的文件时只取这些文件，否则一并列出当前文件中的定义。
-    receiver: Option<(String, Option<Place>)>,
+    pub(in crate::app) receiver: Option<(String, Option<Place>)>,
     /// 发起查找时的文档和光标位置（由 `start_place_search` 填入）。
     ///
     /// 搜索结束时用户已经换了标签或挪了光标，就不再弹浮窗、提示或跳转：
     /// 把结果放到其他位置只会打断用户。
-    origin: Option<(DocumentId, usize)>,
+    pub(in crate::app) origin: Option<(DocumentId, usize)>,
 }
 
 impl App {
@@ -156,7 +166,7 @@ impl App {
     /// 返回光标所在的名字（有选区时为选中的文字）。
     ///
     /// 不是当前语言中的名字时在名字上方提示并返回 `None`。
-    fn name_at_caret(&mut self) -> Option<String> {
+    pub(in crate::app) fn name_at_caret(&mut self) -> Option<String> {
         let doc = self.editor.active()?;
         if !doc.shows_text() {
             return None;
@@ -276,6 +286,7 @@ impl App {
             from: path.unwrap_or_default(),
             at_caret: !here.is_empty(),
             usages_of: None,
+            rename_to: None,
             receiver,
             origin: None,
         };
@@ -362,6 +373,7 @@ impl App {
             from: doc.path.clone().unwrap_or_default(),
             at_caret: true,
             usages_of: Some(line),
+            rename_to: None,
             receiver: None,
             origin: None,
         };
@@ -371,7 +383,12 @@ impl App {
     /// 在 `root` 和附加目录下后台开始搜索 `query`，搜索进展由 [`Self::poll_definitions`] 处理。
     ///
     /// 未保存的文档按内存中的内容搜索。
-    fn start_place_search(&mut self, mut search: DefinitionSearch, root: &Path, query: &Query) {
+    pub(in crate::app) fn start_place_search(
+        &mut self,
+        mut search: DefinitionSearch,
+        root: &Path,
+        query: &Query,
+    ) {
         search.engine.set_extra_folders(self.extra_folders());
         let dirty = self.dirty_ropes();
         let proxy = self.link.proxy.clone();
@@ -420,12 +437,28 @@ impl App {
             let dirty: HashMap<PathBuf, Rope> = self.dirty_ropes().into_iter().collect();
             let filter = Arc::clone(&search.filter);
             let usages = search.usages_of.is_some();
+            let rename = search.rename_to.is_some();
             match self.link.proxy.clone() {
-                None => search.engine.results = filter_results(&filter, usages, results, &dirty),
+                None => {
+                    search.engine.results = if rename {
+                        // 重命名：用法与定义都要算数，两轮剔除后按文件合并。
+                        let usage = filter_results(&filter, true, results.clone(), &dirty);
+                        let defs = filter_results(&filter, false, results, &dirty);
+                        merge_rename_matches(usage, defs)
+                    } else {
+                        filter_results(&filter, usages, results, &dirty)
+                    }
+                }
                 Some(proxy) => {
                     let (sender, receiver) = mpsc::channel();
                     std::thread::spawn(move || {
-                        let _ = sender.send(filter_results(&filter, usages, results, &dirty));
+                        let _ = sender.send(if rename {
+                            let usage = filter_results(&filter, true, results.clone(), &dirty);
+                            let defs = filter_results(&filter, false, results, &dirty);
+                            merge_rename_matches(usage, defs)
+                        } else {
+                            filter_results(&filter, usages, results, &dirty)
+                        });
                         let _ = proxy.send_event(UserEvent::Definitions);
                     });
                     search.filtering = Some(receiver);
@@ -442,6 +475,11 @@ impl App {
         let here = self.editor.active().map(|d| (d.id, d.selection.head));
         if here != search.origin {
             return;
+        }
+
+        // 重命名模式：不列出结果，直接把用法与定义全部替换成新名字。
+        if let Some(new_name) = search.rename_to.clone() {
+            return self.apply_rename(search, new_name);
         }
 
         let dir = search.from.parent().unwrap_or(Path::new("/")).to_path_buf();
@@ -561,7 +599,12 @@ impl App {
     }
 
     /// 在挂在光标所在名字下方的浮窗中列出 `items`，直接打字可以筛选。
-    pub(super) fn show_places(&mut self, kind: PlacesKind, name: String, items: Vec<Place>) {
+    pub(in crate::app) fn show_places(
+        &mut self,
+        kind: PlacesKind,
+        name: String,
+        items: Vec<Place>,
+    ) {
         let Some(doc) = self.editor.active() else {
             return;
         };
@@ -573,6 +616,7 @@ impl App {
         self.finish_name_input();
         self.overlays.picker.places_out = None;
         self.overlays.picker.history_files = None;
+        self.overlays.picker.compare_pairs = None;
         self.jumps.name_hint = None;
         self.overlays.picker.places_wheel = 0.0;
         self.overlays.picker.places_in = self.clock(POPUP_IN);
@@ -628,6 +672,25 @@ impl App {
             return;
         };
         let place = places.items.swap_remove(i);
+        // 目录对比的每一项：两边都有就打开文件对比，只有一边就打开那边的文件。
+        if places.kind == PlacesKind::FolderDiff {
+            let pair = self
+                .overlays
+                .picker
+                .compare_pairs
+                .take_if(|pairs| i < pairs.len())
+                .and_then(|pairs| pairs.get(i).cloned());
+            self.close_picker();
+            if let Some((left, right)) = pair {
+                match (left, right) {
+                    (Some(left), Some(right)) => self.compare_files(&left, &right),
+                    (Some(only), None) => self.open_path(&only),
+                    (None, Some(only)) => self.open_path(&only),
+                    (None, None) => {}
+                }
+            }
+            return;
+        }
         // 历史快照不跳转：打开它与当前内容的差异（快照文件在浮窗构建时一并记下）。
         if places.kind == PlacesKind::LocalHistory {
             let snapshot = self

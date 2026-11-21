@@ -51,6 +51,8 @@ pub(crate) enum FormKind {
     LogSince,
     /// 给窗口中的这组目录起名。
     RenameGroup,
+    /// 重命名符号：`name` 是旧名字，输入框预填。
+    RenameSymbol { name: String },
     /// 交互式变基。
     Rebase(Box<RebaseForm>),
     /// 连接远端主机：主机、端口，见 [`crate::app::remote`]。
@@ -99,6 +101,7 @@ impl FormKind {
             FormKind::Remote { editing } => Some(QuestionView::remote(editing.as_deref())),
             FormKind::Connect => Some(QuestionView::connect()),
             FormKind::GoToRevision => Some(QuestionView::go_to_revision()),
+            FormKind::RenameSymbol { name } => Some(QuestionView::rename_symbol(name)),
             FormKind::CompareRevision { commit } => Some(QuestionView::compare_revision(commit)),
             FormKind::LogPath => Some(QuestionView::log_path()),
             FormKind::LogAuthor => Some(QuestionView::log_author()),
@@ -358,6 +361,17 @@ impl App {
             }
             FormKind::Connect => self.connect_plan(dialog),
             FormKind::Push(form) => self.push_plan(dialog, form),
+            FormKind::RenameSymbol { name } => {
+                let new = dialog.name.text().trim();
+                FormPlan {
+                    problem: None,
+                    confirm: t!("editor-rename-button"),
+                    enabled: !new.is_empty() && new != name,
+                    base: String::new(),
+                    base_enabled: false,
+                    dir: None,
+                }
+            }
             FormKind::GoToRevision | FormKind::CompareRevision { .. } => {
                 let revision = dialog.name.text().trim();
                 // 提交号、分支名和标签名都不含空白，也不以 `-` 开头。
@@ -569,6 +583,12 @@ impl App {
             self.compare_log_with_revision(commit, revision);
             return;
         }
+        if let FormKind::RenameSymbol { name } = &dialog.kind {
+            let (old, new) = (name.clone(), dialog.name.text().trim().to_owned());
+            self.close_form_dialog();
+            self.start_rename_symbol(old, new);
+            return;
+        }
         if matches!(dialog.kind, FormKind::RenameGroup) {
             let name = dialog.name.text().to_owned();
             self.close_form_dialog();
@@ -629,6 +649,7 @@ impl App {
             | FormKind::GoToRevision
             | FormKind::CompareRevision { .. }
             | FormKind::RenameGroup
+            | FormKind::RenameSymbol { .. }
             | FormKind::LogPath
             | FormKind::LogAuthor
             | FormKind::LogSince => {}

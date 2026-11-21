@@ -1,5 +1,6 @@
 //! 执行菜单里选中的命令，以及几个命令共用的动作（复制路径、改名、删除、在目录中查找）。
 
+use winc_editor::panes::Axis;
 use winc_i18n::t;
 
 use super::*;
@@ -143,6 +144,10 @@ impl App {
                 };
                 match command {
                     MenuCommand::RenameTerminal => self.open_terminal_rename(index),
+                    MenuCommand::SplitTerminal => {
+                        self.activate_terminal_tab(index);
+                        self.split_terminal();
+                    }
                     MenuCommand::CloseTerminal => self.close_terminal_tab(index),
                     MenuCommand::CloseOtherTerminals => self.close_other_terminal_tabs(id),
                     _ => {}
@@ -194,13 +199,13 @@ impl App {
                     self.settings_toggle_skip(language.id);
                 }
             }
-            MenuTarget::NamedTheme(_) => {
-                if let MenuCommand::NamedTheme(dark, i) = command
-                    && i < crate::theme::themes(dark).len()
-                {
+            MenuTarget::NamedTheme(_) => match command {
+                MenuCommand::NamedTheme(dark, i) if i < crate::theme::themes(dark).len() => {
                     self.set_named_theme(dark, i);
                 }
-            }
+                MenuCommand::SetThemeId { dark, id } => self.set_named_theme_id(dark, id),
+                _ => {}
+            },
             MenuTarget::Locale => {
                 if let MenuCommand::Locale(i) = command
                     && let Some(&choice) = winc_i18n::LocaleChoice::ALL.get(i)
@@ -447,6 +452,11 @@ impl App {
                         self.compare_files(left, right);
                     }
                 }
+                MenuCommand::CompareFolders => {
+                    if let [left, right] = &self.tree_selected_dirs()[..] {
+                        self.compare_folders(left.clone(), right.clone());
+                    }
+                }
                 MenuCommand::Cut => self.cut_entries(&self.tree_targets()),
                 MenuCommand::Copy => {
                     self.copy_entries(&self.tree_targets());
@@ -506,7 +516,8 @@ impl App {
             MenuCommand::TerminalMaximize => self.toggle_terminal_maximized(),
             MenuCommand::TerminalDock => self.toggle_terminal_position(),
             MenuCommand::NewTerminal => self.new_terminal_tab(),
-            MenuCommand::CloseTerminal => self.close_terminal_tab(self.terminal.active),
+            MenuCommand::SplitTerminal => self.split_terminal(),
+            MenuCommand::CloseTerminal => self.close_terminal_pane(),
             _ => {}
         }
     }
@@ -538,10 +549,14 @@ impl App {
     }
 
     fn run_tab_command(&mut self, command: MenuCommand, id: DocumentId) {
-        let Some(index) = self.editor.index_of(id) else {
+        let Some(index) = self
+            .editor
+            .index_of(id)
+            .filter(|&i| i < self.editor.tab_count())
+        else {
             return;
         };
-        let docs = &self.editor.documents;
+        let docs = self.editor.tabs();
         let path = docs[index].path.clone();
 
         // 右键点在多选的标签上：关闭、关闭其他作用于选中的各个标签，关闭左侧、右侧以选中的
@@ -580,6 +595,16 @@ impl App {
                 }
             }
             MenuCommand::Close => self.close_tab(index),
+            MenuCommand::SplitRight | MenuCommand::SplitDown => {
+                self.activate_tab(index);
+                let down = command == MenuCommand::SplitDown;
+                self.split_editor(if down { Axis::Column } else { Axis::Row });
+            }
+            MenuCommand::MoveToSplitRight | MenuCommand::MoveToSplitDown => {
+                self.activate_tab(index);
+                let down = command == MenuCommand::MoveToSplitDown;
+                self.move_to_split(if down { Axis::Column } else { Axis::Row });
+            }
             MenuCommand::ReadOnly(on) => self.set_read_only(id, on),
             MenuCommand::CloseOthers => {
                 let ids = docs.iter().filter(|d| d.id != id).map(|d| d.id).collect();
@@ -646,6 +671,19 @@ impl App {
             .iter()
             .enumerate()
             .filter(|&(i, e)| e.kind == EntryKind::File && ws.is_selected(i))
+            .map(|(_, e)| e.path.clone())
+            .collect()
+    }
+
+    /// 文件树中选中且尚未打开的各目录（多选比较目录用），按树的顺序。
+    pub(in crate::app) fn tree_selected_dirs(&self) -> Vec<PathBuf> {
+        let Some(ws) = self.editor.workspace.as_ref() else {
+            return Vec::new();
+        };
+        ws.rows()
+            .iter()
+            .enumerate()
+            .filter(|&(i, e)| e.kind == EntryKind::Dir && ws.is_selected(i))
             .map(|(_, e)| e.path.clone())
             .collect()
     }
@@ -991,7 +1029,7 @@ impl App {
             })
             .map(|d| d.id)
             .collect();
-        self.remove_tabs(&ids);
+        self.close_documents(&ids);
 
         // 选中原位置上的下一行，便于继续用 `⌘⌫` 连续删除。
         if let Some(ws) = &mut self.editor.workspace {

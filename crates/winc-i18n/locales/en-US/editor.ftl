@@ -89,6 +89,27 @@ editor-places-usages-suffix = { " " }usages
 editor-places-definitions-suffix = { " " }definitions
 editor-places-bookmarks = Bookmarks
 editor-places-history = Local History
+editor-rename-title = Rename Symbol
+editor-rename-label = Rename “{ $name }” to:
+editor-rename-new-label = New name
+editor-rename-button = Rename
+editor-rename-invalid = “{ $name }” is not a valid identifier in this language
+editor-rename-done = Renamed “{ $old }” to “{ $new }”: { $count } occurrences in { $files } files
+editor-rename-failed = { $count } files failed to update
+editor-places-folderdiff = Folder Comparison
+editor-places-folderdiff-count = { $count ->
+        [one] { $count } difference
+       *[other] { $count } differences
+    }
+editor-places-diagnostics = Problems
+editor-places-diagnostics-count = { $count ->
+        [one] { $count } problem
+       *[other] { $count } problems
+    }
+editor-check-running = Checking, hang on…
+editor-check-clean = No problems found
+editor-check-invalid-command = No check command is configured
+editor-check-run-failed = The check command “{ $command }” failed to run: { $error }
 editor-places-history-count = { $count ->
         [one] { $count } save point
        *[other] { $count } save points

@@ -128,6 +128,7 @@ pub enum MenuCommand {
     OpenFiles,
     /// 文件树里正好选中两个文件时：并排比较它们。
     CompareFiles,
+    CompareFolders,
     Close,
     CloseOthers,
     CloseRight,
@@ -135,6 +136,12 @@ pub enum MenuCommand {
     /// 关闭所有没有未保存修改的标签。
     CloseSaved,
     CloseAll,
+    /// 在右边、下边拆出新窗格打开这个标签。
+    SplitRight,
+    SplitDown,
+    /// 把这个标签移到右边、下边新拆出的窗格。
+    MoveToSplitRight,
+    MoveToSplitDown,
     /// 把标签设为只读（`true`）或恢复为可以编辑。
     ReadOnly(bool),
     /// 把窗口里的全部标签设为只读（`true`）或恢复。
@@ -413,6 +420,15 @@ pub enum MenuCommand {
     GraphHideFiles,
     /// 编辑区：列出当前文件的本地历史（各次保存的快照）。
     LocalHistory,
+    /// 编辑区：重命名光标所在的符号（定义与全部用法）。
+    RenameSymbol,
+    /// 编辑区：运行检查命令并把诊断列成卡片（错误在前），选中一项跳到所在位置。
+    CheckProblems,
+    /// 主题菜单：选用数据目录 `themes/` 里的自定义主题（`id` 已随主题固化）。
+    SetThemeId {
+        dark: bool,
+        id: &'static str,
+    },
     /// 编辑区：开关逐行追溯（开着时打勾）。
     ToggleBlame,
     /// 提交视图「⋯」：储藏改动（输入说明）。
@@ -490,6 +506,8 @@ pub enum MenuCommand {
     /// 把终端面板停靠到另一边。
     TerminalDock,
     NewTerminal,
+    /// 终端：拆分标签，新终端在当前终端的目录里启动。
+    SplitTerminal,
     /// 终端标签：改名字。
     RenameTerminal,
     CloseTerminal,
@@ -547,10 +565,15 @@ impl MenuCommand {
             MenuCommand::Download => t!("menu-download"),
             MenuCommand::Close => t!("common-close"),
             MenuCommand::CloseOthers => t!("cmd-close-other-tabs"),
+            MenuCommand::SplitRight => t!("cmd-split-right"),
+            MenuCommand::SplitDown => t!("cmd-split-down"),
+            MenuCommand::MoveToSplitRight => t!("cmd-move-to-split-right"),
+            MenuCommand::MoveToSplitDown => t!("cmd-move-to-split-down"),
             MenuCommand::CloseRight => t!("menu-close-tabs-right"),
             MenuCommand::CloseLeft => t!("menu-close-tabs-left"),
             MenuCommand::OpenFiles => t!("cmd-open-selected"),
             MenuCommand::CompareFiles => t!("menu-compare-selected"),
+            MenuCommand::CompareFolders => t!("menu-compare-folders"),
             MenuCommand::CommitCheck(true) => t!("menu-commit-check"),
             MenuCommand::CommitCheck(false) => t!("menu-commit-uncheck"),
             MenuCommand::CloseSaved => t!("menu-close-saved-tabs"),
@@ -630,6 +653,9 @@ impl MenuCommand {
             MenuCommand::GraphOpenFiles => t!("menu-graph-open-files"),
             MenuCommand::GraphHideFiles => t!("menu-graph-hide-files"),
             MenuCommand::LocalHistory => t!("menu-editor-history"),
+            MenuCommand::RenameSymbol => t!("cmd-rename-symbol"),
+            MenuCommand::CheckProblems => t!("cmd-check-problems"),
+            MenuCommand::SetThemeId { id, .. } => crate::theme::custom::name(id).unwrap_or(id),
             MenuCommand::LogCopyMessage => t!("menu-log-copy-message"),
             MenuCommand::LogCopyPatch => t!("menu-log-copy-patch"),
             MenuCommand::LogCompareWithLocal => t!("menu-log-compare-with-local"),
@@ -672,6 +698,7 @@ impl MenuCommand {
             MenuCommand::TerminalClear => t!("menu-terminal-clear"),
             MenuCommand::TerminalMaximize => t!("menu-terminal-maximize"),
             MenuCommand::NewTerminal => t!("cmd-new-terminal"),
+            MenuCommand::SplitTerminal => t!("cmd-split-terminal"),
             MenuCommand::RenameTerminal => t!("cmd-rename-file"),
             MenuCommand::CloseTerminal => t!("menu-terminal-close"),
             MenuCommand::CloseOtherTerminals => t!("cmd-close-other-tabs"),
@@ -814,6 +841,10 @@ impl MenuCommand {
             MenuCommand::Delete => Action::DeleteFile,
             MenuCommand::Close => Action::CloseTab,
             MenuCommand::CloseOthers => Action::CloseOtherTabs,
+            MenuCommand::SplitRight => Action::SplitRight,
+            MenuCommand::SplitDown => Action::SplitDown,
+            MenuCommand::MoveToSplitRight => Action::MoveToSplitRight,
+            MenuCommand::MoveToSplitDown => Action::MoveToSplitDown,
             MenuCommand::ReadOnly(_) => Action::ToggleReadOnly,
             MenuCommand::ReadOnlyAll(_) => Action::ToggleReadOnlyAll,
             MenuCommand::CloseAll => Action::CloseAllTabs,
@@ -829,6 +860,7 @@ impl MenuCommand {
             MenuCommand::TerminalMaximize => Action::MaximizeTerminal,
             MenuCommand::TerminalDock => Action::ToggleTerminalPosition,
             MenuCommand::NewTerminal => Action::NewTerminal,
+            MenuCommand::SplitTerminal => Action::SplitTerminal,
             MenuCommand::RenameTerminal => Action::RenameTerminal,
             MenuCommand::CloseTerminal => Action::CloseTerminal,
             MenuCommand::GitRevertHunk => Action::GitRevertChange,

@@ -15,6 +15,8 @@ pub enum Action {
     GoToLine,
     GoToDefinition,
     FindReferences,
+    RenameSymbol,
+    CheckProblems,
     GoBack,
     GoForward,
     Settings,
@@ -39,6 +41,13 @@ pub enum Action {
     ReopenClosed,
     NextTab,
     PreviousTab,
+    SplitRight,
+    SplitDown,
+    MoveToSplitRight,
+    MoveToSplitDown,
+    Unsplit,
+    NextPane,
+    PreviousPane,
     CloseFolder,
     CloseWindow,
     CopyPath,
@@ -257,6 +266,9 @@ pub enum Action {
     CloseTerminal,
     NextTerminal,
     PreviousTerminal,
+    SplitTerminal,
+    NextTerminalPane,
+    PreviousTerminalPane,
     FocusTerminal1,
     FocusTerminal2,
     FocusTerminal3,
@@ -329,6 +341,8 @@ impl Action {
             GoToLine => t!("cmd-go-to-line"),
             GoToDefinition => t!("cmd-go-to-definition"),
             FindReferences => t!("cmd-find-references"),
+            RenameSymbol => t!("cmd-rename-symbol"),
+            CheckProblems => t!("cmd-check-problems"),
             GoBack => t!("cmd-go-back"),
             GoForward => t!("cmd-go-forward"),
             Settings => t!("cmd-settings"),
@@ -351,6 +365,13 @@ impl Action {
             ReopenClosed => t!("cmd-reopen-closed"),
             NextTab => t!("cmd-next-tab"),
             PreviousTab => t!("cmd-previous-tab"),
+            SplitRight => t!("cmd-split-right"),
+            SplitDown => t!("cmd-split-down"),
+            MoveToSplitRight => t!("cmd-move-to-split-right"),
+            MoveToSplitDown => t!("cmd-move-to-split-down"),
+            Unsplit => t!("cmd-unsplit"),
+            NextPane => t!("cmd-next-pane"),
+            PreviousPane => t!("cmd-previous-pane"),
             CloseFolder => t!("cmd-close-folder"),
             CloseWindow => t!("cmd-close-window"),
             CopyPath => t!("cmd-copy-path"),
@@ -529,6 +550,9 @@ impl Action {
             CloseTerminal => t!("cmd-close-terminal"),
             NextTerminal => t!("cmd-next-terminal"),
             PreviousTerminal => t!("cmd-previous-terminal"),
+            SplitTerminal => t!("cmd-split-terminal"),
+            NextTerminalPane => t!("cmd-next-terminal-pane"),
+            PreviousTerminalPane => t!("cmd-previous-terminal-pane"),
             FocusTerminal1 => t!("cmd-terminal-1"),
             FocusTerminal2 => t!("cmd-terminal-2"),
             FocusTerminal3 => t!("cmd-terminal-3"),
@@ -583,6 +607,8 @@ impl Action {
             GoToLine => "Go to Line",
             GoToDefinition => "Go to Definition",
             FindReferences => "Find All References",
+            RenameSymbol => "Rename Symbol",
+            CheckProblems => "Check for Problems",
             GoBack => "Go Back",
             GoForward => "Go Forward",
             Settings => "Settings",
@@ -605,6 +631,13 @@ impl Action {
             ReopenClosed => "Reopen Closed Editor",
             NextTab => "Open Next Editor",
             PreviousTab => "Open Previous Editor",
+            SplitRight => "Split Editor Right",
+            SplitDown => "Split Editor Down",
+            MoveToSplitRight => "Move Editor into Right Split",
+            MoveToSplitDown => "Move Editor into Split Below",
+            Unsplit => "Join All Splits",
+            NextPane => "Focus Next Split",
+            PreviousPane => "Focus Previous Split",
             CloseFolder => "Close Folder",
             CloseWindow => "Close Window",
             CopyPath => "Copy Path",
@@ -777,6 +810,9 @@ impl Action {
             CloseTerminal => "Terminal: Close Tab",
             NextTerminal => "Terminal: Next Tab",
             PreviousTerminal => "Terminal: Previous Tab",
+            SplitTerminal => "Terminal: Split",
+            NextTerminalPane => "Terminal: Focus Next Pane",
+            PreviousTerminalPane => "Terminal: Focus Previous Pane",
             FocusTerminal1 => "Terminal: Focus Tab 1",
             FocusTerminal2 => "Terminal: Focus Tab 2",
             FocusTerminal3 => "Terminal: Focus Tab 3",
@@ -817,6 +853,8 @@ impl Action {
             | GoToLine
             | GoToDefinition
             | FindReferences
+            | RenameSymbol
+            | CheckProblems
             | GoBack
             | GoForward
             | Settings
@@ -980,6 +1018,9 @@ impl Action {
             | CloseTerminal
             | NextTerminal
             | PreviousTerminal
+            | SplitTerminal
+            | NextTerminalPane
+            | PreviousTerminalPane
             | FocusTerminal1
             | FocusTerminal2
             | FocusTerminal3
@@ -1001,7 +1042,14 @@ impl Action {
             | UnfoldOutput
             | NextError
             | PreviousError
-            | SendToTerminal => Group::View,
+            | SendToTerminal
+            | SplitRight
+            | SplitDown
+            | MoveToSplitRight
+            | MoveToSplitDown
+            | Unsplit
+            | NextPane
+            | PreviousPane => Group::View,
         }
     }
 
@@ -1108,6 +1156,9 @@ impl Action {
             | Action::CloseTerminal
             | Action::NextTerminal
             | Action::PreviousTerminal
+            | Action::SplitTerminal
+            | Action::NextTerminalPane
+            | Action::PreviousTerminalPane
             | Action::FocusTerminal1
             | Action::FocusTerminal2
             | Action::FocusTerminal3
@@ -1186,6 +1237,8 @@ pub const ACTIONS: &[Action] = {
         GoToLine,
         GoToDefinition,
         FindReferences,
+        RenameSymbol,
+        CheckProblems,
         GoBack,
         GoForward,
         ShowCommands,
@@ -1230,6 +1283,13 @@ pub const ACTIONS: &[Action] = {
         ReopenClosed,
         NextTab,
         PreviousTab,
+        SplitRight,
+        SplitDown,
+        MoveToSplitRight,
+        MoveToSplitDown,
+        Unsplit,
+        NextPane,
+        PreviousPane,
         CloseFolder,
         CloseWindow,
         CopyPath,
@@ -1387,6 +1447,9 @@ pub const ACTIONS: &[Action] = {
         CloseTerminal,
         NextTerminal,
         PreviousTerminal,
+        SplitTerminal,
+        NextTerminalPane,
+        PreviousTerminalPane,
         FocusTerminal1,
         FocusTerminal2,
         FocusTerminal3,

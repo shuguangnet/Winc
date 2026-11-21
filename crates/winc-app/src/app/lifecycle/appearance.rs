@@ -1,6 +1,7 @@
 //! 外观：界面缩放、字体、字号和主题。
 
 use super::*;
+use winc_i18n::t;
 
 impl App {
     /// 返回界面缩放倍数（配置中的 `ui.zoom` 除以 100，未设置时为 1）。
@@ -113,9 +114,44 @@ impl App {
         crate::theme::theme_index(dark, id.as_deref())
     }
 
-    /// 深色（`dark`）或浅色外观时用的主题。
+    /// 深色（`dark`）或浅色外观时用的主题：配置的 id 是自定义主题时用读入的那一套。
     pub(crate) fn theme_palette(&self, dark: bool) -> &'static Palette {
+        let id = if dark {
+            &self.config.dark_theme
+        } else {
+            &self.config.light_theme
+        };
+        if let Some(theme) = crate::theme::find(dark, id.as_deref()) {
+            return theme.palette;
+        }
         crate::theme::themes(dark)[self.theme_slot(dark)].palette
+    }
+
+    /// 选中自定义主题（数据目录 `themes/` 里的文件，`id` 已固化）并记住。
+    pub(in crate::app) fn set_named_theme_id(&mut self, dark: bool, id: &'static str) {
+        if dark {
+            self.config.dark_theme = Some(id.to_owned());
+        } else {
+            self.config.light_theme = Some(id.to_owned());
+        }
+        let choice = match self.theme_choice {
+            ThemeChoice::Auto => ThemeChoice::Auto,
+            _ if dark => ThemeChoice::Dark,
+            _ => ThemeChoice::Light,
+        };
+        if choice != self.theme_choice {
+            self.config.theme = Some(choice);
+        }
+        self.apply_theme(choice);
+        if self.palette.dark != dark {
+            self.flash(if dark {
+                t!("settings-theme-used-when-dark")
+            } else {
+                t!("settings-theme-used-when-light")
+            });
+        }
+        self.save_config();
+        self.request_redraw();
     }
 
     /// 切到 `theme`：换成对应的主题，终端跟着换配色，并重新摆放标题栏按钮。

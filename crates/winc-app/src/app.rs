@@ -304,8 +304,8 @@ pub enum UserEvent {
     GitLog,
     /// 终端的辅助进程发来了消息。
     Terminal,
-    /// 确认框中确认关闭参数所指的终端标签（其中仍有程序在运行）。
-    TerminalClose(u16),
+    /// 确认框中确认关闭参数所指的终端（其中仍有程序在运行）：为真时关掉它所在的整个标签。
+    TerminalClose(u16, bool),
     /// 确认框中确认重新启动参数所指的终端标签（伪终端已断开，其中的程序可能仍在运行）。
     TerminalRestart(u16),
     /// 提示框中回答了是否为终端加载第一个参数所指的 Python 环境。
@@ -514,6 +514,8 @@ pub enum Hover {
     OutlineDivider,
     /// 分栏预览中间的分隔线（左右拖动可调整两侧的宽度）。
     SplitDivider,
+    /// 编辑区窗格之间的第几道分隔线（拖动可调整两侧的大小）。
+    PaneDivider(usize),
     /// 终端面板标签栏上的标签、关闭按钮、「+」和位置按钮。
     TerminalHeader(terminal::HeaderHit),
     /// 终端中命令块的色带与吸顶的命令行。
@@ -714,6 +716,10 @@ enum Drag {
         start_x: f32,
         start_left: f32,
     },
+    /// 拖动编辑区窗格之间的第 `index` 道分隔线。
+    PaneDivider {
+        index: usize,
+    },
     /// 拖动日志标签中列表与详情之间的分隔线：按下时的横坐标、详情栏当时的宽度。
     LogDivider {
         start_x: f32,
@@ -887,6 +893,8 @@ pub struct App {
     pub layout: Layout,
     /// 标签栏的标签和滚动状态。
     pub tabs: TabBar,
+    /// 编辑区的各个窗格在界面上的位置和状态。
+    pub(crate) panes: workspace::panes::PaneUi,
     /// 差异视图的界面状态。
     pub diff: diff::DiffState,
     /// 状态栏的界面状态。
@@ -921,6 +929,8 @@ pub struct App {
     // 编辑区
     /// 剪贴板。
     pub(crate) clipboard: editor::clipboard::Clipboard,
+    /// 「检查问题」是否正在后台运行：运行中不再发起重复的检查。
+    pub(crate) diagnostics_running: bool,
     /// Vim 模式的状态；Vim 模式关闭时为 `None`。
     pub(crate) vim: Option<Box<vim::VimState>>,
 
@@ -1162,7 +1172,7 @@ impl App {
     /// 移动鼠标时分隔条、选区、滚动条和标签仍会跟随移动。
     fn drop_drags(&mut self) {
         self.cancel_tree_drag();
-        self.release_tab();
+        self.cancel_tab_drag();
         self.pointer.drag = Drag::None;
         self.pointer.close_pressed = None;
         self.pointer.control_pressed = None;

@@ -75,6 +75,21 @@ impl QuestionView {
         }
     }
 
+    /// 返回「重命名符号」对话框的内容：旧名字的说明和一个预填的新名字输入框。
+    pub(super) fn rename_symbol(name: &str) -> Self {
+        Self {
+            title: t!("editor-rename-title").to_owned(),
+            message: Some(t!("editor-rename-label", name = name).to_owned()),
+            message_lines: 1,
+            values: Vec::new(),
+            inputs: vec![QuestionInput {
+                label: t!("editor-rename-new-label"),
+                placeholder: "",
+            }],
+            confirm: t!("editor-rename-button"),
+        }
+    }
+
     /// 返回「与指定版本比较」对话框的内容：提交 `commit` 的提交号和一个输入框。
     pub(super) fn compare_revision(commit: &str) -> Self {
         Self {

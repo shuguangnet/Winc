@@ -601,3 +601,49 @@ fn switching_from_a_scrolled_list_keeps_the_clicked_row_in_place() {
 
     let _ = std::fs::remove_dir_all(a.parent().unwrap());
 }
+
+/// 多仓库：另一个仓库里切换分支（模拟在终端里 `git checkout`），它的分支与文件状态跟着更新，
+/// 文件树的着色不停留在切换前的样子。
+#[test]
+fn a_branch_switch_in_another_repository_updates_its_states() {
+    let Some((mut app, a, b)) = two_repositories("git-other-repo-branch", false) else {
+        return;
+    };
+    // b：main 与 feature 各提交一次同样的内容，两边切换不会有冲突。
+    std::fs::write(b.join("f.txt"), "base\n").unwrap();
+    git_in(&b, &["add", "."]);
+    git_in(&b, &["commit", "-q", "-m", "base"]);
+    git_in(&b, &["checkout", "-q", "-b", "feature"]);
+    std::fs::write(b.join("g.txt"), "g\n").unwrap();
+    git_in(&b, &["add", "."]);
+    git_in(&b, &["commit", "-q", "-m", "g"]);
+    git_in(&b, &["checkout", "-q", "main"]);
+    app.check_disk();
+    paint(&mut app);
+    let head = |app: &App| app.place_state(&b).head;
+    assert_eq!(head(&app).as_deref(), Some("main"));
+    // main 上改 f.txt（未提交）：文件树标出修改。
+    std::fs::write(b.join("f.txt"), "local\n").unwrap();
+    app.check_disk();
+    paint(&mut app);
+    assert_eq!(
+        app.git.change_of(&b.join("f.txt")),
+        Some(winc_editor::git::Change::Modified),
+        "其他仓库的文件也标出修改"
+    );
+
+    // 在终端里切到 feature（本地的修改跟着过去）：摘要换到 feature，着色保持（文件仍是修改）。
+    git_in(&b, &["checkout", "-q", "feature"]);
+    app.check_disk();
+    paint(&mut app);
+    assert_eq!(head(&app).as_deref(), Some("feature"), "摘要换到新分支");
+    assert_eq!(
+        app.git.change_of(&b.join("f.txt")),
+        Some(winc_editor::git::Change::Modified),
+        "跟着工作区过去的修改仍然标出"
+    );
+    // 当前仓库 a 不受影响。
+    assert_eq!(app.place_state(&a).head.as_deref(), Some("main"));
+    let _ = std::fs::remove_dir_all(a.parent().unwrap());
+    let _ = std::fs::remove_dir_all(b.parent().unwrap().join("b"));
+}

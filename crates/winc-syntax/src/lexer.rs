@@ -490,7 +490,7 @@ pub(crate) fn scan_line(
 /// 返回字符 `c` 对代码括号深度的影响：左括号（`(`、`[`、`{`）是 `1`，右括号是 `-1`，其余
 /// 是 `0`。
 ///
-/// 词法分析在「没有被任何 token 覆盖的字符」上计数（见 [`Lexer::bracket_depth`]）；绘制括号
+/// 词法分析在「没有被任何 token 覆盖的字符」上计数（见 `Lexer::bracket_depth`）；绘制括号
 /// 着色时对同一规则逐字符推算层级，两边用同一个函数保证一致。
 pub fn bracket_delta(c: char) -> i32 {
     match c {

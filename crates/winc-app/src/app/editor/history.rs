@@ -272,9 +272,11 @@ fn local_offset(time: i64) -> i64 {
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
-        // SAFETY: 只写传入的结构体；返回值是时区的状态（未知、标准或夏令时），返回 -1（失败）
-        // 时按标准偏差处理。
-        let mut tz = TIME_ZONE_INFORMATION::default();
+        let _ = time;
+        // SAFETY: `TIME_ZONE_INFORMATION` 是纯 C 结构体，全零位模式有效；
+        // `GetTimeZoneInformation` 只写传入的结构体；返回值是时区的状态（未知、标准或夏令时），
+        // 返回 -1（失败）时按标准偏差处理。
+        let mut tz: TIME_ZONE_INFORMATION = unsafe { std::mem::zeroed() };
         let state = unsafe { GetTimeZoneInformation(&mut tz) };
         let mut bias = tz.Bias;
         if state == 2 {

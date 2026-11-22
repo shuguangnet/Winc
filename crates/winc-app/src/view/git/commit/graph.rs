@@ -476,7 +476,12 @@ fn draw_graph_files(
             } else {
                 p.indent_guide
             };
-            frame.rect_clipped(Rect::new(guide_x, y, 1.0, GRAPH_ROW), guide_color, 0.0, clip);
+            frame.rect_clipped(
+                Rect::new(guide_x, y, 1.0, GRAPH_ROW),
+                guide_color,
+                0.0,
+                clip,
+            );
             let right = row_rect.right() - 8.0;
             let letter = file.change.letter().to_string();
             let letter_w = frame.measure(FontKind::Ui, size, &letter);
@@ -513,7 +518,10 @@ fn draw_graph_files(
                 draw_button(frame, p, diff_btn, clip, on_diff, false);
                 let btn_ink = if on_diff { p.text } else { p.text_muted };
                 icons::compare(frame, center(diff_btn), btn_ink, clip);
-                hits.push((diff_btn.intersect(rows_area), CommitTarget::GraphFileDiff(k)));
+                hits.push((
+                    diff_btn.intersect(rows_area),
+                    CommitTarget::GraphFileDiff(k),
+                ));
                 diff_btn.x - 4.0
             } else {
                 badge_rect.x - 6.0
@@ -532,7 +540,15 @@ fn draw_graph_files(
             if file.from.is_some() {
                 let text = app.graph_file_label(k).unwrap_or_default();
                 let text = truncate_end(frame, &text, size, room);
-                label(frame, app, size, (name_x, row_rect), &text, name_color, clip);
+                label(
+                    frame,
+                    app,
+                    size,
+                    (name_x, row_rect),
+                    &text,
+                    name_color,
+                    clip,
+                );
             } else {
                 let shown_name = truncate_end(frame, &file_name, size, room);
                 let name_end = label(

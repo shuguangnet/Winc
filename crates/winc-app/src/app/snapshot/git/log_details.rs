@@ -488,4 +488,48 @@ fn refreshing_the_log_updates_the_repository_state_and_reports_it() {
         Some(winc_i18n::t!("git-log-refreshed"))
     );
     assert_eq!(app.git.log.refreshing, None);
+
+    // 详情栏切换到按目录分组视图后，点击目录标题行可以折叠与展开该目录下的文件；
+    // 悬停在文件行上时右端显示打开文件、与本地比较、查看文件历史三个快捷按钮。
+    app.press_log(LogTarget::FilesLayout);
+    paint(&mut app);
+    assert!(!app.git.commit.flat());
+    assert!(app.hits.log.iter().any(|(_, t)| *t == LogTarget::FileDir(0)));
+    let before_count = app.log_file_order().len();
+    assert!(before_count > 0);
+    app.press_log(LogTarget::FileDir(0));
+    paint(&mut app);
+    assert!(app.log_file_order().len() < before_count);
+    app.press_log(LogTarget::FileDir(0));
+    paint(&mut app);
+    assert_eq!(app.log_file_order().len(), before_count);
+
+    let first_file = app.log_file_order()[0];
+    let file_rect = app
+        .hits
+        .log
+        .iter()
+        .find(|(_, t)| *t == LogTarget::File(first_file))
+        .unwrap()
+        .0;
+    app.on_mouse_move(file_rect.x + 20.0, file_rect.y + 8.0);
+    paint(&mut app);
+    assert!(
+        app.hits
+            .log
+            .iter()
+            .any(|(_, t)| *t == LogTarget::FileOpen(first_file))
+    );
+    assert!(
+        app.hits
+            .log
+            .iter()
+            .any(|(_, t)| *t == LogTarget::FileCompareLocal(first_file))
+    );
+    assert!(
+        app.hits
+            .log
+            .iter()
+            .any(|(_, t)| *t == LogTarget::FileHistory(first_file))
+    );
 }

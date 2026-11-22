@@ -516,10 +516,10 @@ fn draw_tab(
     }
 }
 
-/// 标签的底（编辑区和终端面板的标签共用），都不带边：当前的是一块实底，颜色由主题定，带一点
-/// 强调色；悬停只铺浅色。
+/// 标签的底（编辑区和终端面板的标签共用）：当前标签是一块实底（`tab_fill`）加一圈细描边（`tab_edge`），
+/// 颜色由主题定，带一点强调色；悬停只铺浅色。
 ///
-/// 选中与悬停的区分依靠实底与浅色，而非两种相近的灰色。
+/// 选中与悬停的区分依靠带细边的实底与浅色，而非两种相近的灰色。
 pub(in crate::view) fn draw_tab_fill(
     frame: &mut Frame<'_>,
     p: &Palette,
@@ -529,7 +529,9 @@ pub(in crate::view) fn draw_tab_fill(
     clip: Rect,
 ) {
     if active {
-        frame.rect_clipped(tab, p.tab_fill, RADIUS_TAB, clip);
+        frame.rect_clipped(tab, p.tab_edge, RADIUS_TAB, clip);
+        let inner = tab.inset(1.0, 1.0);
+        frame.rect_clipped(inner, p.tab_fill, (RADIUS_TAB - 1.0).max(0.0), clip);
     } else if hovered {
         frame.rect_clipped(tab, p.hover, RADIUS_TAB, clip);
     }

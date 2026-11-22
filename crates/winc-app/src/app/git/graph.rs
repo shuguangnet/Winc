@@ -291,6 +291,78 @@ impl App {
         self.request_redraw();
     }
 
+    /// 点中提交图第 `index` 行右端的「在日志中查看」按钮：在主日志标签中打开并定位到该提交。
+    pub(in crate::app) fn open_graph_commit_in_log(&mut self, index: usize) {
+        if let Some(oid) = self.git.graph.oid(index).map(str::to_owned) {
+            self.show_log_commit(&oid, false);
+        }
+    }
+
+    /// 点中提交图第 `index` 行右端的「复制提交号」按钮：复制完整的提交号并在状态栏提示。
+    pub(in crate::app) fn copy_graph_commit_oid(&mut self, index: usize) {
+        if let Some(oid) = self.git.graph.oid(index).map(str::to_owned) {
+            self.flash(t!("git-log-copied-oid", commit = short(&oid)));
+            self.set_clipboard(oid, false);
+        }
+    }
+
+    /// 返回侧栏提交图第 `index` 行的悬停提示：第一行为完整提交说明，第二行为短提交号、作者与时间。
+    pub(crate) fn graph_row_tip(&self, index: usize) -> Option<String> {
+        let commit = self.git.graph.commits.get(index)?;
+        let mut meta = format!(
+            "{} · {} · {}",
+            short(&commit.oid),
+            commit.author,
+            commit.local
+        );
+        let refs: Vec<&str> = commit
+            .refs
+            .iter()
+            .map(|r| match r {
+                winc_editor::git::Ref::Head(n)
+                | winc_editor::git::Ref::Branch(n)
+                | winc_editor::git::Ref::Remote(n)
+                | winc_editor::git::Ref::Tag(n) => n.as_str(),
+                winc_editor::git::Ref::Detached => "HEAD",
+            })
+            .collect();
+        if !refs.is_empty() {
+            meta.push_str(" · ");
+            meta.push_str(&refs.join(", "));
+        }
+        Some(format!("{}\n{meta}", commit.subject))
+    }
+
+    /// 点中展开文件列表第 `index` 个文件行右端的「查看差异」按钮：在差异标签中打开该文件在此提交中的差异。
+    pub(in crate::app) fn open_graph_file_diff(&mut self, index: usize) {
+        let Some(root) = self.git.root.clone() else {
+            return;
+        };
+        let Some(oid) = self.git.graph.expanded.clone() else {
+            return;
+        };
+        if index >= self.git.graph.files.len() {
+            return;
+        }
+        let old = self
+            .graph_commit(&oid)
+            .and_then(|c| c.parents.first().cloned());
+        let version = crate::app::git::log::short(&oid).to_owned();
+        let files = self.git.graph.files.clone();
+        self.diff.land = None;
+        self.load_log_diff(
+            std::sync::Arc::new(crate::app::git::log::LogDiffSource {
+                root,
+                old,
+                new: oid,
+                version,
+                files,
+            }),
+            index,
+        );
+        self.request_redraw();
+    }
+
     /// 提交图里提交号是 `oid` 的提交；日志里的提交菜单在日志没有这个提交时也回退到这里找。
     pub(crate) fn graph_commit(&self, oid: &str) -> Option<Commit> {
         self.git

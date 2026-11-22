@@ -861,8 +861,12 @@ fn draw_action_icon(
             let at = ((cx - w / 2.0).round(), (cy - h / 2.0).round());
             icons::document(frame, at, (w, h), color, clip);
         }
-        CommitTarget::StageFile(_, true) => icons::plus(frame, (cx, cy), 8.0, color, clip),
-        CommitTarget::StageFile(_, false) | CommitTarget::GroupStage(CommitGroup::Staged) => {
+        CommitTarget::StageFile(_, true) | CommitTarget::DirStage(_, true) => {
+            icons::plus(frame, (cx, cy), 8.0, color, clip);
+        }
+        CommitTarget::StageFile(_, false)
+        | CommitTarget::DirStage(_, false)
+        | CommitTarget::GroupStage(CommitGroup::Staged) => {
             icons::minus(frame, (cx, cy), 8.0, color, clip);
         }
         CommitTarget::GroupStage(_) => icons::plus(frame, (cx, cy), 8.0, color, clip),

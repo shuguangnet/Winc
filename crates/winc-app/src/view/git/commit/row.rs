@@ -87,6 +87,49 @@ impl RowBox<'_> {
     }
 }
 
+/// 计算改动列表中当前需要高亮的活跃目录缩进参考线 `(所在的组, 目录相对路径, 缩进线层级)`。
+///
+/// 鼠标悬停在某个已展开的目录行上时高亮该目录对应的缩进参考线；否则若当前选中的文件位于某个
+/// 子目录中，则高亮该文件直接父目录对应的缩进参考线（参考 VS Code 源代码管理树的活跃缩进线）。
+fn active_commit_guide<'a>(
+    app: &App,
+    cx: &'a ListContext<'a>,
+) -> Option<(CommitGroup, &'a Path, usize)> {
+    if let Hover::Commit(
+        CommitTarget::Dir(r)
+        | CommitTarget::DirCheck(r)
+        | CommitTarget::DirRevert(r)
+        | CommitTarget::DirStage(r, _),
+    ) = app.pointer.hover
+        && let Some(CommitRow::Dir {
+            group, dir, depth, ..
+        }) = cx.rows.get(r)
+        && !app.git.commit.dir_collapsed(*group, dir)
+    {
+        return Some((*group, dir.as_path(), depth + 1));
+    }
+    let file_row = (0..cx.rows.len()).find(|&idx| match cx.rows[idx] {
+        CommitRow::File { index, depth } if depth > 0 => cx
+            .status
+            .entries
+            .get(index)
+            .is_some_and(|e| app.commit_is_selected(&e.path)),
+        _ => false,
+    })?;
+    let CommitRow::File { depth, .. } = cx.rows[file_row] else {
+        return None;
+    };
+    (0..file_row).rev().find_map(|p| match &cx.rows[p] {
+        CommitRow::Dir {
+            group,
+            dir,
+            depth: d,
+            ..
+        } if *d + 1 == depth => Some((*group, dir.as_path(), depth)),
+        _ => None,
+    })
+}
+
 /// 画改动列表里的第 `i` 行，上沿在 `y`（逻辑像素）；记下可点击的位置。
 pub(super) fn draw_row(
     app: &App,
@@ -123,12 +166,32 @@ pub(super) fn draw_row(
     };
     let row = &cx.rows[i];
     // 缩进参考线：每一层上级目录一条，位于该目录的箭头正下方，相邻行连成一条竖线，
-    // 目录层级深时能看出每个文件属于哪个目录。
+    // 目录层级深时能看出每个文件属于哪个目录；当前活跃父目录所在的一列加深高亮。
     if let CommitRow::Dir { depth, .. } | CommitRow::File { depth, .. } = row {
+        let active_guide = active_commit_guide(app, cx);
+        let row_scope = match row {
+            CommitRow::Dir { group, dir, .. } => Some((*group, dir.as_path())),
+            CommitRow::File { index, .. } => cx.rows.group_of(i).and_then(|g| {
+                let path = &cx.status.entries.get(*index)?.path;
+                Some((g, path.strip_prefix(cx.root).unwrap_or(path)))
+            }),
+            CommitRow::Group(_) => None,
+        };
         for level in 1..=*depth {
             let x = r.arrow_x(level).round();
             let guide = Rect::new(x, y, 1.0, COMMIT_ROW);
-            frame.rect_clipped(guide, app.palette.indent_guide, 0.0, list);
+            let is_active = match (active_guide, row_scope) {
+                (Some((ag, adir, alevel)), Some((rg, rpath))) => {
+                    alevel == level && ag == rg && rpath.starts_with(adir) && rpath != adir
+                }
+                _ => false,
+            };
+            let color = if is_active {
+                app.palette.indent_guide_active
+            } else {
+                app.palette.indent_guide
+            };
+            frame.rect_clipped(guide, color, 0.0, list);
         }
     }
     match row {
@@ -250,11 +313,15 @@ fn draw_dir_row(
         ..
     } = *r;
     let cy = y + COMMIT_ROW / 2.0;
-    // 组标题已经写了文件数，展开后每个文件都看得见，每层再写一遍是重复信息。
     let level = depth + 1;
     let hovered = matches!(
         app.pointer.hover,
-        Hover::Commit(CommitTarget::Dir(r) | CommitTarget::DirCheck(r)) if r == i
+        Hover::Commit(
+            CommitTarget::Dir(r)
+                | CommitTarget::DirCheck(r)
+                | CommitTarget::DirRevert(r)
+                | CommitTarget::DirStage(r, _)
+        ) if r == i
     );
     // 多选时下面的文件都选中了：画成选中状态。
     let members = rows.dir(group, dir);
@@ -318,6 +385,33 @@ fn draw_dir_row(
         (&parts, &view),
         name_clip,
     );
+    // 目录名没有溢出时：平时在右端显示该目录下的改动文件数徽标；鼠标悬停时显示整目录暂存/取消暂存或回滚按钮。
+    if full.is_none() && !wanted && !retracting {
+        let acts = hovered && !r.browse && group != CommitGroup::Conflicts;
+        let (first_btn, second_btn) = file_actions(band);
+        let dir_buttons: &[(Rect, CommitTarget)] = match (acts, r.staging, group) {
+            (true, true, CommitGroup::Staged) => &[(second_btn, CommitTarget::DirStage(i, false))],
+            (true, true, _) => &[
+                (first_btn, CommitTarget::DirRevert(i)),
+                (second_btn, CommitTarget::DirStage(i, true)),
+            ],
+            (true, false, _) if state.is_some() => &[(second_btn, CommitTarget::DirRevert(i))],
+            _ => &[],
+        };
+        if let Some(&(first, _)) = dir_buttons.first() {
+            if text_x + width <= first.x - 4.0 {
+                for &(rect, target) in dir_buttons {
+                    let on = app.pointer.hover == Hover::Commit(target);
+                    draw_button(frame, p, rect, list, on, false);
+                    let ink = if on { p.text } else { p.text_muted };
+                    draw_action_icon(frame, target, center(rect), ink, list);
+                    hits.push((rect.intersect(list), target));
+                }
+            }
+        } else if !members.is_empty() && text_x + width + 8.0 <= band.right() - 28.0 {
+            draw_count_pill(app, frame, band, &members.len().to_string(), list);
+        }
+    }
     if let Some(spill) = spill {
         // 显示全名的这一行覆盖列表右边的滚动条（见 `draw_commit_overflow`）：行底色右边到
         // 侧栏边缘的区域同样属于这一行，鼠标移入时全名保持显示。
@@ -449,13 +543,20 @@ fn draw_file_row(
             hits.push((rect, target));
         }
     } else if full.is_none() {
-        // 收回途中名字还盖着状态字母那一块：字母随过渡淡入，不和名字叠在一起。
+        // 收回途中名字还盖着状态字母那一块：字母随过渡淡入，不和名字叠在一起；带微底色圆角胶囊衬托。
         let ink = git_color(p, change);
-        let ink = if retracting {
-            ink.alpha(ink.a * view.progress)
-        } else {
-            ink
-        };
+        let alpha = if retracting { view.progress } else { 1.0 };
+        let ink = ink.alpha(ink.a * alpha);
+        let badge_h = 15.0;
+        let badge_w = 16.0;
+        let badge = Rect::new(
+            band.right() - END_CENTER - badge_w / 2.0,
+            (band.y + (band.h - badge_h) / 2.0).round(),
+            badge_w,
+            badge_h,
+        );
+        let pill_fill = ink.alpha(ink.a * if p.dark { 0.16 } else { 0.12 });
+        frame.rect_clipped(badge, pill_fill, 4.0, list);
         ui_text_small(frame, app, letter_x, band, &letter, ink, list);
     }
     let color = file_color(change, p);

@@ -513,6 +513,35 @@ fn draw_tooltip(app: &App, frame: &mut Frame<'_>) {
                     _ => return,
                 }
             }
+            // 日志详情栏及标题栏按钮（复制提交号、刷新、树形/列表布局切换、查找文件、文件行内快捷按钮）。
+            Hover::Log(
+                target @ (crate::app::git::log::LogTarget::CopyOid
+                | crate::app::git::log::LogTarget::Refresh
+                | crate::app::git::log::LogTarget::FilesLayout
+                | crate::app::git::log::LogTarget::FindFiles
+                | crate::app::git::log::LogTarget::FileOpen(_)
+                | crate::app::git::log::LogTarget::FileCompareLocal(_)
+                | crate::app::git::log::LogTarget::FileHistory(_)),
+            ) => {
+                use crate::app::git::log::LogTarget;
+                let Some(&(rect, _)) = app.hits.log.iter().find(|(_, t)| *t == target) else {
+                    return;
+                };
+                let label = match target {
+                    LogTarget::CopyOid => t!("menu-log-copy-oid"),
+                    LogTarget::Refresh => t!("workspace-tip-git-refresh"),
+                    LogTarget::FilesLayout if app.git.commit.flat() => {
+                        t!("workspace-tip-show-as-tree")
+                    }
+                    LogTarget::FilesLayout => t!("workspace-tip-show-as-list"),
+                    LogTarget::FindFiles => t!("workspace-find-placeholder"),
+                    LogTarget::FileOpen(_) => t!("workspace-tip-open-file"),
+                    LogTarget::FileCompareLocal(_) => t!("menu-log-compare-with-local"),
+                    LogTarget::FileHistory(_) => t!("menu-git-file-history"),
+                    _ => return,
+                };
+                (rect, label.to_owned())
+            }
             // 日志列表中延伸到右端仍放不下的提交说明：提示整句。
             Hover::Log(crate::app::git::log::LogTarget::Row(i))
                 if app.git.log.clipped == Some(i) =>

@@ -127,6 +127,29 @@ fn draw_fold_all(app: &App, frame: &mut Frame<'_>, button: Rect, clip: Rect) {
     }
 }
 
+/// 根据大纲当前高亮的符号，计算需要高亮显示的父级缩进参考线 `(缩进层级, 可见子行范围)`。
+fn active_outline_guide(
+    rows: &[usize],
+    items: &[winc_editor::symbols::Symbol],
+    highlight: Option<usize>,
+) -> Option<(usize, std::ops::Range<usize>)> {
+    let hi = highlight?;
+    let pos = rows.iter().position(|&idx| idx == hi)?;
+    let sym = items.get(rows[pos])?;
+    let parent_pos = if pos + 1 < rows.len() && items[rows[pos + 1]].depth > sym.depth {
+        Some(pos)
+    } else if sym.depth > 0 {
+        (0..pos).rev().find(|&p| items[rows[p]].depth < sym.depth)
+    } else {
+        None
+    }?;
+    let parent_depth = items[rows[parent_pos]].depth;
+    let end = (parent_pos + 1..rows.len())
+        .find(|&k| items[rows[k]].depth <= parent_depth)
+        .unwrap_or(rows.len());
+    Some((parent_depth, (parent_pos + 1)..end))
+}
+
 /// 绘制列表中露出的各行，并记下每行和行首箭头的位置。
 ///
 /// 每行的几何与文件树相同（缩进、参考线、箭头、图标和名字各列对齐，见 `draw_tree_entry`）；
@@ -150,6 +173,7 @@ fn draw_rows(
     let highlight = app.outline_highlight(&app.outline_rows());
     let focused = app.focus == Focus::Outline;
     let items = &app.panels.outline.items;
+    let active_guide = active_outline_guide(rows, items, highlight);
     let pages = matches!(app.panels.outline.kind, crate::app::OutlineKind::Pages(_));
     let first = (scroll / TREE_ROW).floor().max(0.0) as usize;
     let shown =
@@ -176,10 +200,18 @@ fn draw_rows(
 
         let indent = row.x + INDENT;
         let cy = icon_center_y(app, row, app.fonts.ui);
-        // 缩进参考线：每级一条，位于上级箭头的正下方，相邻行的参考线连成竖线。
+        // 缩进参考线：每级一条，位于上级箭头的正下方，相邻行的参考线连成竖线；当前高亮符号所属层级加深。
         for level in 0..symbol.depth {
             let x = (indent + level as f32 * TREE_INDENT + 4.0).round();
-            frame.rect_clipped(Rect::new(x, row.y, 1.0, row.h), p.indent_guide, 0.0, clip);
+            let is_active = active_guide
+                .as_ref()
+                .is_some_and(|(d, range)| *d == level && range.contains(&v));
+            let guide_color = if is_active {
+                p.indent_guide_active
+            } else {
+                p.indent_guide
+            };
+            frame.rect_clipped(Rect::new(x, row.y, 1.0, row.h), guide_color, 0.0, clip);
         }
         let x = indent + symbol.depth as f32 * TREE_INDENT;
         // 箭头在行内，先于整行记下：命中时按记下的先后取第一个。

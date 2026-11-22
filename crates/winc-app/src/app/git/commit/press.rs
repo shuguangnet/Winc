@@ -15,6 +15,8 @@ impl App {
                 | CommitTarget::StageFile(..)
                 | CommitTarget::Dir(_)
                 | CommitTarget::DirCheck(_)
+                | CommitTarget::DirRevert(_)
+                | CommitTarget::DirStage(..)
                 | CommitTarget::Stash(_)
                 | CommitTarget::StashFile(_)
                 | CommitTarget::StashApply(_)
@@ -34,7 +36,9 @@ impl App {
                 CommitTarget::GraphFetch
                 | CommitTarget::GraphPull
                 | CommitTarget::GraphPush
-                | CommitTarget::GraphCompare => {}
+                | CommitTarget::GraphCompare
+                | CommitTarget::GraphOpenLog(_)
+                | CommitTarget::GraphCopyOid(_) => {}
                 _ => return,
             }
             if matches!(target, CommitTarget::File(_)) {
@@ -43,8 +47,11 @@ impl App {
         }
         match target {
             CommitTarget::GraphRow(index) => self.begin_graph_pan(Some(index)),
+            CommitTarget::GraphOpenLog(index) => self.open_graph_commit_in_log(index),
+            CommitTarget::GraphCopyOid(index) => self.copy_graph_commit_oid(index),
             // 展开的文件列表点一下就打开，不参与拖动。
             CommitTarget::GraphFile(index) => self.press_graph_file(index),
+            CommitTarget::GraphFileDiff(index) => self.open_graph_file_diff(index),
             // 空白处按下也能拖：不用先找一行才开始滚。
             CommitTarget::GraphBlank => self.begin_graph_pan(None),
             CommitTarget::GraphDivider => self.begin_graph_resize(),
@@ -63,6 +70,8 @@ impl App {
             | CommitTarget::GroupRevert(_)
             | CommitTarget::Dir(_)
             | CommitTarget::DirCheck(_)
+            | CommitTarget::DirRevert(_)
+            | CommitTarget::DirStage(..)
             | CommitTarget::Check(_)
             | CommitTarget::File(_)
             | CommitTarget::Sticky(..)
@@ -226,6 +235,40 @@ impl App {
                     .map(|&i| status.entries[i].path.clone())
                     .collect();
                 self.set_commit_checked(&paths, on);
+            }
+            CommitTarget::DirRevert(row) => {
+                let rows = self.commit_rows();
+                let (Some(CommitRow::Dir { group, dir, .. }), Some(status)) =
+                    (rows.get(row), self.git.status.as_ref())
+                else {
+                    return;
+                };
+                let staging = self.git.commit.staging();
+                let members = rows.dir(*group, dir);
+                let paths: Vec<PathBuf> = members
+                    .iter()
+                    .filter(|&&i| staging || self.git.commit.checked(&status.entries[i]))
+                    .map(|&i| status.entries[i].path.clone())
+                    .collect();
+                if !paths.is_empty() {
+                    self.confirm_rollback(paths);
+                }
+            }
+            CommitTarget::DirStage(row, on) => {
+                let rows = self.commit_rows();
+                let (Some(CommitRow::Dir { group, dir, .. }), Some(status)) =
+                    (rows.get(row), self.git.status.as_ref())
+                else {
+                    return;
+                };
+                let members = rows.dir(*group, dir);
+                let paths: Vec<PathBuf> = members
+                    .iter()
+                    .map(|&i| status.entries[i].path.clone())
+                    .collect();
+                if !paths.is_empty() {
+                    self.stage_paths(&paths, on);
+                }
             }
             CommitTarget::Check(i) => self.toggle_commit_check(i),
             CommitTarget::File(i) => {

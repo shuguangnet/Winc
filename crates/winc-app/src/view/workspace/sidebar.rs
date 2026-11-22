@@ -571,6 +571,29 @@ fn draw_tree(app: &mut App, frame: &mut Frame<'_>) {
     }
 }
 
+/// 根据当前选中的文件树条目，返回需要高亮的缩进参考线 `(层级, 目录路径)`。
+///
+/// 选中已展开的目录时高亮该目录自身的缩进参考线；选中文件或收起的目录时高亮其直接父目录的
+/// 缩进参考线（与 VS Code 资源管理器的活跃缩进参考线一致）。
+fn active_tree_guide(app: &App) -> Option<(usize, &Path)> {
+    let ws = app.editor.workspace.as_ref()?;
+    let rows = ws.rows();
+    let sel = (0..rows.len()).find(|&i| ws.is_selected(i))?;
+    let entry = &rows[sel];
+    if entry.kind == EntryKind::Dir && entry.expanded {
+        Some((entry.depth, entry.path.as_path()))
+    } else if entry.depth > 0 {
+        let parent_dir = (0..sel)
+            .rev()
+            .find(|&p| rows[p].kind == EntryKind::Dir && rows[p].depth + 1 == entry.depth)
+            .map(|p| rows[p].path.as_path())
+            .or_else(|| entry.path.parent())?;
+        Some((entry.depth - 1, parent_dir))
+    } else {
+        None
+    }
+}
+
 /// 绘制文件树的一行：选中或悬停的底色、缩进参考线、箭头、图标和名称。
 ///
 /// `open` 是目录箭头已转过的比例（0 为收起，1 为展开）。返回从行左边缘到名称末尾的宽度（逻辑像素，
@@ -592,6 +615,7 @@ fn draw_tree_entry(
         app.pointer.hover == Hover::TreeRow(i)
             || app.panels.tree.overflow.is_some_and(|(_, o)| o == i)
     });
+    let active_guide = active_tree_guide(app);
 
     // 名称放不下时，底色一直铺到侧栏边缘、右侧不留圆角，看起来像被侧栏边缘截断；
     // 鼠标移上去时在编辑区上方继续绘制完整名称（见 `draw_tree_overflow`）。
@@ -651,10 +675,17 @@ fn draw_tree_entry(
     let indent = row.x + 14.0 + shift;
     let cy = icon_center_y(app, row, app.fonts.ui);
 
-    // 缩进参考线：每级一条，位于父目录箭头的正下方，相邻行的参考线连成竖线。
+    // 缩进参考线：每级一条，位于父目录箭头的正下方，相邻行的参考线连成竖线；当前活跃目录的一列加深。
     for level in 0..entry.depth {
         let x = (indent + level as f32 * TREE_INDENT + 4.0).round();
-        frame.rect_clipped(Rect::new(x, row.y, 1.0, row.h), p.indent_guide, 0.0, clip);
+        let is_active = active_guide
+            .is_some_and(|(d, dir)| level == d && entry.depth > d && entry.path.starts_with(dir));
+        let guide_color = if is_active {
+            p.indent_guide_active
+        } else {
+            p.indent_guide
+        };
+        frame.rect_clipped(Rect::new(x, row.y, 1.0, row.h), guide_color, 0.0, clip);
     }
 
     let mut x = indent + entry.depth as f32 * TREE_INDENT;

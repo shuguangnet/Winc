@@ -195,7 +195,7 @@ pub(super) fn draw_details(
     }
     y += 22.0;
 
-    // 提交号可以点（复制），父提交可以点（选中该提交）。
+    // 提交号可以点（复制），旁附复制小图标并置于胶囊底色中；父提交同样以胶囊样式呈现，点击选中该提交。
     let row = Rect::new(x, y, width, 22.0);
     let end = ui_text_small(
         frame,
@@ -208,30 +208,54 @@ pub(super) fn draw_details(
     );
     let oid_x = end + 8.0;
     let hovered = app.pointer.hover == Hover::Log(LogTarget::CopyOid);
-    let oid_end = mono(
-        app,
+    let short_oid = short(&commit.oid);
+    let oid_text_w = frame.measure(FontKind::Mono, app.fonts.ui_small, short_oid);
+    let pill_h = 18.0;
+    let oid_pill = Rect::new(
+        oid_x,
+        (y + (22.0 - pill_h) / 2.0).round(),
+        oid_text_w + 26.0,
+        pill_h,
+    );
+    let pill_fill = if hovered {
+        p.selected_inactive
+    } else {
+        p.hover
+    };
+    frame.rect_clipped(oid_pill, pill_fill, 4.0, area);
+    let oid_ink = link(p, hovered);
+    let oid_end = mono(app, frame, (oid_x + 5.0, row), short_oid, oid_ink, area);
+    icons::copy(
         frame,
-        (oid_x, row),
-        short(&commit.oid),
-        link(p, hovered),
+        (oid_end + 8.0, row.y + row.h / 2.0),
+        if hovered { oid_ink } else { p.text_muted },
         area,
     );
     hits.push((
-        Rect::new(oid_x - 2.0, y, oid_end - oid_x + 4.0, 22.0).intersect(area),
+        Rect::new(oid_pill.x, y, oid_pill.w, 22.0).intersect(area),
         LogTarget::CopyOid,
     ));
-    let mut px = oid_end + 16.0;
+    let mut px = oid_pill.right() + 14.0;
     if !commit.parents.is_empty() {
         let label = t!("git-log-details-parents", count = commit.parents.len());
         px = ui_text_small(frame, app, px, row, &label, p.text_dim, area) + 8.0;
         for (i, parent) in commit.parents.iter().enumerate() {
             let hovered = app.pointer.hover == Hover::Log(LogTarget::Parent(i));
-            let end = mono(app, frame, (px, row), short(parent), link(p, hovered), area);
+            let short_p = short(parent);
+            let pw = frame.measure(FontKind::Mono, app.fonts.ui_small, short_p);
+            let p_pill = Rect::new(px, (y + (22.0 - pill_h) / 2.0).round(), pw + 10.0, pill_h);
+            let p_fill = if hovered {
+                p.selected_inactive
+            } else {
+                p.hover
+            };
+            frame.rect_clipped(p_pill, p_fill, 4.0, area);
+            mono(app, frame, (px + 5.0, row), short_p, link(p, hovered), area);
             hits.push((
-                Rect::new(px - 2.0, y, end - px + 4.0, 22.0).intersect(area),
+                Rect::new(p_pill.x, y, p_pill.w, 22.0).intersect(area),
                 LogTarget::Parent(i),
             ));
-            px = end + 8.0;
+            px = p_pill.right() + 6.0;
         }
     }
     y += 22.0;

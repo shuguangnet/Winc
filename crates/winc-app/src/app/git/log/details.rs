@@ -423,13 +423,39 @@ impl App {
     }
 
     /// 详情里各文件从上到下的顺序（文件列表里的下标）：键盘上下移动、打开第一个文件都按它。
+    ///
+    /// 按目录分组时，已收起目录下的文件不计入键盘导航顺序。
     pub(crate) fn log_file_order(&self) -> Vec<usize> {
-        let rows = self.log_file_layout().into_iter();
-        let files = rows.filter_map(|r| match r {
-            LogFileRow::File(i) => Some(i),
-            LogFileRow::Dir(_) => None,
-        });
-        files.collect()
+        let mut collapsed = false;
+        let mut out = Vec::new();
+        for row in self.log_file_layout() {
+            match row {
+                LogFileRow::Dir(dir) => {
+                    collapsed = self.git.log.collapsed_dirs.contains(&dir);
+                }
+                LogFileRow::File(i) if !collapsed => out.push(i),
+                LogFileRow::File(_) => {}
+            }
+        }
+        out
+    }
+
+    /// 切换详情栏文件列表中第 `dir_idx` 个目录分组的折叠与展开状态。
+    pub(super) fn toggle_log_file_dir(&mut self, dir_idx: usize) {
+        let dir = self
+            .log_file_layout()
+            .into_iter()
+            .filter_map(|r| match r {
+                LogFileRow::Dir(d) => Some(d),
+                LogFileRow::File(_) => None,
+            })
+            .nth(dir_idx);
+        if let Some(dir) = dir {
+            if !self.git.log.collapsed_dirs.remove(&dir) {
+                self.git.log.collapsed_dirs.insert(dir);
+            }
+            self.request_redraw();
+        }
     }
 
     /// 让详情里第 `i` 个文件露出来：按上一帧画出来的文件行推算它在哪，在详情一栏外面就滚。

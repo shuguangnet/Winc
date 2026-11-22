@@ -739,17 +739,45 @@ fn draw_palette_rows(app: &App, frame: &mut Frame<'_>, parts: &PickerParts) {
         let clip = row.intersect(list);
         draw_pick_row(app, frame, row, i, clip);
 
-        let mut right = row.right() - 14.0;
+        let mut right = row.right() - 12.0;
         if let Some(shortcut) = keymap::shortcut(action) {
-            right -= frame.measure(FontKind::Ui, app.fonts.ui_small, &shortcut);
-            ui_text_small(frame, app, right, row, &shortcut, p.text_dim, clip);
-            right -= 16.0;
+            let size = app.fonts.ui_small;
+            let key_w = frame.measure(FontKind::Ui, size, &shortcut);
+            let chip_w = key_w + 10.0;
+            let chip_h = 18.0;
+            let chip = Rect::new(
+                right - chip_w,
+                (row.y + (row.h - chip_h) / 2.0).round(),
+                chip_w,
+                chip_h,
+            );
+            frame.rect_clipped(chip, p.border, 4.0, clip);
+            frame.rect_clipped(chip.inset(1.0, 1.0), p.hover, 3.0, clip);
+            caps_label(
+                frame,
+                app,
+                size,
+                (chip.x + 5.0, chip),
+                &shortcut,
+                p.text_muted,
+                clip,
+            );
+            right = chip.x - 10.0;
         }
         if i == 0 && app.overlays.picker.recent > 0 {
             let label = t!("workspace-picker-recently-used");
-            right -= frame.measure(FontKind::Ui, app.fonts.ui_small, label);
-            ui_text_small(frame, app, right, row, label, p.text_dim, clip);
-            right -= 16.0;
+            let label_w = frame.measure(FontKind::Ui, app.fonts.ui_small, label);
+            let pill_w = label_w + 10.0;
+            let pill_h = 16.0;
+            let pill = Rect::new(
+                right - pill_w,
+                (row.y + (row.h - pill_h) / 2.0).round(),
+                pill_w,
+                pill_h,
+            );
+            frame.rect_clipped(pill, p.hover, 4.0, clip);
+            ui_text_small(frame, app, pill.x + 5.0, row, label, p.text_dim, clip);
+            right = pill.x - 10.0;
         }
 
         // 查询命中的字用强调色标出来：中文名、英文名谁命中标谁。

@@ -610,6 +610,11 @@ impl Hover {
                 | Hover::Log(
                     git::log::LogTarget::CopyOid
                         | git::log::LogTarget::Refresh
+                        | git::log::LogTarget::FilesLayout
+                        | git::log::LogTarget::FindFiles
+                        | git::log::LogTarget::FileOpen(_)
+                        | git::log::LogTarget::FileCompareLocal(_)
+                        | git::log::LogTarget::FileHistory(_)
                         | git::log::LogTarget::Avatar(_)
                         | git::log::LogTarget::Row(_)
                         | git::log::LogTarget::File(_)
@@ -630,9 +635,15 @@ impl Hover {
                         | CommitTarget::OpenFile(_)
                         | CommitTarget::RevertFile(_)
                         | CommitTarget::GroupRevert(_)
+                        | CommitTarget::DirRevert(_)
                         | CommitTarget::Check(_)
                         | CommitTarget::StageFile(..)
                         | CommitTarget::GroupStage(_)
+                        | CommitTarget::DirStage(..)
+                        | CommitTarget::GraphRow(_)
+                        | CommitTarget::GraphOpenLog(_)
+                        | CommitTarget::GraphCopyOid(_)
+                        | CommitTarget::GraphFileDiff(_)
                         | CommitTarget::GraphFetch
                         | CommitTarget::GraphPull
                         | CommitTarget::GraphPush

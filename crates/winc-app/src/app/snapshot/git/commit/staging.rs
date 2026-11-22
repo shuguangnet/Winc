@@ -590,3 +590,74 @@ fn the_staging_area_setting_and_the_menu_item_are_one_switch() {
     assert_eq!(app.commit_scope(), Some(CommitScope::Staged(1)));
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// 悬停在目录行上时，行尾浮现整目录暂存、取消暂存与回滚按钮，点击即可作用于该目录下的全部文件。
+#[test]
+fn directory_row_hover_buttons_stage_and_unstage_the_folder() {
+    let Some((mut app, root)) = git_app("git-dir-stage-buttons", true) else {
+        return;
+    };
+    app.git.commit.set_staging(true);
+    app.toggle_commit_layout();
+    let main = root.join("src/main.rs");
+    app.run_action(Action::ShowCommit);
+    paint(&mut app);
+
+    let dir_row = app
+        .commit_rows()
+        .iter()
+        .position(|r| matches!(r, CommitRow::Dir { group: CommitGroup::Changes, .. }))
+        .unwrap();
+    let dir_rect = app
+        .hits
+        .commit
+        .iter()
+        .find(|(_, t)| *t == CommitTarget::Dir(dir_row))
+        .unwrap()
+        .0;
+    app.on_mouse_move(dir_rect.x + 24.0, dir_rect.y + 8.0);
+    paint(&mut app);
+    assert!(
+        app.hits
+            .commit
+            .iter()
+            .any(|(_, t)| *t == CommitTarget::DirStage(dir_row, true))
+    );
+    assert!(
+        app.hits
+            .commit
+            .iter()
+            .any(|(_, t)| *t == CommitTarget::DirRevert(dir_row))
+    );
+
+    // 点击整目录暂存按钮，`src` 目录下的文件进入「已暂存的更改」。
+    app.press_commit(CommitTarget::DirStage(dir_row, true));
+    assert_eq!(file_state(&app, &main), Some(true));
+    paint(&mut app);
+
+    // 悬停在「已暂存的更改」下的目录行上，点击整目录取消暂存按钮。
+    let staged_dir_row = app
+        .commit_rows()
+        .iter()
+        .position(|r| matches!(r, CommitRow::Dir { group: CommitGroup::Staged, .. }))
+        .unwrap();
+    let staged_rect = app
+        .hits
+        .commit
+        .iter()
+        .find(|(_, t)| *t == CommitTarget::Dir(staged_dir_row))
+        .unwrap()
+        .0;
+    app.on_mouse_move(staged_rect.x + 24.0, staged_rect.y + 8.0);
+    paint(&mut app);
+    assert!(
+        app.hits
+            .commit
+            .iter()
+            .any(|(_, t)| *t == CommitTarget::DirStage(staged_dir_row, false))
+    );
+    app.press_commit(CommitTarget::DirStage(staged_dir_row, false));
+    assert_eq!(file_state(&app, &main), None);
+
+    let _ = std::fs::remove_dir_all(&root);
+}

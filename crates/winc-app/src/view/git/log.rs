@@ -47,8 +47,8 @@ pub(in crate::view::git) const LANE: f32 = 12.0;
 pub(in crate::view::git) const GRAPH_LINE: f32 = 1.5;
 /// 换车道的线在拐弯处的圆角半径（逻辑像素）。
 const CORNER: f32 = 6.0;
-/// 拐弯处圆弧的折线近似段数（段）：段数越多越圆滑，绘制开销也越大。
-const CORNER_STEPS: usize = 6;
+/// 拐弯处圆弧的折线近似段数（段）：10 段在半径 6 逻辑像素的圆角上每段不足 1 像素，视觉上与平滑曲线无异。
+const CORNER_STEPS: usize = 10;
 /// 选中提交时，不在选中提交所在线上的线和圆点保留的不透明度（0 到 1）。
 ///
 /// 取自调参：淡化后仍可辨认走向和颜色，同时选中的线更突出。
@@ -490,10 +490,29 @@ fn draw_uncommitted(
         let cx = x0 + lane.min(MAX_LANES - 1) as f32 * LANE + LANE / 2.0;
         let cy = y + lh / 2.0;
         if head_first {
-            let line = Rect::new(cx - GRAPH_LINE / 2.0, cy, GRAPH_LINE, lh);
-            frame.rect_clipped(line, ink.alpha(ink.a * GRAPH_FADED), 0.0, list);
+            // 用虚线段连向下方 `HEAD` 节点，直观区分未提交的工作区改动与已提交历史。
+            let dash_color = ink.alpha(ink.a * GRAPH_FADED);
+            let mut dy = cy + 4.5;
+            let end_y = y + lh;
+            while dy < end_y {
+                let seg = (end_y - dy).min(3.0);
+                frame.rect_clipped(
+                    Rect::new(cx - GRAPH_LINE / 2.0, dy, GRAPH_LINE, seg),
+                    dash_color,
+                    0.5,
+                    list,
+                );
+                dy += 5.0;
+            }
         }
         let r = 3.75; // 空心圆的半径（逻辑像素），与 `HEAD` 的圆点相近
+        let halo = r + 2.0;
+        frame.rect_clipped(
+            Rect::new(cx - halo, cy - halo, 2.0 * halo, 2.0 * halo),
+            ink.alpha(0.18),
+            halo,
+            list,
+        );
         let dot = Rect::new(cx - r, cy - r, 2.0 * r, 2.0 * r);
         frame.rect_clipped(dot, ink, r, list);
         let inner = r - GRAPH_LINE;

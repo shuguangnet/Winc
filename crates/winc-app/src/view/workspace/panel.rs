@@ -1005,21 +1005,31 @@ pub(in crate::view) fn tooltip(app: &App) -> Option<(Rect, String)> {
         Hover::Commit(
             target @ (CommitTarget::OpenFile(_)
             | CommitTarget::RevertFile(_)
-            | CommitTarget::GroupRevert(_)),
+            | CommitTarget::GroupRevert(_)
+            | CommitTarget::DirRevert(_)
+            | CommitTarget::GraphFileDiff(_)),
         ) => {
             let rect = app.hits.commit.iter().find(|(_, t)| *t == target)?.0;
             let label = match target {
                 CommitTarget::OpenFile(_) => t!("workspace-tip-open-file"),
-                CommitTarget::GroupRevert(_) => t!("menu-commit-roll-back"),
+                CommitTarget::GroupRevert(_) | CommitTarget::DirRevert(_) => {
+                    t!("menu-commit-roll-back")
+                }
+                CommitTarget::GraphFileDiff(_) => t!("workspace-tip-open-diff"),
                 _ => t!("workspace-tip-revert-change"),
             };
             Some((rect, label.to_owned()))
         }
-        Hover::Commit(target @ (CommitTarget::StageFile(..) | CommitTarget::GroupStage(_))) => {
+        Hover::Commit(
+            target @ (CommitTarget::StageFile(..)
+            | CommitTarget::GroupStage(_)
+            | CommitTarget::DirStage(..)),
+        ) => {
             let rect = app.hits.commit.iter().find(|(_, t)| *t == target)?.0;
             let unstage = matches!(
                 target,
                 CommitTarget::StageFile(_, false)
+                    | CommitTarget::DirStage(_, false)
                     | CommitTarget::GroupStage(crate::app::CommitGroup::Staged)
             );
             let label = if unstage {
@@ -1055,6 +1065,25 @@ pub(in crate::view) fn tooltip(app: &App) -> Option<(Rect, String)> {
                 (None, SyncState::NoRemote | SyncState::Hidden) => t!("git-tip-fetch").to_owned(),
             };
             Some((rect, label))
+        }
+        Hover::Commit(CommitTarget::GraphRow(i)) => {
+            let rect = app
+                .hits
+                .commit
+                .iter()
+                .find(|(_, t)| *t == CommitTarget::GraphRow(i))?
+                .0;
+            Some((rect, app.graph_row_tip(i)?))
+        }
+        Hover::Commit(
+            target @ (CommitTarget::GraphOpenLog(_) | CommitTarget::GraphCopyOid(_)),
+        ) => {
+            let rect = app.hits.commit.iter().find(|(_, t)| *t == target)?.0;
+            let label = match target {
+                CommitTarget::GraphOpenLog(_) => t!("menu-graph-show-in-log"),
+                _ => t!("menu-log-copy-oid"),
+            };
+            Some((rect, label.to_owned()))
         }
         // 提交图标题行的三个按钮和对比控件：图标上没有文字，要做的事写在这里。
         Hover::Commit(

@@ -791,6 +791,57 @@ fn the_graph_right_click_menu_offers_the_log_actions() {
     let commands = menu_commands(&app);
     assert!(has(&commands, MenuCommand::GraphHideFiles));
     app.dismiss_popup();
+    paint(&mut app);
+
+    // 悬停在提交行上时，右端浮现「复制提交号」「在日志中查看」快捷按钮，且提供富信息悬停提示。
+    let row0 = app
+        .hits
+        .commit
+        .iter()
+        .find(|(_, t)| *t == CommitTarget::GraphRow(0))
+        .unwrap()
+        .0;
+    app.on_mouse_move(row0.x + 20.0, row0.y + 6.0);
+    paint(&mut app);
+    assert!(
+        app.hits
+            .commit
+            .iter()
+            .any(|(_, t)| *t == CommitTarget::GraphCopyOid(0))
+    );
+    assert!(
+        app.hits
+            .commit
+            .iter()
+            .any(|(_, t)| *t == CommitTarget::GraphOpenLog(0))
+    );
+    assert!(app.graph_row_tip(0).is_some_and(|tip| tip.contains('\n')));
+    app.press_commit(CommitTarget::GraphCopyOid(0));
+    assert_eq!(
+        app.clipboard.copied.as_deref(),
+        app.git.graph.commits.first().map(|c| c.oid.as_str())
+    );
+
+    // 悬停在展开的文件行上时，右端浮现「查看差异」快捷按钮，点击打开该提交下该文件的差异标签。
+    let file_rect = app
+        .hits
+        .commit
+        .iter()
+        .find(|(_, t)| *t == CommitTarget::GraphFile(0))
+        .unwrap()
+        .0;
+    app.on_mouse_move(file_rect.x + 20.0, file_rect.y + 6.0);
+    paint(&mut app);
+    assert!(
+        app.hits
+            .commit
+            .iter()
+            .any(|(_, t)| *t == CommitTarget::GraphFileDiff(0))
+    );
+    app.press_commit(CommitTarget::GraphFileDiff(0));
+    paint(&mut app);
+    assert!(app.editor.active().is_some_and(|d| d.diff.is_some()));
+
     let _ = std::fs::remove_dir_all(&root);
 }
 

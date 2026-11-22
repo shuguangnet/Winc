@@ -216,6 +216,14 @@ pub enum LogTarget {
     Line(usize, u32),
     /// 列表最上方的「未提交的更改」，点击时打开提交视图。
     Uncommitted,
+    /// 按目录分组时详情栏中的第 `usize` 个目录标题行：点击折叠或展开该目录下的文件。
+    FileDir(usize),
+    /// 悬停详情栏文件行时右端的「打开文件」快捷按钮（参数为 `files` 的下标）。
+    FileOpen(usize),
+    /// 悬停详情栏文件行时右端的「与工作区比较」快捷按钮（参数为 `files` 的下标）。
+    FileCompareLocal(usize),
+    /// 悬停详情栏文件行时右端的「查看文件历史」快捷按钮（参数为 `files` 的下标）。
+    FileHistory(usize),
 }
 
 /// 详情一栏中绘制的、可选中复制的一行文字（说明的一行、作者、邮箱、时间）。
@@ -396,15 +404,15 @@ pub(in crate::app) enum Loaded {
 #[derive(PartialEq, Eq)]
 pub(in crate::app) struct LogDiffSource {
     /// 所在仓库的根目录。
-    root: PathBuf,
+    pub(in crate::app) root: PathBuf,
     /// 旧的一侧的提交；根提交没有父提交，为 `None`。
-    old: Option<String>,
+    pub(in crate::app) old: Option<String>,
     /// 新的一侧的提交。
-    new: String,
+    pub(in crate::app) new: String,
     /// 标题中显示的版本：提交号，或「旧…新」两个提交号。
-    version: String,
+    pub(in crate::app) version: String,
     /// 改动的文件。
-    files: Vec<CommitFile>,
+    pub(in crate::app) files: Vec<CommitFile>,
 }
 
 /// 日志标签的状态：与后台之间的通道和点击区域；标签的数据存放在 `Document::log` 中。
@@ -536,6 +544,8 @@ pub(crate) struct LogState {
     streams: HashMap<DocumentId, (u64, LogStream)>,
     /// 详情栏中已折行的提交说明，绘制时填入（见 [`Wrapped`]）。
     pub(crate) wrapped: std::cell::RefCell<Option<std::rc::Rc<Wrapped>>>,
+    /// 详情栏按目录分组显示文件列表时已收起的目录（相对仓库根目录的路径）。
+    pub(crate) collapsed_dirs: HashSet<String>,
 }
 
 /// 详情栏中已折行的提交说明：各行在原文中的字节范围。
@@ -615,6 +625,7 @@ impl Default for LogState {
             branches_due: None,
             streams: HashMap::new(),
             wrapped: Default::default(),
+            collapsed_dirs: HashSet::new(),
         }
     }
 }
@@ -878,6 +889,7 @@ impl App {
         let same = view.details.as_ref().is_some_and(|d| d.oid == oid);
         if !same {
             view.details_scroll = 0.0;
+            self.git.log.collapsed_dirs.clear();
         }
         if view
             .details
@@ -994,6 +1006,27 @@ impl App {
                 }
             }
             LogTarget::File(i) => self.open_log_file(i),
+            LogTarget::FileDir(dir_idx) => self.toggle_log_file_dir(dir_idx),
+            LogTarget::FileOpen(i) => {
+                if let Some(path) = self.log_file(i).map(|f| f.path.clone()) {
+                    if self.may_be_file(&path) {
+                        self.open_path(&path);
+                        self.focus = Focus::Editor;
+                    } else {
+                        self.flash(t!("git-commit-open-deleted"));
+                    }
+                }
+            }
+            LogTarget::FileCompareLocal(i) => {
+                if let Some(path) = self.log_file(i).map(|f| f.path.clone()) {
+                    self.compare_log_file_with_local(path);
+                }
+            }
+            LogTarget::FileHistory(i) => {
+                if let Some(path) = self.log_file(i).map(|f| f.path.clone()) {
+                    self.git_file_history(&path);
+                }
+            }
             // 拖动由 `mouse.rs` 开始处理。
             LogTarget::Divider => {}
             LogTarget::Line(row, line) => {
@@ -1148,7 +1181,7 @@ impl App {
         );
     }
 
-    fn load_log_diff(&mut self, source: Arc<LogDiffSource>, i: usize) {
+    pub(in crate::app) fn load_log_diff(&mut self, source: Arc<LogDiffSource>, i: usize) {
         let Some(file) = source.files.get(i) else {
             return;
         };

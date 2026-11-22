@@ -142,7 +142,12 @@ pub(super) fn draw_graph_row(
                     _ => (top, bottom),
                 };
                 let edge = lane_edge((lane_x(s.from), top), (lane_x(s.to), bottom), upper);
-                frame.stroke(&edge, GRAPH_LINE, color(s.color, s.line), clip);
+                let stroke_w = if line == Some(s.line) {
+                    GRAPH_LINE + 0.45
+                } else {
+                    GRAPH_LINE
+                };
+                frame.stroke(&edge, stroke_w, color(s.color, s.line), clip);
                 for rect in edge_hit_rects(&edge) {
                     line_hits.push((rect.intersect(row_rect), LogTarget::Line(row, s.line)));
                 }
@@ -160,26 +165,33 @@ pub(super) fn draw_graph_row(
         .refs
         .iter()
         .any(|r| matches!(r, Ref::Head(_) | Ref::Detached));
+    let is_merge = commit.parents.len() > 1;
     let dot = |frame: &mut Frame<'_>, r: f32, fill| {
         frame.rect_clipped(Rect::new(c.0 - r, c.1 - r, 2.0 * r, 2.0 * r), fill, r, clip);
     };
     let ink = color(graph.color, graph.line);
-    // 圆点的半径（逻辑像素，经验值）：`HEAD` 最大，合并提交小一圈，普通提交居中。
+    // 圆点的半径（逻辑像素，经验值）：`HEAD` 最大，合并提交为外环加内芯的双层节点，普通提交为实心圆。
     let r = if head {
         4.0
-    } else if commit.parents.len() > 1 {
-        2.75
+    } else if is_merge {
+        3.75
     } else {
         3.25
     };
+    if band.is_some() {
+        dot(frame, r + 2.25, ink.alpha(0.22));
+    }
+    // 节点外围增加一圈与行底色相同的隔离环，使节点清晰悬浮在纵横交错的车道连线之上。
+    dot(frame, r + 1.15, row_bg);
     dot(frame, r, ink);
-    // `HEAD` 是空心圆，圆环与线条同样粗细。
+    // `HEAD` 是空心圆，圆环与线条同样粗细；合并提交是空心外环内嵌实心小圆点。
     if head {
         let hole = r - GRAPH_LINE;
-        dot(frame, hole, p.editor_bg);
-        if let Some(band) = band {
-            dot(frame, hole, band);
-        }
+        dot(frame, hole, row_bg);
+    } else if is_merge {
+        let hole = r - 1.35;
+        dot(frame, hole, row_bg);
+        dot(frame, 1.15, ink);
     }
 }
 

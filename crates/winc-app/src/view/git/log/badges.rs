@@ -200,7 +200,8 @@ pub(super) fn draw_badge(
     frame.rect_clipped(rect, badge.fill, 4.0, clip);
     // 半透明底色的引用徽章（本地分支、远程分支、标签）加一圈细描边，在选中行底色上依然边界清晰。
     if badge.fill.a < 0.9 {
-        let outline = icons::rounded_outline(rect.x + 0.5, rect.y + 0.5, rect.w - 1.0, rect.h - 1.0, 3.5);
+        let outline =
+            icons::rounded_outline(rect.x + 0.5, rect.y + 0.5, rect.w - 1.0, rect.h - 1.0, 3.5);
         frame.stroke(&outline, 1.0, badge.ink.alpha(0.32), clip);
     }
     let mut text_x = x + BADGE_PAD / 2.0;

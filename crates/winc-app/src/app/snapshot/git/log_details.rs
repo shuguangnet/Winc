@@ -494,7 +494,12 @@ fn refreshing_the_log_updates_the_repository_state_and_reports_it() {
     app.press_log(LogTarget::FilesLayout);
     paint(&mut app);
     assert!(!app.git.commit.flat());
-    assert!(app.hits.log.iter().any(|(_, t)| *t == LogTarget::FileDir(0)));
+    assert!(
+        app.hits
+            .log
+            .iter()
+            .any(|(_, t)| *t == LogTarget::FileDir(0))
+    );
     let before_count = app.log_file_order().len();
     assert!(before_count > 0);
     app.press_log(LogTarget::FileDir(0));

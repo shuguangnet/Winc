@@ -606,7 +606,15 @@ fn directory_row_hover_buttons_stage_and_unstage_the_folder() {
     let dir_row = app
         .commit_rows()
         .iter()
-        .position(|r| matches!(r, CommitRow::Dir { group: CommitGroup::Changes, .. }))
+        .position(|r| {
+            matches!(
+                r,
+                CommitRow::Dir {
+                    group: CommitGroup::Changes,
+                    ..
+                }
+            )
+        })
         .unwrap();
     let dir_rect = app
         .hits
@@ -639,7 +647,15 @@ fn directory_row_hover_buttons_stage_and_unstage_the_folder() {
     let staged_dir_row = app
         .commit_rows()
         .iter()
-        .position(|r| matches!(r, CommitRow::Dir { group: CommitGroup::Staged, .. }))
+        .position(|r| {
+            matches!(
+                r,
+                CommitRow::Dir {
+                    group: CommitGroup::Staged,
+                    ..
+                }
+            )
+        })
         .unwrap();
     let staged_rect = app
         .hits

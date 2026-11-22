@@ -143,7 +143,11 @@ pub(super) fn draw_files(
                 }
                 // 目录标题：折叠箭头、打开/收起状态的文件夹图标、相对路径，右端显示该目录下的改动文件数。
                 let cy = row.y + row.h / 2.0;
-                let angle = if current_dir_collapsed { 0.0 } else { FRAC_PI_2 };
+                let angle = if current_dir_collapsed {
+                    0.0
+                } else {
+                    FRAC_PI_2
+                };
                 icons::chevron_turned(frame, (x + 4.0, cy), 6.0, angle, p.text_dim, area);
                 let folder_x = x + 14.0;
                 icons::folder(
@@ -234,7 +238,9 @@ pub(super) fn draw_files(
                     .map(|d| d.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 let dir = match (&file.from, file.change) {
-                    (Some(from), Change::Renamed) => format!("← {}", winc_editor::display_name(from)),
+                    (Some(from), Change::Renamed) => {
+                        format!("← {}", winc_editor::display_name(from))
+                    }
                     _ if !flat => String::new(),
                     _ => dir,
                 };
@@ -259,7 +265,8 @@ pub(super) fn draw_files(
                         LogTarget::FileHistory(i),
                     ];
                     for (k, target) in actions.into_iter().enumerate() {
-                        let btn = Rect::new(start_x + k as f32 * (btn_s + gap), btn_y, btn_s, btn_s);
+                        let btn =
+                            Rect::new(start_x + k as f32 * (btn_s + gap), btn_y, btn_s, btn_s);
                         let on = app.pointer.hover == Hover::Log(target);
                         draw_button(frame, p, btn, area, on, false);
                         let ink = if on { p.text } else { p.text_muted };

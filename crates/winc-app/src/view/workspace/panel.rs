@@ -1075,9 +1075,7 @@ pub(in crate::view) fn tooltip(app: &App) -> Option<(Rect, String)> {
                 .0;
             Some((rect, app.graph_row_tip(i)?))
         }
-        Hover::Commit(
-            target @ (CommitTarget::GraphOpenLog(_) | CommitTarget::GraphCopyOid(_)),
-        ) => {
+        Hover::Commit(target @ (CommitTarget::GraphOpenLog(_) | CommitTarget::GraphCopyOid(_))) => {
             let rect = app.hits.commit.iter().find(|(_, t)| *t == target)?.0;
             let label = match target {
                 CommitTarget::GraphOpenLog(_) => t!("menu-graph-show-in-log"),

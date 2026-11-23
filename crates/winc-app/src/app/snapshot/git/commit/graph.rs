@@ -109,7 +109,19 @@ fn the_graph_is_dropped_when_the_repository_switches() {
     git_in(&other, &["init", "-q", "-b", "main"]);
     std::fs::write(other.join("a.rs"), "// a\n").unwrap();
     git_in(&other, &["add", "-A"]);
-    git_in(&other, &["commit", "-q", "-m", "另一个仓库里的提交"]);
+    git_in(
+        &other,
+        &[
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "另一个仓库里的提交",
+        ],
+    );
     app.git.repositories = vec![root.clone(), other.clone()];
     app.git.graph.scroll = 60.0;
     app.set_graph_compare_base(Some("origin/whatever".to_owned()));
@@ -592,7 +604,19 @@ fn the_graph_marks_the_commits_only_one_side_has() {
     );
     std::fs::write(other.join("theirs.rs"), "// theirs\n").unwrap();
     git_in(&other, &["add", "-A"]);
-    git_in(&other, &["commit", "-q", "-m", "别处的改动"]);
+    git_in(
+        &other,
+        &[
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "别处的改动",
+        ],
+    );
     git_in(
         &other,
         &["push", "-q", "origin", &format!("HEAD:refs/heads/{branch}")],

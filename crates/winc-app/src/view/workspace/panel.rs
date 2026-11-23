@@ -595,6 +595,14 @@ fn draw_result_row(
     match kind {
         ResultRow::File(f) => draw_file_row(app, frame, row, area, f, (&end, moved)),
         ResultRow::Match(f, m) => {
+            // 匹配行左侧在所属文件折叠箭头正下方画一条缩进参考线，悬停或选中时加深。
+            let gx = (row.x + PANEL_CHEVRON).round();
+            let guide_color = if hovered || is_selected {
+                p.indent_guide_active
+            } else {
+                p.indent_guide
+            };
+            frame.rect_clipped(Rect::new(gx, row.y, 1.0, row.h), guide_color, 0.0, area);
             draw_match_row(app, frame, row, area, (f, m), &end, cx.replacement);
         }
     }

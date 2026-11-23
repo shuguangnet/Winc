@@ -216,7 +216,9 @@ fn draw_content(
         let cy = icon_center_y(app, bar, app.fonts.ui_small);
         let text_w = frame.measure(FontKind::Ui, app.fonts.ui_small, text);
         if key == StatusKey::Branch {
-            icons::branch_small(frame, (x + 4.0, cy), fade(p.text_muted), clip);
+            let active_sync = text.contains('↑') || text.contains('↓') || text.contains(" · ");
+            let icon_color = if active_sync { p.accent } else { p.text_muted };
+            icons::branch_small(frame, (x + 4.0, cy), fade(icon_color), clip);
         } else {
             icons::folder_small(frame, (x + 4.0, cy), fade(p.text_muted), clip);
         }
@@ -743,9 +745,25 @@ pub(super) fn draw_status(app: &mut App, frame: &mut Frame<'_>) {
         x += 24.0;
     }
 
-    // Vim 模式的状态（模式、未完成的按键）排在消息之前。
+    // Vim 模式的状态（模式、未完成的按键）排在消息之前，以柔和圆角胶囊标示当前模式。
     if let Some(vim) = app.vim_status() {
-        x = ui_text_small(frame, app, x, bar, &vim, p.text, left) + 16.0;
+        let mode_color = if vim == t!("workspace-status-vim-insert") {
+            p.git_added
+        } else if vim == t!("workspace-status-vim-replace") {
+            p.warning
+        } else if vim.starts_with(t!("workspace-status-vim-visual")) {
+            p.accent
+        } else {
+            p.text_muted
+        };
+        let vim_w = frame.measure(FontKind::Ui, app.fonts.ui_small, &vim);
+        let pill_w = vim_w + 12.0;
+        let pill_h = bar.h - 8.0;
+        let pill = Rect::new(x, bar.y + 4.0, pill_w, pill_h);
+        let fill = mode_color.alpha(if p.dark { 0.18 } else { 0.14 });
+        frame.rect_clipped(pill, fill, 4.0, left);
+        ui_text_small(frame, app, x + 6.0, pill, &vim, mode_color, left);
+        x = pill.right() + 12.0;
     }
 
     // 消息放不下时从中间截短；可用宽度不超过 60 逻辑像素时不显示。

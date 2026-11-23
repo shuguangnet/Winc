@@ -171,6 +171,7 @@ pub(crate) fn diff_folders(left: &Path, right: &Path) -> Vec<FolderDiffEntry> {
     let state_only_left = t!("workspace-folderdiff-left").to_owned();
     let state_only_right = t!("workspace-folderdiff-right").to_owned();
     let state_changed = t!("workspace-folderdiff-changed").to_owned();
+    let display_rel = |p: &Path| p.to_string_lossy().replace('\\', "/");
     let mut diffs = Vec::new();
     let (mut a, mut b) = (0, 0);
     while a < left_files.len() || b < right_files.len() {
@@ -182,7 +183,7 @@ pub(crate) fn diff_folders(left: &Path, right: &Path) -> Vec<FolderDiffEntry> {
         };
         match order {
             std::cmp::Ordering::Less => {
-                let relative = left_files[a].to_string_lossy().into_owned();
+                let relative = display_rel(&left_files[a]);
                 diffs.push(FolderDiffEntry {
                     left: Some(left.join(&left_files[a])),
                     right: None,
@@ -192,7 +193,7 @@ pub(crate) fn diff_folders(left: &Path, right: &Path) -> Vec<FolderDiffEntry> {
                 a += 1;
             }
             std::cmp::Ordering::Greater => {
-                let relative = right_files[b].to_string_lossy().into_owned();
+                let relative = display_rel(&right_files[b]);
                 diffs.push(FolderDiffEntry {
                     left: None,
                     right: Some(right.join(&right_files[b])),
@@ -202,7 +203,7 @@ pub(crate) fn diff_folders(left: &Path, right: &Path) -> Vec<FolderDiffEntry> {
                 b += 1;
             }
             std::cmp::Ordering::Equal => {
-                let relative = left_files[a].to_string_lossy().into_owned();
+                let relative = display_rel(&left_files[a]);
                 if !contents_equal(&left.join(&left_files[a]), &right.join(&right_files[b])) {
                     diffs.push(FolderDiffEntry {
                         left: Some(left.join(&left_files[a])),

@@ -254,39 +254,28 @@ fn draw_header(
     for target in targets.chain([DiffTarget::Next, DiffTarget::Previous]) {
         let rect = Rect::new(right - BUTTON, y, BUTTON, BUTTON);
         right = rect.x - 2.0;
-        draw_button(
-            frame,
-            p,
-            rect,
-            header,
-            app.pointer.hover == Hover::Diff(target),
-            false,
-        );
+        let hovered = app.pointer.hover == Hover::Diff(target);
+        draw_button(frame, p, rect, header, hovered, false);
+        let ink = if hovered { p.text } else { p.text_muted };
         let c = center(rect);
         match target {
-            DiffTarget::Previous => {
-                icons::chevron(frame, c, 8.0, Direction::Up, p.text_muted, rect)
-            }
-            DiffTarget::Next => icons::chevron(frame, c, 8.0, Direction::Down, p.text_muted, rect),
-            DiffTarget::PreviousFile => {
-                icons::chevron(frame, c, 8.0, Direction::Left, p.text_muted, rect)
-            }
-            DiffTarget::NextFile => {
-                icons::chevron(frame, c, 8.0, Direction::Right, p.text_muted, rect)
-            }
+            DiffTarget::Previous => icons::chevron(frame, c, 8.0, Direction::Up, ink, rect),
+            DiffTarget::Next => icons::chevron(frame, c, 8.0, Direction::Down, ink, rect),
+            DiffTarget::PreviousFile => icons::chevron(frame, c, 8.0, Direction::Left, ink, rect),
+            DiffTarget::NextFile => icons::chevron(frame, c, 8.0, Direction::Right, ink, rect),
             // 图标表示点击后切换到的布局。
             DiffTarget::Layout if view.is_unified() => {
-                icons::split(frame, c, p.text_muted, rect);
+                icons::split(frame, c, ink, rect);
             }
-            DiffTarget::Layout => icons::single_column(frame, c, p.text_muted, rect),
-            _ if view.collapses() => icons::expand_all(frame, c, p.text_muted, rect),
-            _ => icons::collapse_all(frame, c, p.text_muted, rect),
+            DiffTarget::Layout => icons::single_column(frame, c, ink, rect),
+            _ if view.collapses() => icons::expand_all(frame, c, ink, rect),
+            _ => icons::collapse_all(frame, c, ink, rect),
         }
         hits.push((rect, target));
     }
 
-    // 按钮左侧为增删行数，再往左为当前处序号和总处数。
-    right -= 10.0;
+    // 按钮左侧为增删行数胶囊，再往左为当前处序号和总处数胶囊。
+    right -= 8.0;
     if view.is_identical() {
         let text = t!("editor-diff-identical");
         let w = frame.measure(FontKind::Ui, app.fonts.ui_small, text);
@@ -295,16 +284,34 @@ fn draw_header(
     } else {
         let (added, removed) = view.stats();
         let at = view.current_hunk(scroll).unwrap_or(0);
+        let pill_alpha = if p.dark { 0.16 } else { 0.12 };
         let parts_text = [
-            (format!("−{removed}"), p.git_deleted),
-            (format!("+{added}"), p.git_added),
-            (format!("{} / {}", at + 1, view.hunks.len()), p.text_muted),
+            (
+                format!("−{removed}"),
+                p.git_deleted,
+                p.git_deleted.alpha(pill_alpha),
+            ),
+            (
+                format!("+{added}"),
+                p.git_added,
+                p.git_added.alpha(pill_alpha),
+            ),
+            (
+                format!("{} / {}", at + 1, view.hunks.len()),
+                p.text_muted,
+                p.hover,
+            ),
         ];
-        for (text, color) in &parts_text {
+        let pill_h = 18.0;
+        let pill_y = (header.y + (header.h - pill_h) / 2.0).round();
+        for (text, color, fill) in &parts_text {
             let w = frame.measure(FontKind::Ui, app.fonts.ui_small, text);
-            right -= w;
-            ui_text_small(frame, app, right, header, text, *color, header);
-            right -= 8.0;
+            let pill_w = w + 10.0;
+            right -= pill_w;
+            let pill = Rect::new(right, pill_y, pill_w, pill_h);
+            frame.rect_clipped(pill, *fill, 4.0, header);
+            ui_text_small(frame, app, right + 5.0, pill, text, *color, header);
+            right -= 6.0;
         }
     }
     let stats_left = right - 8.0;

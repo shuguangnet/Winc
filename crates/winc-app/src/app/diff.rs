@@ -1090,7 +1090,10 @@ impl App {
             };
             let row = view.side_scroll(RIGHT, doc.scroll_line.max(0.0), visible);
             view.set_unified(on);
-            let scroll = view.pos_of_top(RIGHT, row, visible);
+            let mut scroll = view.pos_of_top(RIGHT, row, visible);
+            if (scroll - scroll.round()).abs() < 1e-4 {
+                scroll = scroll.round();
+            }
             if let Some((hunk, _)) = view.focus {
                 view.focus = Some((hunk, scroll));
             }

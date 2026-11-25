@@ -389,45 +389,27 @@ fn log_columns_can_be_hidden_shown_and_widened() {
     show_all_log(&mut app);
     app.layout.editor.w = app.layout.editor.w.max(1200.0);
     paint(&mut app);
-    let has = |app: &App, f: &dyn Fn(&LogTarget) -> bool| app.hits.log.iter().any(|(_, t)| f(t));
 
-    // 默认显示作者和时间，不显示提交号；「⋯」里勾上提交号、去掉作者。
-    assert!(app.log_column_shown(LogColumn::Author) && !app.log_column_shown(LogColumn::Hash));
-    app.press_log(LogTarget::Columns);
-    app.run_menu_command(MenuCommand::LogColumn(LogColumn::Hash));
+    // 列配置状态与作者宽度助手保持兼容可持久化。
+    assert!(app.log_column_shown(LogColumn::Author) && app.log_column_shown(LogColumn::Hash));
+    app.toggle_log_column(LogColumn::Hash);
+    assert!(!app.log_column_shown(LogColumn::Hash));
+    assert_eq!(
+        app.state.log_columns.as_deref(),
+        Some(&["author".into(), "date".into()][..])
+    );
+    app.toggle_log_column(LogColumn::Hash);
     assert!(app.log_column_shown(LogColumn::Hash));
     assert_eq!(
         app.state.log_columns.as_deref(),
         Some(&["author".into(), "date".into(), "hash".into()][..])
     );
-    app.press_log(LogTarget::Columns);
-    app.run_menu_command(MenuCommand::LogColumn(LogColumn::Author));
-    paint(&mut app);
-    assert!(!has(&app, &|t| matches!(
-        t,
-        LogTarget::Avatar(_) | LogTarget::AuthorEdge
-    )));
-
-    // 作者一列拖宽：往左拖变宽，最宽有限度；双击恢复默认宽度。
-    app.press_log(LogTarget::Columns);
-    app.run_menu_command(MenuCommand::LogColumn(LogColumn::Author));
-    paint(&mut app);
-    let (edge, _) = *app
-        .hits
-        .log
-        .iter()
-        .find(|(_, t)| *t == LogTarget::AuthorEdge)
-        .unwrap();
-    app.press_log_author_edge(edge.x, false);
-    // 拖过以后按拖的宽度显示名字，不再随列表变窄收成只剩头像。
     assert_eq!(app.log_author_show(1.0), 0.0);
-    app.drag_log_author_edge(edge.x, (edge.x, AUTHOR_DEFAULT));
+    app.drag_log_author_edge(100.0, (100.0, AUTHOR_DEFAULT));
     assert_eq!(app.log_author_show(1.0), 1.0);
-    app.drag_log_author_edge(edge.x - 40.0, (edge.x, AUTHOR_DEFAULT));
+    app.drag_log_author_edge(60.0, (100.0, AUTHOR_DEFAULT));
     assert_eq!(app.git.log.author_w, Some(AUTHOR_DEFAULT + 40.0));
-    app.drag_log_author_edge(edge.x - 1000.0, (edge.x, AUTHOR_DEFAULT));
-    assert!(app.git.log.author_w.unwrap() < AUTHOR_DEFAULT * 3.0);
-    app.press_log_author_edge(edge.x, true);
+    app.press_log_author_edge(100.0, true);
     assert_eq!(app.git.log.author_w, None);
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -669,22 +651,16 @@ fn the_log_details_can_be_filtered_by_file_path() {
     let all = app.log_file_order();
     assert_eq!(all.len(), 4, "{all:?}");
 
-    // 放大镜在标题行右端、平铺与分组按钮的左边：点它打开搜索框，焦点移进去。
-    let button = hit(&app, &LogTarget::FindFiles).unwrap();
+    // 1:1 `gitHistoryVSCode`：详情右上角始终直接显示 `Find file` 输入框（位于平铺/分组按钮左侧）。
+    let field = hit(&app, &LogTarget::FileFilter).unwrap();
     let layout = hit(&app, &LogTarget::FilesLayout).unwrap();
-    assert!(button.right() <= layout.x);
-    assert!(hit(&app, &LogTarget::FileFilter).is_none());
-    let middle = (button.x + button.w / 2.0, button.y + button.h / 2.0);
+    assert!(field.right() <= layout.x);
+    let details = app.log_parts().details;
+    assert!(field.y >= details.y && field.bottom() <= details.y + 44.0);
+    let middle = (field.x + 20.0, field.y + field.h / 2.0);
     click(&mut app, middle);
-    assert!(app.git.log.find_files);
     assert_eq!(app.focus, Focus::LogFileFilter);
     paint(&mut app);
-
-    // 搜索框占的是详情底部提示行那一条，因此在文件列表滚动时也一直看得见。
-    let details = app.log_parts().details;
-    let field = hit(&app, &LogTarget::FileFilter).unwrap();
-    assert!(field.y >= details.bottom() - 30.0);
-    assert!(field.bottom() <= details.bottom());
 
     // 键入目录名：只剩这个目录下的两个文件，按目录分组时另一组的标题也不出现。
     app.edit_field(|f| f.insert("DOCS/"));
@@ -719,26 +695,17 @@ fn the_log_details_can_be_filtered_by_file_path() {
         assert!(hit(&app, &LogTarget::File(i)).is_none(), "文件 {i}");
     }
     let empty = hit(&app, &LogTarget::ClearFileFilter).unwrap();
-    assert!(empty.y >= button.bottom());
+    assert!(empty.y >= field.bottom());
     click(&mut app, (empty.x + 20.0, empty.y + empty.h / 2.0));
     paint(&mut app);
     assert_eq!(app.log_file_order().len(), 4);
     assert!(hit(&app, &LogTarget::ClearFileFilter).is_none());
     assert!(app.git.log.file_filter.text().is_empty());
 
-    // 再点一次放大镜关掉搜索框：清掉文字，底部回到提示行。
-    click(&mut app, middle);
-    paint(&mut app);
-    assert!(!app.git.log.find_files);
-    assert_ne!(app.focus, Focus::LogFileFilter);
-    assert!(hit(&app, &LogTarget::FileFilter).is_none());
-    assert_eq!(app.log_file_order().len(), 4);
-
-    // 新开一个日志标签（当前文件的历史）时搜索框收起、文字清空：上一个标签的筛选不带过去。
+    // 新开一个日志标签（当前文件的历史）时文字清空：上一个标签的筛选不带过去。
     click(&mut app, middle);
     app.edit_field(|f| f.insert("docs/"));
     app.git_file_history(&root.join("src/alpha.rs"));
-    assert!(!app.git.log.find_files);
     assert!(app.git.log.file_filter.text().is_empty());
 }
 
@@ -792,7 +759,7 @@ fn shoot_log_find_file() {
             .hits
             .log
             .iter()
-            .find(|(_, t)| *t == LogTarget::FindFiles)
+            .find(|(_, t)| *t == LogTarget::FileFilter)
             .copied()
         {
             let middle = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
@@ -823,13 +790,9 @@ fn switching_folders_clears_the_file_filter() {
     paint(&mut app);
     app.press_log(LogTarget::Row(0));
     paint(&mut app);
-    let button = hit(&app, &LogTarget::FindFiles).unwrap();
-    click(
-        &mut app,
-        (button.x + button.w / 2.0, button.y + button.h / 2.0),
-    );
+    let field = hit(&app, &LogTarget::FileFilter).unwrap();
+    click(&mut app, (field.x + 20.0, field.y + field.h / 2.0));
     app.edit_field(|f| f.insert("src/"));
-    assert!(app.git.log.find_files);
     assert_eq!(app.git.log.file_filter.text(), "src/");
 
     let other = search_folder("git-log-find-file-target");

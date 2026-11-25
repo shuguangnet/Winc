@@ -1,14 +1,14 @@
-//! 提交视图底部的提交图：标题行和最近若干提交，每行是车道、提交说明和作者。
+//! 提交视图底部的提交图：1:1 对齐 VS Code Source Control Graph 的视觉与交互。
 //!
-//! 与 Git 日志标签画的是同一张图（车道算法见 [`winc_core::graph`]，线条画法见
-//! [`crate::view::git::log::graph`]）：最左边几列画车道，说明从车道右边开始，作者淡色排在行尾。
-//! 一行一个提交，点一行打开该提交（见 [`App::press_graph_row`]）；行数多于可见高度时用滚轮滚动。
-//!
-//! 标题行右端是获取、拉取、推送三个按钮和对比控件：对比控件写着基准的名字和领先、落后的个
-//! 数（默认与上游比，见 [`App::graph_compare_base`]），点它换基准。对比进行时，基准缺少的提
-//! 交在说明前标一个向上的箭头，基准独有的提交标一个向下的箭头；本地独有的提交（还没推送）
-//! 圆点和连着的线涂新增色，基准独有的（还没拉下来）涂强调色，三种标记同一组颜色，一条线上
-//! 哪段只在本地、哪段在线上一眼可辨；行尾有引用的行画日志页同款的引用徽章，这时不画作者。
+//! - 顶部标题行：左侧可折叠的「v 图表」，右侧依次为对比基准芯片（`⎇ 自动`）、聚焦 HEAD（`◎`）、
+//!   获取（Fetch）、拉取（Pull）、推送（Push）、刷新（`↻`）、打开完整历史（`⋯`）。
+//! - 提交行：左侧连续清脆的车道线与节点（HEAD 为空心蓝环 `○`、普通提交为实心蓝点 `●`、合并提交
+//!   为双环），中间为提交说明紧跟淡色作者名（`subject  author`），右侧为 VS Code 风格胶囊徽章
+//!   （如蓝底 `[◎ master]` 与紫色云朵 `[☁]`）。
+//! - 展开提交后就地列出改动的文件：左侧续画连续车道线与竖向缩进参考线，每行显示彩色文件图标、
+//!   文件名、淡色相对目录与右侧彩色状态字母（`M`/`A`/`D`/`R`）；点击文件行直接打开该文件在该
+//!   提交中的完整内容差异（同时保持侧栏与提交图可见），悬停时在状态字母左侧浮现「打开当前文件」
+//!   快捷图标。
 
 use winc_editor::git::Ref;
 
@@ -20,30 +20,28 @@ use crate::view::git::log::{
     BADGE_GAP, BADGE_MIN, GRAPH_FADED, GRAPH_LINE, LANE, MAX_LANES, lane_color,
 };
 
-/// 提交图一行的作者名字最多占的宽度（逻辑像素）：说明优先，作者只作提示。
-const AUTHOR_MAX: f32 = 96.0;
-/// 说明与作者之间的间隔（逻辑像素）。
-const AUTHOR_GAP: f32 = 8.0;
+/// 提交图内联作者名与提交说明之间的间隔（逻辑像素）。
+const AUTHOR_INLINE_GAP: f32 = 6.0;
 /// 提交图左边到第一条车道的距离（逻辑像素）。
 const GRAPH_PAD: f32 = 10.0;
 /// 对比进行时说明左边留给领先、落后标记的宽度（逻辑像素）：每行都一样宽，说明不随行跳动。
 const MARK_ROOM: f32 = 13.0;
 /// 说明至少留这么宽，放不下徽章时不画徽章（逻辑像素）。
-const SUBJECT_MIN: f32 = 72.0;
+const SUBJECT_MIN: f32 = 64.0;
 /// 行尾的引用徽章最多占这么宽（逻辑像素）。
-const BADGE_ROOM: f32 = 132.0;
-/// 标题行右端三个按钮的边长（逻辑像素）：标题行本身只有 24 高。
-const TOOL: f32 = 20.0;
+const BADGE_ROOM: f32 = 138.0;
+/// 标题行右端工具按钮的边长（逻辑像素）：紧凑对齐 VS Code 图表标题栏。
+const TOOL: f32 = 18.0;
 /// 按钮之间的间隔（逻辑像素）。
-const TOOL_GAP: f32 = 2.0;
+const TOOL_GAP: f32 = 1.0;
 /// 对比控件里基准名最多占的宽度（逻辑像素）。
-const COMPARE_NAME_MAX: f32 = 72.0;
+const COMPARE_NAME_MAX: f32 = 68.0;
 /// 对比控件里基准名至少留这么宽（逻辑像素），更窄时不画控件，把位置让给右边的按钮。
 const NAME_MIN: f32 = 12.0;
 /// 对比控件里内容和左右留白的间隔（逻辑像素）。
-const COMPARE_PAD: f32 = 6.0;
+const COMPARE_PAD: f32 = 4.0;
 
-/// 绘制提交图：上沿一条分隔线，一行标题，下面每行一个提交。
+/// 绘制提交图：上沿一条分隔线，一行可折叠标题与工具栏，下面每行一个提交。
 pub(super) fn draw_graph(
     app: &App,
     frame: &mut Frame<'_>,
@@ -55,48 +53,73 @@ pub(super) fn draw_graph(
     };
     let p = app.palette;
     let clip = app.layout.sidebar.intersect(area);
+    let graph = &app.git.graph;
     frame.rect_clipped(
         Rect::new(area.x, area.y, area.w, 1.0),
         p.separator,
         0.0,
         clip,
     );
-    // 上沿可以按住上下拉，调整图占的高度：分隔线一像素，光标停在附近也算。悬停、拖动时把分隔线
-    // 描成强调色，看得出这里能拉。
-    let pulling =
-        app.pointer.hover == Hover::Commit(CommitTarget::GraphDivider) || app.graph_resizing();
-    if pulling {
-        frame.rect_clipped(Rect::new(area.x, area.y, area.w, 1.0), p.accent, 0.0, clip);
+    // 展开时上沿可以按住上下拉，调整图占的高度：分隔线一像素，光标停在附近也算。悬停、拖动时
+    // 描成强调色。
+    if !graph.collapsed {
+        let pulling =
+            app.pointer.hover == Hover::Commit(CommitTarget::GraphDivider) || app.graph_resizing();
+        if pulling {
+            frame.rect_clipped(Rect::new(area.x, area.y, area.w, 1.0), p.accent, 0.0, clip);
+        }
+        hits.push((
+            Rect::new(area.x, area.y, area.w, GRAPH_GRIP),
+            CommitTarget::GraphDivider,
+        ));
     }
-    hits.push((
-        Rect::new(area.x, area.y, area.w, GRAPH_GRIP),
-        CommitTarget::GraphDivider,
-    ));
+
     let size = app.fonts.ui_small;
     let head = Rect::new(area.x, area.y, area.w, GRAPH_HEADER);
+    // 左侧可折叠的「v 图表」标题，与 VS Code 侧栏折叠节标题保持一致。
+    let toggle_hovered = app.pointer.hover == Hover::Commit(CommitTarget::GraphToggle);
+    let chevron_x = area.x + 12.0;
+    let head_mid = head.y + head.h / 2.0;
+    let angle = if graph.collapsed { 0.0 } else { FRAC_PI_2 };
+    icons::chevron_turned(
+        frame,
+        (chevron_x, head_mid),
+        6.0,
+        angle,
+        if toggle_hovered { p.text } else { p.text_muted },
+        clip,
+    );
     let title = t!("git-graph-title");
+    let title_x = area.x + 22.0;
     label(
         frame,
         app,
         size,
-        (area.x + 8.0, head),
+        (title_x, head),
         title,
-        p.text_muted,
+        if toggle_hovered { p.text } else { p.text_muted },
         clip,
     );
-    let title_right = area.x + 8.0 + frame.measure(FontKind::Ui, size, title);
-    let rows_area = Rect::new(
-        area.x,
-        head.bottom(),
-        area.w,
-        (area.h - GRAPH_HEADER).max(0.0),
-    );
-    let graph = &app.git.graph;
-    // 标题行右端从右到左：推送、拉取、获取，然后是对比控件。
+    let title_right = title_x + frame.measure(FontKind::Ui, size, title);
+    let toggle_top = if graph.collapsed {
+        head.y
+    } else {
+        head.y + GRAPH_GRIP
+    };
+    hits.push((
+        Rect::new(
+            area.x,
+            toggle_top,
+            (title_right - area.x + 6.0).max(0.0),
+            (head.bottom() - toggle_top).max(0.0),
+        ),
+        CommitTarget::GraphToggle,
+    ));
+
+    // 标题行右端工具栏：聚焦 HEAD、获取、拉取、推送、刷新、更多（打开完整历史），其左为对比芯片。
     let buttons_left = draw_tools(app, frame, head, clip, hits);
     if let Some(error) = &graph.error {
-        // 读取出错时在按钮左边说明，图里留着上一次的内容。
-        let room = (buttons_left - COMPARE_PAD - title_right).max(0.0);
+        let room = (buttons_left - COMPARE_PAD - title_right - 4.0).max(0.0);
         let text = truncate_end(frame, error, size, room);
         let w = frame.measure(FontKind::Ui, size, &text);
         label(
@@ -111,9 +134,17 @@ pub(super) fn draw_graph(
     } else {
         draw_compare(app, frame, head, clip, title_right, buttons_left, hits);
     }
-    if graph.is_empty() {
+
+    if graph.collapsed || graph.is_empty() {
         return;
     }
+
+    let rows_area = Rect::new(
+        area.x,
+        head.bottom(),
+        area.w,
+        (area.h - GRAPH_HEADER).max(0.0),
+    );
     // 车道最多画 `MAX_LANES` 条，超出的挤在最右边。
     let lanes = graph
         .rows
@@ -128,8 +159,7 @@ pub(super) fn draw_graph(
     let text_x = x0 + lanes as f32 * LANE + 6.0 + mark.unwrap_or(0.0);
     let scroll = app.git.graph.scroll;
     let shown = rows_area.h;
-    // 悬停或已展开某一行时高亮该提交所在的整条分支线，其余无关车道柔和淡化；
-    // 无聚焦时所有车道保持清晰一致，避免竖线逐行明暗闪烁。
+    // 悬停或已展开某一行时高亮该提交所在的整条分支线，其余无关车道柔和淡化。
     let active_line = match app.pointer.hover {
         Hover::Commit(
             CommitTarget::GraphRow(idx)
@@ -145,7 +175,7 @@ pub(super) fn draw_graph(
                 .map(|r| r.line)
         }),
     };
-    // 一行一行往下排：提交行占一行的高度，展开的提交下面跟着它改动的文件。
+    let base_bg = p.sidebar_bg;
     let mut top = rows_area.y - scroll;
     for (i, (commit, row)) in graph.commits.iter().zip(&graph.rows).enumerate() {
         let visible = top + GRAPH_ROW > rows_area.y && top < rows_area.y + shown;
@@ -174,17 +204,10 @@ pub(super) fn draw_graph(
             }
             let mid = top + GRAPH_ROW / 2.0;
             let ink = |color: u8| lane_color(p, color);
-            // 与基准对比时，本地独有的提交（还没推送）用新增色、基准独有的（还没拉下来）用
-            // 强调色，与标题行对比控件的个数、说明前的箭头同一组颜色：一条线上哪段只在本地、
-            // 哪段在线上一眼可辨。
             let state_ink = |ahead: bool| if ahead { p.git_added } else { p.accent };
-            // 上半行、下半行的线。淡色与行底色混好再画，圆头不会在行的交界处叠出深色。
-            let bg = fill.map_or(p.editor_bg, |c| {
-                crate::view::workspace::panel::over(p.editor_bg, c)
-            });
+            let bg = fill.map_or(base_bg, |c| crate::view::workspace::panel::over(base_bg, c));
             for (segments, above) in [(&row.up, true), (&row.down, false)] {
                 for s in segments {
-                    // 连着圆点的那几段属于这一行的提交，随它着色；别的线只是路过，保持车道色。
                     let touches = if above {
                         s.to == row.lane
                     } else {
@@ -201,7 +224,7 @@ pub(super) fn draw_graph(
                         base
                     };
                     let stroke_w = if active_line == Some(s.line) {
-                        GRAPH_LINE + 0.4
+                        GRAPH_LINE + 0.5
                     } else {
                         GRAPH_LINE
                     };
@@ -222,7 +245,8 @@ pub(super) fn draw_graph(
                     frame.stroke(&edge, stroke_w, color, clip);
                 }
             }
-            // 圆点：`HEAD` 是空心圆，合并提交是外环加内芯的双层节点；悬停或已展开的提交外围带一层柔和光晕。
+            // 圆点（1:1 VS Code 风格）：`HEAD` 为醒目空心圆环 `○`，普通提交为清脆实心圆点 `●`，
+            // 合并提交为双环。不画过宽的暗色隔离环，让节点与连续竖线自然衔接。
             let cx = x0 + row.lane.min(MAX_LANES - 1) as f32 * LANE + LANE / 2.0;
             let head_commit = commit
                 .refs
@@ -230,34 +254,26 @@ pub(super) fn draw_graph(
                 .any(|r| matches!(r, Ref::Head(_) | Ref::Detached));
             let is_merge = commit.parents.len() > 1;
             let r = if head_commit {
-                4.0
+                4.2
             } else if is_merge {
-                3.75
+                3.8
             } else {
-                3.25
+                3.4
             };
             let node_ink = side.map_or_else(|| ink(row.color), state_ink);
             if row_hovered || expanded {
-                let halo = r + 2.25;
+                let halo = r + 2.0;
                 frame.rect_clipped(
                     Rect::new(cx - halo, mid - halo, 2.0 * halo, 2.0 * halo),
-                    node_ink.alpha(0.22),
+                    node_ink.alpha(0.20),
                     halo,
                     clip,
                 );
             }
-            // 节点外圈加一层与行底色相同的隔离环，与纵横车道线清晰分离。
-            let sep = r + 1.1;
-            frame.rect_clipped(
-                Rect::new(cx - sep, mid - sep, 2.0 * sep, 2.0 * sep),
-                bg,
-                sep,
-                clip,
-            );
             let dot = Rect::new(cx - r, mid - r, 2.0 * r, 2.0 * r);
             frame.rect_clipped(dot, node_ink, r, clip);
             if head_commit {
-                let hole = r - GRAPH_LINE;
+                let hole = (r - GRAPH_LINE).max(1.5);
                 frame.rect_clipped(
                     Rect::new(cx - hole, mid - hole, 2.0 * hole, 2.0 * hole),
                     bg,
@@ -265,14 +281,14 @@ pub(super) fn draw_graph(
                     clip,
                 );
             } else if is_merge {
-                let hole = r - 1.35;
+                let hole = r - 1.4;
                 frame.rect_clipped(
                     Rect::new(cx - hole, mid - hole, 2.0 * hole, 2.0 * hole),
                     bg,
                     hole,
                     clip,
                 );
-                let core = 1.15;
+                let core = 1.2;
                 frame.rect_clipped(
                     Rect::new(cx - core, mid - core, 2.0 * core, 2.0 * core),
                     node_ink,
@@ -289,8 +305,8 @@ pub(super) fn draw_graph(
                     None => {}
                 }
             }
-            // 说明从标记列右边开始；悬停时右端浮现「复制提交号」「在日志中查看」快捷按钮，
-            // 平时有引用时画徽章，否则作者淡色排在行尾。
+            // 右端：悬停时显示「复制提交号」「在日志中查看」快捷按钮；平时有引用时显示 VS Code 胶囊
+            // 徽章（如 `[◎ master] [☁]`）。说明后紧跟淡色作者名（`subject  author`），空间不足时依次截短。
             let right = row_rect.right() - 8.0;
             let subject_in = &commit.subject;
             let subject_color = if is_merge { p.text_muted } else { p.text };
@@ -317,14 +333,12 @@ pub(super) fn draw_graph(
                     }
                     hits.push((rect.intersect(rows_area), target));
                 }
-                let subject_room = (copy_btn.x - 6.0 - text_x).max(0.0);
-                let subject = truncate_end(frame, subject_in, size, subject_room);
-                label(
-                    frame,
+                let content_right = copy_btn.x - 6.0;
+                draw_subject_and_author(
                     app,
-                    size,
-                    (text_x, row_rect),
-                    &subject,
+                    frame,
+                    (text_x, content_right, row_rect),
+                    (subject_in, &commit.author),
                     subject_color,
                     clip,
                 );
@@ -338,26 +352,15 @@ pub(super) fn draw_graph(
                         (fitted, width)
                     })
                     .filter(|(_, width)| *width > 0.0);
-                let (subject_room, author) = match &drawn {
-                    Some((_, width)) => ((right - width - BADGE_GAP - text_x).max(0.0), None),
-                    None => {
-                        let author_w = frame
-                            .measure(FontKind::Ui, size, &commit.author)
-                            .min(AUTHOR_MAX);
-                        let author_x = (right - author_w).max(text_x + AUTHOR_GAP);
-                        (
-                            (author_x - AUTHOR_GAP - text_x).max(0.0),
-                            Some((author_x, author_w)),
-                        )
-                    }
+                let content_right = match &drawn {
+                    Some((_, width)) => (right - width - BADGE_GAP).max(text_x),
+                    None => right,
                 };
-                let subject = truncate_end(frame, subject_in, size, subject_room);
-                label(
-                    frame,
+                draw_subject_and_author(
                     app,
-                    size,
-                    (text_x, row_rect),
-                    &subject,
+                    frame,
+                    (text_x, content_right, row_rect),
+                    (subject_in, &commit.author),
                     subject_color,
                     clip,
                 );
@@ -365,24 +368,11 @@ pub(super) fn draw_graph(
                     let left = right - width;
                     draw_badges(app, frame, (left, row_rect), &badges, clip);
                 }
-                if let Some((author_x, author_w)) = author {
-                    let author = truncate_end(frame, &commit.author, size, author_w);
-                    label(
-                        frame,
-                        app,
-                        size,
-                        (author_x, row_rect),
-                        &author,
-                        p.text_dim,
-                        clip,
-                    );
-                }
             }
             hits.push((row_rect, CommitTarget::GraphRow(i)));
         }
         top += GRAPH_ROW;
-        // 展开的提交：下面就地列出它改动的文件，同时在左侧继续绘制穿过这些行的车道竖线，
-        // 保持提交图连贯不断裂。
+        // 展开的提交：下面就地列出它改动的文件，同时在左侧续画穿过这些行的车道竖线。
         if expanded {
             top = draw_graph_files(
                 app,
@@ -401,11 +391,54 @@ pub(super) fn draw_graph(
     }
 }
 
-/// 展开的提交下面列出它改动的文件：每行是状态字母（按变化的种类着色）和路径，点击直接打开
-/// 工作区里的当前内容；改了名的按「旧名 → 新名」写。文件还在读取时是一行淡色的提示。
+/// 在 `text_x..content_right` 内按 VS Code 风格绘制「提交说明 紧跟 淡色作者名」。
 ///
-/// 文件行从 `text_x` 开始（提交的说明那一列，比车道往右缩进），不参与拖动滚动：点住即可打开。
-/// 返回画完后的 y（下一行提交的上沿）。
+/// 提交说明优先，如果说明画完后仍有余量，在其后间隔 [`AUTHOR_INLINE_GAP`] 绘制淡色作者名。
+fn draw_subject_and_author(
+    app: &App,
+    frame: &mut Frame<'_>,
+    (text_x, content_right, row_rect): (f32, f32, Rect),
+    (subject, author): (&str, &str),
+    subject_color: Color,
+    clip: Rect,
+) {
+    let size = app.fonts.ui_small;
+    let room = (content_right - text_x).max(0.0);
+    if room <= 0.0 {
+        return;
+    }
+    let shown_subject = truncate_end(frame, subject, size, room);
+    let subject_end = label(
+        frame,
+        app,
+        size,
+        (text_x, row_rect),
+        &shown_subject,
+        subject_color,
+        clip,
+    );
+    // 说明本身已截短或没有作者时不画内联作者。
+    if shown_subject != subject || author.is_empty() {
+        return;
+    }
+    let author_x = subject_end + AUTHOR_INLINE_GAP;
+    let author_room = content_right - author_x;
+    if author_room > 16.0 {
+        let shown_author = truncate_end(frame, author, size, author_room);
+        label(
+            frame,
+            app,
+            size,
+            (author_x, row_rect),
+            &shown_author,
+            app.palette.text_dim,
+            clip,
+        );
+    }
+}
+
+/// 展开的提交下面列出它改动的文件：点击文件行直接打开该文件在该提交中的完整差异，悬停时在
+/// 状态字母左侧显示「打开当前文件」图标按钮，1:1 对齐 VS Code 图表展开文件行。
 #[allow(clippy::too_many_arguments)]
 fn draw_graph_files(
     app: &App,
@@ -420,7 +453,8 @@ fn draw_graph_files(
     let p = app.palette;
     let size = app.fonts.ui_small;
     let state_ink = |ahead: bool| if ahead { p.git_added } else { p.accent };
-    // 在展开文件行的左侧续画从该提交向下延伸的各条车道竖线，保持整张提交图不断裂。
+    let base_bg = p.sidebar_bg;
+    // 在展开文件行的左侧续画从该提交向下延伸的各条车道竖线，保持整张提交图连贯不断裂。
     let draw_lanes = |frame: &mut Frame<'_>, row_y: f32, bg: Color| {
         for s in &row.down {
             let touches = s.from == row.lane;
@@ -435,7 +469,7 @@ fn draw_graph_files(
                 base
             };
             let stroke_w = if active_line == Some(s.line) {
-                GRAPH_LINE + 0.4
+                GRAPH_LINE + 0.6
             } else {
                 GRAPH_LINE
             };
@@ -454,24 +488,32 @@ fn draw_graph_files(
             let row_rect = Rect::new(rows_area.x, y, rows_area.w, GRAPH_ROW).intersect(rows_area);
             let hovered = matches!(
                 app.pointer.hover,
-                Hover::Commit(CommitTarget::GraphFile(i) | CommitTarget::GraphFileDiff(i)) if i == k
+                Hover::Commit(CommitTarget::GraphFile(i) | CommitTarget::GraphFileOpen(i)) if i == k
             );
-            let bg = if hovered {
+            let selected = graph.selected_file == Some(k);
+            let fill = if hovered {
+                Some(p.hover)
+            } else if selected {
+                Some(p.selected_unfocused)
+            } else {
+                None
+            };
+            let bg = if let Some(fill) = fill {
                 let band = Rect::new(
                     rows_area.x + 6.0,
                     y + 1.0,
                     rows_area.w - 12.0,
                     GRAPH_ROW - 2.0,
                 );
-                frame.rect_clipped(band.intersect(rows_area), p.hover, RADIUS_ROW, clip);
-                crate::view::workspace::panel::over(p.editor_bg, p.hover)
+                frame.rect_clipped(band.intersect(rows_area), fill, RADIUS_ROW, clip);
+                crate::view::workspace::panel::over(base_bg, fill)
             } else {
-                p.editor_bg
+                base_bg
             };
             draw_lanes(frame, y, bg);
             // 文件列表左侧一条柔和的竖向引导线，与提交行对齐，区分嵌套的文件行。
             let guide_x = (text_x - 5.0).round();
-            let guide_color = if hovered {
+            let guide_color = if hovered || selected {
                 p.indent_guide_active
             } else {
                 p.indent_guide
@@ -482,49 +524,41 @@ fn draw_graph_files(
                 0.0,
                 clip,
             );
-            let right = row_rect.right() - 8.0;
+            // 右侧清脆的彩色单字母状态（M / A / D / R），无多余背景框，对齐 VS Code。
+            let right = row_rect.right() - 10.0;
             let letter = file.change.letter().to_string();
             let letter_w = frame.measure(FontKind::Ui, size, &letter);
             let ink = crate::view::workspace::sidebar::git_color(p, file.change);
-            let badge_w = 16.0;
-            let badge_h = 15.0;
-            let badge_rect = Rect::new(
-                right - badge_w,
-                (y + (GRAPH_ROW - badge_h) / 2.0).round(),
-                badge_w,
-                badge_h,
-            );
-            let pill_fill = ink.alpha(ink.a * if p.dark { 0.16 } else { 0.12 });
-            frame.rect_clipped(badge_rect, pill_fill, 4.0, clip);
-            label(
-                frame,
-                app,
-                size,
-                (badge_rect.x + (badge_w - letter_w) / 2.0, row_rect),
-                &letter,
-                ink,
-                clip,
-            );
+            let status_x = right - letter_w;
+            label(frame, app, size, (status_x, row_rect), &letter, ink, clip);
 
-            // 悬停时在状态徽章左侧浮现「查看差异」快捷按钮，点击直接在编辑区打开该提交下该文件的差异。
-            let diff_btn = Rect::new(
-                badge_rect.x - 4.0 - 18.0,
+            // 悬停或选中时在状态字母左侧显示「打开文件」图标按钮，点击打开工作区当前文件。
+            let open_btn = Rect::new(
+                status_x - 6.0 - 18.0,
                 (y + (GRAPH_ROW - 18.0) / 2.0).round(),
                 18.0,
                 18.0,
             );
-            let text_right = if hovered {
-                let on_diff = app.pointer.hover == Hover::Commit(CommitTarget::GraphFileDiff(k));
-                draw_button(frame, p, diff_btn, clip, on_diff, false);
-                let btn_ink = if on_diff { p.text } else { p.text_muted };
-                icons::compare(frame, center(diff_btn), btn_ink, clip);
+            let text_right = if hovered || selected {
+                let on_open = app.pointer.hover == Hover::Commit(CommitTarget::GraphFileOpen(k));
+                draw_button(frame, p, open_btn, clip, on_open, false);
+                let btn_ink = if on_open { p.text } else { p.text_muted };
+                let (cx, cy) = center(open_btn);
+                let (w, h) = (9.0, 11.0);
+                icons::document(
+                    frame,
+                    ((cx - w / 2.0).round(), (cy - h / 2.0).round()),
+                    (w, h),
+                    btn_ink,
+                    clip,
+                );
                 hits.push((
-                    diff_btn.intersect(rows_area),
-                    CommitTarget::GraphFileDiff(k),
+                    open_btn.intersect(rows_area),
+                    CommitTarget::GraphFileOpen(k),
                 ));
-                diff_btn.x - 4.0
+                open_btn.x - 4.0
             } else {
-                badge_rect.x - 6.0
+                status_x - 8.0
             };
 
             let file_name = winc_editor::display_name(&file.path).into_owned();
@@ -586,7 +620,7 @@ fn draw_graph_files(
     // 还在读取：先留出一行淡色的提示，高度与之后画出的文件行一致，滚动不跳。
     if graph.files_loading {
         if y + GRAPH_ROW > rows_area.y && y < rows_area.y + rows_area.h {
-            draw_lanes(frame, y, p.editor_bg);
+            draw_lanes(frame, y, base_bg);
             let rect = Rect::new(rows_area.x, y, rows_area.w, GRAPH_ROW).intersect(rows_area);
             label(
                 frame,
@@ -603,10 +637,7 @@ fn draw_graph_files(
     y
 }
 
-/// 画标题行右端的三个按钮（从左到右：获取、拉取、推送），返回最左边那个的左边缘。
-///
-/// 不能用的（没有远程仓库、正在执行别的 Git 操作）灰掉，原因写在悬停提示里。操作进行中三个
-/// 都灰掉：同时开两个会互相打断。
+/// 画标题行右端的工具按钮（从左到右：聚焦 HEAD、获取、拉取、推送、刷新、更多），返回最左边按钮的左边缘。
 fn draw_tools(
     app: &App,
     frame: &mut Frame<'_>,
@@ -618,17 +649,17 @@ fn draw_tools(
     let busy = app.git.branch.running.is_some();
     let remote = !app.git.remotes.is_empty();
     let buttons = [
-        (CommitTarget::GraphFetch, remote),
-        (CommitTarget::GraphPull, remote),
-        (CommitTarget::GraphPush, remote),
+        (CommitTarget::GraphFocusHead, true),
+        (CommitTarget::GraphFetch, remote && !busy),
+        (CommitTarget::GraphPull, remote && !busy),
+        (CommitTarget::GraphPush, remote && !busy),
+        (CommitTarget::GraphRefresh, true),
+        (CommitTarget::GraphMore, true),
     ];
     let top = head.y + (head.h - TOOL) / 2.0;
-    let left = head.right()
-        - COMPARE_PAD
-        - buttons.len() as f32 * TOOL
-        - (buttons.len() - 1) as f32 * TOOL_GAP;
+    let left =
+        head.right() - 6.0 - buttons.len() as f32 * TOOL - (buttons.len() - 1) as f32 * TOOL_GAP;
     for (i, (target, enabled)) in buttons.into_iter().enumerate() {
-        let enabled = enabled && !busy;
         let x = left + i as f32 * (TOOL + TOOL_GAP);
         let rect = Rect::new(x, top, TOOL, TOOL);
         let hovered = enabled && app.pointer.hover == Hover::Commit(target);
@@ -640,20 +671,19 @@ fn draw_tools(
         };
         let at = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
         match target {
-            CommitTarget::GraphFetch => icons::sync(frame, at, color, clip),
-            CommitTarget::GraphPull => icons::pull_small(frame, at, color, clip),
-            _ => icons::push_small(frame, at, color, clip),
+            CommitTarget::GraphFocusHead => icons::target_head(frame, at, color, clip),
+            CommitTarget::GraphFetch => icons::graph_fetch(frame, at, color, clip),
+            CommitTarget::GraphPull => icons::graph_pull(frame, at, color, clip),
+            CommitTarget::GraphPush => icons::graph_push(frame, at, color, clip),
+            CommitTarget::GraphRefresh => icons::refresh(frame, at, color, clip),
+            _ => icons::more(frame, at, color, clip),
         }
-        // 不能用的也记下：悬停时写明原因，点了不做事。
         hits.push((rect, target));
     }
     left
 }
 
-/// 画标题行的对比控件。
-///
-/// 内容是基准的名字和领先（↑）、落后（↓）的个数；还没选基准（分支没有上游）时写「对比」。
-/// 点它弹出换基准的菜单（[`MenuTarget::GraphCompare`]）。位置不够时整个不画，让给右边的按钮。
+/// 画标题行的对比控件（VS Code 风格：`⎇ 自动` 或自定义基准名，有领先/落后时附带简洁计数）。
 fn draw_compare(
     app: &App,
     frame: &mut Frame<'_>,
@@ -667,50 +697,59 @@ fn draw_compare(
     let size = app.fonts.ui_small;
     let compare = app.git.graph.compare.as_ref();
     let (ahead, behind) = compare.map_or((0, 0), |c| c.counts);
-    let counts = compare.map(|_| (format!("↑{ahead}"), format!("↓{behind}")));
+    let has_diff = ahead > 0 || behind > 0;
+    let counts = has_diff.then(|| (format!("↑{ahead}"), format!("↓{behind}")));
     let counts_w = counts.as_ref().map_or(0.0, |(up, down)| {
-        COMPARE_PAD
-            + frame.measure(FontKind::Ui, size, up)
-            + COMPARE_PAD
-            + frame.measure(FontKind::Ui, size, down)
+        let mut w = 0.0;
+        if ahead > 0 {
+            w += 3.0 + frame.measure(FontKind::Ui, size, up);
+        }
+        if behind > 0 {
+            w += 3.0 + frame.measure(FontKind::Ui, size, down);
+        }
+        w
     });
-    // 基准名按剩下的位置截短；剩下不到一个字的宽度时不画控件，位置留给右边的按钮。
-    let icon = 12.0 + 4.0;
-    let room =
-        (right - title_right - 8.0 - counts_w - icon - 2.0 * COMPARE_PAD).min(COMPARE_NAME_MAX);
+    let icon = 11.0 + 3.0;
+    let max_room = (right - title_right - 6.0 - icon - 2.0 * COMPARE_PAD).max(0.0);
+    let show_counts = counts.is_some() && max_room >= counts_w + NAME_MIN;
+    let effective_counts_w = if show_counts { counts_w } else { 0.0 };
+    let room = (max_room - effective_counts_w).min(COMPARE_NAME_MAX);
     if room < NAME_MIN {
         return;
     }
-    let name = match compare {
-        Some(compare) => truncate_end(frame, &compare.base, size, room).into_owned(),
-        None => t!("git-graph-compare").to_owned(),
+    // 自动对比上游时与 VS Code 保持一致显示简洁的「自动」，手动指定其他分支时显示分支名。
+    let raw_name = match (&app.git.graph.base, compare) {
+        (Some(base), _) => base.as_str(),
+        (None, Some(_)) => t!("git-graph-compare-auto-short"),
+        (None, None) => t!("git-graph-compare"),
     };
+    let name = truncate_end(frame, raw_name, size, room).into_owned();
     let name_w = frame.measure(FontKind::Ui, size, &name);
-    let inner = icon + name_w + counts_w;
+    let inner = icon + name_w + effective_counts_w;
     let rect = Rect::new(
-        right - COMPARE_PAD - inner - 2.0 * COMPARE_PAD,
+        right - 3.0 - inner - 2.0 * COMPARE_PAD,
         head.y + (head.h - TOOL) / 2.0,
         inner + 2.0 * COMPARE_PAD,
         TOOL,
     );
-    if rect.x < title_right + 8.0 {
+    if rect.x < title_right + 4.0 {
         return;
     }
     let hovered = app.pointer.hover == Hover::Commit(CommitTarget::GraphCompare);
     let open = app.overlays.menu_button == Some(MenuButton::GraphCompare);
     draw_button(frame, p, rect, clip, hovered, open);
     let color = if hovered { p.text } else { p.text_muted };
-    let center = rect.y + rect.h / 2.0;
-    icons::compare(frame, (rect.x + COMPARE_PAD + 6.0, center), color, clip);
-    let mut x = rect.x + COMPARE_PAD + 12.0 + 4.0;
-    x += ui_text_small(frame, app, x, rect, &name, color, clip);
-    if let Some((up, down)) = counts {
-        // 领先的个数用新增色、落后的用强调色，与图里行前的标记一致；为 0 时淡掉。
-        let dim = |on: bool, color: Color| if on { color } else { p.text_dim };
-        x += COMPARE_PAD;
-        x += ui_text_small(frame, app, x, rect, &up, dim(ahead > 0, p.git_added), clip);
-        x += COMPARE_PAD;
-        ui_text_small(frame, app, x, rect, &down, dim(behind > 0, p.accent), clip);
+    let cy = rect.y + rect.h / 2.0;
+    icons::branch_small(frame, (rect.x + COMPARE_PAD + 5.0, cy), color, clip);
+    let mut x = rect.x + COMPARE_PAD + icon;
+    x = ui_text_small(frame, app, x, rect, &name, color, clip);
+    if show_counts && let Some((up, down)) = counts {
+        if ahead > 0 {
+            x = ui_text_small(frame, app, x + 3.0, rect, &up, p.git_added, clip);
+        }
+        if behind > 0 {
+            ui_text_small(frame, app, x + 3.0, rect, &down, p.accent, clip);
+        }
     }
     hits.push((rect, CommitTarget::GraphCompare));
 }

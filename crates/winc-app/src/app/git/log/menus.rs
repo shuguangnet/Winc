@@ -14,6 +14,49 @@ pub(in crate::app) fn tag_name(reference: &Ref) -> Option<&str> {
 }
 
 impl App {
+    /// 在后台读取文件 `path` 在当前选中提交（或比较新版本）中的内容，以只读带语法高亮标签打开
+    /// （对齐 `gitHistoryVSCode` 的「View File at Commit」）。
+    pub(super) fn view_log_file_at_commit(&mut self, path: PathBuf) {
+        let Some(root) = self.git.root.clone() else {
+            return;
+        };
+        let view = self.editor.active().and_then(|d| d.log.as_deref());
+        let rev = view.and_then(|v| match &v.compare {
+            Some(c) => Some(c.to.clone()),
+            None => v.selected_oid().map(str::to_owned),
+        });
+        let Some(rev) = rev else {
+            return;
+        };
+        let file_name = winc_editor::display_name(&path).into_owned();
+        let title = format!("{file_name} @ {}", short(&rev));
+        let sender = self.git.log.results.0.clone();
+        self.spawn_git(UserEvent::GitLog, move |tool| {
+            let content = tool.map_err(|e| unusable(&e)).and_then(|git| {
+                let bytes = git
+                    .content_at(&root, &rev, &path, &Cancel::default())
+                    .map_err(|e| {
+                        t!("git-read-file-failed", name = file_name.as_str(), error = e)
+                    })?;
+                match bytes {
+                    Some(b) if b.len() as u64 > LARGE_FILE => {
+                        Err(t!("git-diff-too-large", name = file_name.as_str()))
+                    }
+                    Some(b) if looks_binary(&b) => {
+                        Err(t!("git-diff-binary", name = file_name.as_str()))
+                    }
+                    Some(b) => Ok(decode_unknown(&b).0),
+                    None => Err(t!("git-commit-open-deleted").to_owned()),
+                }
+            });
+            let _ = sender.send(Loaded::FileSnapshot {
+                title,
+                file_name,
+                content,
+            });
+        });
+    }
+
     /// 把文件 `path` 在详情里的版本（选中的提交；比较两个版本时是新的一边）和工作区里的版本
     /// 并排比较，在后台读取，打开为新标签（见 [`Loaded::LocalDiff`]）。
     pub(super) fn compare_log_file_with_local(&mut self, path: PathBuf) {
@@ -64,8 +107,17 @@ impl App {
         if !self.log_active() {
             return None;
         }
-        let (LogTarget::Row(row) | LogTarget::Avatar(row)) =
-            crate::layout::hit(&self.hits.log, x, y)?
+        let (LogTarget::Row(row)
+        | LogTarget::Avatar(row)
+        | LogTarget::RowFilterAuthor(row)
+        | LogTarget::RowCopyHash(row)
+        | LogTarget::RowResetSoft(row)
+        | LogTarget::RowResetHard(row)
+        | LogTarget::RowNewTag(row)
+        | LogTarget::RowNewBranch(row)
+        | LogTarget::RowMore(row)
+        | LogTarget::RefCheckout(row, _)
+        | LogTarget::RefRemove(row, _)) = crate::layout::hit(&self.hits.log, x, y)?
         else {
             return None;
         };
@@ -124,6 +176,26 @@ impl App {
             MenuCommand::LogNewWorktree => self.new_worktree_at(oid, local_branch(&commit)),
             MenuCommand::LogNewTag => self.open_tag_prompt(oid),
             MenuCommand::LogInteractiveRebase => self.start_interactive_rebase(oid),
+            MenuCommand::LogMerge => self
+                .git_operate(t!("git-op-merge", name = tag.as_str()), move |git, root| {
+                    git.operate(root, &["merge", "--end-of-options", &oid])
+                }),
+            MenuCommand::LogRebase => self.git_operate(
+                t!("git-op-rebase-onto", name = tag.as_str()),
+                move |git, root| git.operate(root, &["rebase", "--end-of-options", &oid]),
+            ),
+            MenuCommand::LogSelectForCompare => {
+                self.flash(t!("git-log-selected-for-compare", commit = tag.as_str()));
+                self.git.log.compare_selected = Some(oid);
+            }
+            MenuCommand::LogCompareSelected => {
+                if let Some(base) = self.git.log.compare_selected.clone()
+                    && base != oid
+                {
+                    self.git.log.details_open = true;
+                    self.start_log_compare(base, oid);
+                }
+            }
             MenuCommand::LogTag(op, i) => {
                 let tag = commit.refs.iter().filter_map(tag_name).nth(i);
                 if let Some(name) = tag {
@@ -208,6 +280,14 @@ impl App {
                 t!("git-log-detach-confirm-detail").to_owned(),
                 t!("git-log-detach-confirm-button"),
             ),
+            LogConfirmed::ResetSoft(oid) => {
+                let (b, c) = (branch.as_str(), short(oid));
+                (
+                    t!("git-log-reset-soft-confirm", branch = b, commit = c),
+                    t!("git-log-reset-soft-confirm-detail").to_owned(),
+                    t!("git-log-reset-soft-confirm-button"),
+                )
+            }
             LogConfirmed::ResetHard(oid) => {
                 let (b, c) = (branch.as_str(), short(oid));
                 (
@@ -216,6 +296,16 @@ impl App {
                     t!("git-log-reset-hard-confirm-button"),
                 )
             }
+            LogConfirmed::CheckoutBranch(name) => (
+                t!("git-log-ref-checkout-tip", name = name.as_str()),
+                t!("git-branch-checkout").to_owned(),
+                t!("git-branch-checkout"),
+            ),
+            LogConfirmed::DeleteRemoteBranch(name) => (
+                t!("git-log-ref-remove-remote-confirm", name = name.as_str()),
+                t!("git-log-ref-remove-remote-confirm-detail").to_owned(),
+                t!("git-branch-delete-confirm-button"),
+            ),
             LogConfirmed::DeleteTag(name, target) => {
                 let name = name.as_str();
                 match target {
@@ -272,6 +362,13 @@ impl App {
                     },
                 );
             }
+            LogConfirmed::ResetSoft(oid) => {
+                let (tag, branch) = (short(&oid).to_owned(), self.current_branch_label());
+                self.git_operate(
+                    t!("git-op-reset", branch = branch, commit = tag.as_str()),
+                    move |git, root| git.operate(root, &["reset", "--soft", &oid, "--"]),
+                );
+            }
             LogConfirmed::ResetHard(oid) => {
                 let (tag, branch) = (short(&oid).to_owned(), self.current_branch_label());
                 self.git_operate(
@@ -281,6 +378,21 @@ impl App {
                         git.operate(root, &["reset", "--hard", &oid, "--"])
                     },
                 );
+            }
+            LogConfirmed::CheckoutBranch(name) => {
+                self.git_operate(
+                    t!("git-op-checkout", name = name.as_str()),
+                    move |git, root| git.operate(root, &["switch", "--end-of-options", &name]),
+                );
+            }
+            LogConfirmed::DeleteRemoteBranch(name) => {
+                if let Some((remote, branch)) = name.split_once('/') {
+                    let (remote, branch) = (remote.to_owned(), branch.to_owned());
+                    self.git_operate(
+                        t!("git-op-delete-branch", name = name.as_str()),
+                        move |git, root| git.operate(root, &["push", &remote, "--delete", &branch]),
+                    );
+                }
             }
             LogConfirmed::DropStash(stash) => {
                 self.git_operate(

@@ -17,7 +17,16 @@ fn commit_only_the_checked_hunks() {
     let file = root.join("src/main.rs");
     app.git_preview_changes(&file);
     paint(&mut app);
-    // 两处改动各有一个勾选框；勾掉第二处（删掉 `value_50`），文件变成「部分」。
+    // 默认展示完整文件内容，先跳转到第二处改动（删掉 `value_50`）使其滚入视野，再勾掉它。
+    assert!(
+        app.hits
+            .diff
+            .iter()
+            .any(|(_, t)| *t == DiffTarget::Include(0))
+    );
+    app.press_diff(DiffTarget::Next);
+    app.press_diff(DiffTarget::Next);
+    paint(&mut app);
     assert!(
         app.hits
             .diff

@@ -447,22 +447,30 @@ pub enum CommitTarget {
     LastCommit,
     /// 合并、变基暂停时说明条右端的「中止」按钮。
     Abort,
+    /// 提交图标题行左侧的「v 图表」：折叠或展开提交图区域。
+    GraphToggle,
     /// 提交图里的第几行（提交图里 `Commit` 的下标）：展开或收起它改动的文件（见 [`crate::app::git::graph`]）。
     GraphRow(usize),
     /// 提交图里第几个提交行右端的「在日志中查看」按钮：在主日志标签中定位该提交。
     GraphOpenLog(usize),
     /// 提交图里第几个提交行右端的「复制提交号」按钮：复制该提交的完整提交号。
     GraphCopyOid(usize),
-    /// 提交图展开的文件列表里的第几个文件（`GraphPart::files` 的下标）：打开当前内容。
+    /// 提交图展开的文件列表里的第几个文件（`GraphPart::files` 的下标）：直接打开该文件在此提交中的差异。
     GraphFile(usize),
-    /// 提交图展开的文件列表中第几个文件行右端的「查看差异」按钮：打开该文件在此提交中的差异。
-    GraphFileDiff(usize),
+    /// 提交图展开的文件列表中第几个文件行右端的「打开文件」按钮：打开工作区中的当前文件。
+    GraphFileOpen(usize),
+    /// 提交图标题行右端的「定位到 HEAD」（`◎`）：滚动到当前 `HEAD` 提交。
+    GraphFocusHead,
     /// 提交图标题行右端的「获取」：获取远程更新。
     GraphFetch,
     /// 提交图标题行右端的「拉取」：从上游拉取。
     GraphPull,
     /// 提交图标题行右端的「推送」：推送到上游（`HEAD` 已游离时先问推到哪）。
     GraphPush,
+    /// 提交图标题行右端的「刷新」（`↻`）：重新读取提交图。
+    GraphRefresh,
+    /// 提交图标题行右端的「更多 / 完整历史」（`⋯`）：打开完整 Git 提交历史标签页。
+    GraphMore,
     /// 提交图标题行的对比控件：弹出换基准的菜单。
     GraphCompare,
     /// 提交图上沿的分隔线：按住上下拖动，调整图占的高度。

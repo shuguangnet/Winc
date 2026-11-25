@@ -282,12 +282,21 @@ impl App {
         self.visible_lines().saturating_sub(1).max(1)
     }
 
+    /// 返回当前活动文档每行的像素高度：日志标签使用双行提交卡片行高（`LOG_ROW_HEIGHT`），其余为编辑器行高。
+    pub(crate) fn active_row_height(&self) -> f32 {
+        if self.log_active() {
+            crate::app::git::log::LOG_ROW_HEIGHT
+        } else {
+            self.fonts.line_height
+        }
+    }
+
     /// 返回编辑区内容的总高度（逻辑像素），供滚动条使用：可滚动的距离加一屏高度。
     pub(in crate::app) fn content_height(&self) -> f32 {
         editor_content_height(
             self.row_count(),
             self.scroll_track().h,
-            self.fonts.line_height,
+            self.active_row_height(),
         )
     }
 

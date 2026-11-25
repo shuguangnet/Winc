@@ -77,11 +77,66 @@ pub(super) fn long_cuts(view: &LogView, row: usize, shown: Option<u32>) -> Vec<(
     cuts
 }
 
-/// 一行的提交图：上半行、下半行的线，再在中间画圆点（普通提交实心、合并提交小一圈、`HEAD` 是圈）。
-///
-/// 直着穿过的是竖线，换车道的线在圆点那一高度横着走，到那条车道时用半径 `CORNER` 圆角拐下去。
-/// `line` 是选中提交所在的线，其余线的不透明度降到 `GRAPH_FADED`：淡色事先与行底色混好，否则
-/// 半透明的线每行各画一截，圆头会在行的交界处叠出深色。
+/// `gitHistoryVSCode` 提交图线条粗细（逻辑像素，对齐 `svg.commitGraph path { stroke-width: 3; }`）。
+const LOG_GRAPH_LINE: f32 = 2.6;
+/// 平滑三次贝塞尔曲线的分段数（段）。
+const BEZIER_STEPS: usize = 14;
+/// `gitHistoryVSCode` 原生分支调色板（对齐 `BranchGraph/svgGenerator.ts` 的 `COLORS`）。
+const GITHISTORY_COLORS: [u32; 16] = [
+    0x4ea8ec, // 蓝（主线）
+    0xffab1d, // 琥珀
+    0x4eb94e, // 绿
+    0xf36e4a, // 珊瑚红
+    0xb25ade, // 紫
+    0x00d0f5, // 青
+    0xd75ab6, // 品红
+    0xfd8c25, // 橙
+    0x6575ff, // 靛蓝
+    0x51af23, // 草绿
+    0xfc6148, // 朱红
+    0x7b77e9, // 紫罗兰
+    0x8b9f1c, // 橄榄
+    0xd0b02f, // 金黄
+    0xd0853a, // 古铜
+    0xa4a4a4, // 灰
+];
+
+/// 返回 `gitHistoryVSCode` 风格的分支颜色。
+fn githistory_color(color: u8) -> Color {
+    Color::hex(GITHISTORY_COLORS[color as usize % GITHISTORY_COLORS.len()])
+}
+
+/// 生成 `gitHistoryVSCode` 风格的平滑三次贝塞尔分支/合并连线（对齐 `PathGenerator.connectToLineSmoothly`）。
+fn smooth_curve_edge(a: (f32, f32), b: (f32, f32)) -> Vec<Stroke> {
+    let dx = b.0 - a.0;
+    if dx.abs() < 0.5 {
+        return vec![Stroke::Line(a.0, a.1, b.0, b.1)];
+    }
+    let handle = (b.1 - a.1) * 0.55;
+    let p0 = a;
+    let p1 = (a.0, a.1 + handle);
+    let p2 = (b.0, b.1 - handle);
+    let p3 = b;
+    let eval = |t: f32| {
+        let u = 1.0 - t;
+        let x =
+            u * u * u * p0.0 + 3.0 * u * u * t * p1.0 + 3.0 * u * t * t * p2.0 + t * t * t * p3.0;
+        let y =
+            u * u * u * p0.1 + 3.0 * u * u * t * p1.1 + 3.0 * u * t * t * p2.1 + t * t * t * p3.1;
+        (x, y)
+    };
+    let mut out = Vec::with_capacity(BEZIER_STEPS);
+    let mut prev = p0;
+    for step in 1..=BEZIER_STEPS {
+        let next = eval(step as f32 / BEZIER_STEPS as f32);
+        out.push(Stroke::Line(prev.0, prev.1, next.0, next.1));
+        prev = next;
+    }
+    out
+}
+
+/// 一行的提交图（1:1 对齐 `gitHistoryVSCode` 的 `BranchGraph/svgGenerator.ts` 与 `main.css`）：
+/// 粗平滑贝塞尔彩色连线（`stroke-width: 2.6`），居中于双行提交卡片的白色描边暗心圆点。
 ///
 /// 坐标都是逻辑像素。圆点和线都可以点击，命中范围进 `hits` 时排在整行前面。
 pub(super) fn draw_graph_row(
@@ -94,14 +149,14 @@ pub(super) fn draw_graph_row(
     hits: &mut Vec<(Rect, LogTarget)>,
 ) {
     let p = app.palette;
-    let lh = app.fonts.line_height;
+    let lh = crate::app::git::log::LOG_ROW_HEIGHT;
     let lane_x = |lane: usize| x0 + lane.min(MAX_LANES - 1) as f32 * LANE + LANE / 2.0;
     let faded = |l: u32| line.is_some_and(|f| f != l);
     let row_bg = band.map_or(p.editor_bg, |band| {
         crate::view::workspace::panel::over(p.editor_bg, band)
     });
     let color = |c: u8, l: u32| {
-        let ink = lane_color(p, c);
+        let ink = githistory_color(c);
         if faded(l) {
             crate::view::workspace::panel::over(row_bg, ink.alpha(ink.a * GRAPH_FADED))
         } else {
@@ -114,7 +169,7 @@ pub(super) fn draw_graph_row(
     let halves = [(&graph.up, y, mid), (&graph.down, mid, y + lh)];
     let c = (lane_x(graph.lane), mid);
     let row_rect = Rect::new(clip.x, y, clip.w, lh).intersect(clip);
-    // 圆点的命中范围（逻辑像素，经验值）：比画出来的圆点大一圈，容易点中。
+    // 圆点的命中范围（逻辑像素）：比画出来的圆点大一圈，容易点中。
     let grab = Rect::new(c.0 - 6.0, c.1 - 6.0, 12.0, 12.0).intersect(row_rect);
     hits.push((grab, LogTarget::Row(row)));
     let mut line_hits = Vec::new();
@@ -122,7 +177,7 @@ pub(super) fn draw_graph_row(
         for (segments, top, bottom) in halves {
             let this_pass = |s: &&winc_core::graph::Segment| faded(s.line) == pass_faded;
             for s in segments.iter().filter(|s| !beyond(s)).filter(this_pass) {
-                // 长连线：中间不画，两头的末端画箭头（箭头这半行的线短一截，不碰到箭尖）。
+                // 长连线：中间不画，两头的末端画箭头。
                 let cut = (s.from == s.to)
                     .then(|| cuts.iter().find(|(lane, _)| *lane == s.to).map(|c| c.1))
                     .flatten();
@@ -141,11 +196,11 @@ pub(super) fn draw_graph_row(
                     }
                     _ => (top, bottom),
                 };
-                let edge = lane_edge((lane_x(s.from), top), (lane_x(s.to), bottom), upper);
+                let edge = smooth_curve_edge((lane_x(s.from), top), (lane_x(s.to), bottom));
                 let stroke_w = if line == Some(s.line) {
-                    GRAPH_LINE + 0.45
+                    LOG_GRAPH_LINE + 0.4
                 } else {
-                    GRAPH_LINE
+                    LOG_GRAPH_LINE
                 };
                 frame.stroke(&edge, stroke_w, color(s.color, s.line), clip);
                 for rect in edge_hit_rects(&edge) {
@@ -165,34 +220,29 @@ pub(super) fn draw_graph_row(
         .refs
         .iter()
         .any(|r| matches!(r, Ref::Head(_) | Ref::Detached));
-    let is_merge = commit.parents.len() > 1;
     let dot = |frame: &mut Frame<'_>, r: f32, fill| {
         frame.rect_clipped(Rect::new(c.0 - r, c.1 - r, 2.0 * r, 2.0 * r), fill, r, clip);
     };
     let ink = color(graph.color, graph.line);
-    // 圆点的半径（逻辑像素，经验值）：`HEAD` 最大，合并提交为外环加内芯的双层节点，普通提交为实心圆。
-    let r = if head {
-        4.0
-    } else if is_merge {
-        3.75
+    // 1:1 对齐 `gitHistoryVSCode` `main.css`: `svg.commitGraph circle { stroke: white; stroke-width: 0.1em; fill: #333; }`。
+    let r = if head { 5.0 } else { 4.4 };
+    if head || band.is_some() {
+        dot(frame, r + 2.2, ink.alpha(0.24));
+    }
+    let ring = if p.dark {
+        Color::hex(0xFFFFFF)
     } else {
-        3.25
+        Color::hex(0x333333)
     };
-    if band.is_some() {
-        dot(frame, r + 2.25, ink.alpha(0.22));
-    }
-    // 节点外围增加一圈与行底色相同的隔离环，使节点清晰悬浮在纵横交错的车道连线之上。
-    dot(frame, r + 1.15, row_bg);
-    dot(frame, r, ink);
-    // `HEAD` 是空心圆，圆环与线条同样粗细；合并提交是空心外环内嵌实心小圆点。
-    if head {
-        let hole = r - GRAPH_LINE;
-        dot(frame, hole, row_bg);
-    } else if is_merge {
-        let hole = r - 1.35;
-        dot(frame, hole, row_bg);
-        dot(frame, 1.15, ink);
-    }
+    let center_fill = if head {
+        ink
+    } else if p.dark {
+        Color::hex(0x333333)
+    } else {
+        Color::hex(0xFFFFFF)
+    };
+    dot(frame, r, ring);
+    dot(frame, (r - 1.4).max(2.0), center_fill);
 }
 
 /// 在 `tip` 画长连线末端的箭头：朝下（`down`）或朝上，两笔与线同样粗细。

@@ -102,11 +102,27 @@ fn each_side_lists_its_own_lines_without_padding() {
 }
 
 #[test]
+fn new_diff_view_shows_full_file_by_default() {
+    let old = numbered(40);
+    let new = old.replace("line 20\n", "line twenty\n");
+    let v = view(&old, &new);
+    assert!(!v.collapses(), "所有差异默认展示完整文件内容");
+    assert_eq!(v.row_count(), 40);
+    assert!(v.fold_rows.is_empty());
+    assert!(
+        !v.rows[RIGHT]
+            .iter()
+            .any(|r| matches!(r, SideRow::Fold { .. }))
+    );
+}
+
+#[test]
 #[allow(clippy::single_range_in_vec_init)]
 fn long_unchanged_runs_fold_and_expand() {
     let old = numbered(40);
     let new = old.replace("line 20\n", "line twenty\n");
     let mut v = view(&old, &new);
+    v.set_collapse(true, 0);
     // 开头折叠 0..16、显示 16..20；改动一行；结尾显示 21..25、折叠 25..40。
     assert_eq!(
         v.rows[RIGHT][0],
@@ -133,6 +149,7 @@ fn expanded_runs_fold_again_one_by_one_or_all_at_once() {
     let old = numbered(40);
     let new = old.replace("line 20\n", "line twenty\n");
     let mut v = view(&old, &new);
+    v.set_collapse(true, 0);
     let folded = v.row_count();
     assert!(v.open_folds.is_empty());
     assert_eq!(v.gap_of(RIGHT, 3), Some(0));
@@ -204,6 +221,7 @@ fn left_side_follows_the_right_around_hunks() {
 fn pinned_lines_stay_visible_with_only_their_context() {
     let old = numbered(80);
     let mut v = view(&old, &old.replace("line 40\n", "forty\n"));
+    v.set_collapse(true, 0);
     // 还原后整个文件没有改动，不折叠；之后修改相距较远的两处，使两处之间的未改动内容很长。
     v.set_new_text(Rope::from_str(
         &old.replace("line 5\n", "five\n")
@@ -231,6 +249,7 @@ fn pinned_lines_follow_edits_above_them() {
         .replace("line 5\n", "five\n")
         .replace("line 75\n", "seventy-five\n");
     let mut v = view(&old, &changed);
+    v.set_collapse(true, 0);
     v.pin_new(40..41);
     // 在上方插入两行：固定显示的行随之下移两行，仍然保持显示。
     let added = changed.replace("line 10\n", "line 10\nnew a\nnew b\n");
@@ -283,6 +302,7 @@ fn files_without_a_trailing_newline_line_up() {
 fn editing_the_right_side_rediffs_and_maps_lines() {
     let old = numbered(40);
     let mut v = view(&old, &old.replace("line 20\n", "line twenty\n"));
+    v.set_collapse(true, 0);
     assert_eq!(v.hunks.len(), 1);
     // 右侧第 2 行位于开头的折叠内，展开后才显示。
     assert!(matches!(
@@ -465,6 +485,7 @@ fn folded_rows_are_not_wrapped_and_a_rebuilt_view_keeps_wrapping() {
     let long = "word ".repeat(10);
     let lines: String = (0..40).map(|i| format!("{long}{i}\n")).collect();
     let mut first = view(&lines, &format!("{lines}added\n"));
+    first.set_collapse(true, 0);
     first.set_wrap(Some((20, 4)));
     assert!(matches!(first.rows[LEFT][0], SideRow::Fold { .. }));
 
@@ -543,7 +564,8 @@ fn marks_covering_every_visible_character_cover_the_line() {
 fn fold_rows_pair_the_same_gap_on_both_sides() {
     let old: String = (0..40).map(|i| format!("line {i}\n")).collect();
     let new = old.replace("line 20\n", "line 20\nextra\nmore\n");
-    let view = view(&old, &new);
+    let mut view = view(&old, &new);
+    view.set_collapse(true, 0);
     assert_eq!(view.fold_rows.len(), 2);
     let (left, right) = view.fold_rows[1];
     assert!(matches!(view.rows[LEFT][left], SideRow::Fold { .. }));

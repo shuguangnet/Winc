@@ -44,6 +44,9 @@ fn expanded_diff_pins_the_enclosing_scopes_for_each_version() {
 
     app.editor.active_mut().unwrap().scroll_line = 16.0;
     paint(&mut app);
+    assert_eq!(lines(&app), [(LEFT, 0), (LEFT, 1), (RIGHT, 0), (RIGHT, 2)]);
+    app.press_diff(DiffTarget::Collapse);
+    paint(&mut app);
     assert!(sticky(&app).is_empty(), "折叠模式不占用正文空间");
     app.press_diff(DiffTarget::Collapse);
     paint(&mut app);
@@ -128,7 +131,6 @@ fn sticky_worktree_diff(name: &str) -> (App, std::path::PathBuf) {
     app.editor
         .show_diff_in(None, "Example.java (worktree)", view);
     app.focus = Focus::Editor;
-    app.press_diff(DiffTarget::Collapse);
     paint(&mut app);
     (app, dir)
 }
@@ -187,7 +189,6 @@ fn unified_diffs_do_not_pin_headers_that_are_still_visible() {
         DiffSide::new("new", &new, None, language),
     );
     app.editor.show_diff("short.rs", view);
-    app.press_diff(DiffTarget::Collapse);
     paint(&mut app);
     let doc = app.editor.active_mut().unwrap();
     let view = doc.diff.as_deref_mut().unwrap();
@@ -765,8 +766,7 @@ fn clicks_and_keys_in_a_diff_scroll_it_and_touch_nothing_else() {
     };
     app.open_path(&root.join("src/main.rs"));
     app.run_action(Action::GitShowChanges);
-    // 展开未改动的内容：超出一屏，可以滚动。
-    app.press_diff(DiffTarget::Collapse);
+    // 默认展示完整内容：超出一屏，可以直接滚动。
     paint(&mut app);
     let scroll = app.editor.active().unwrap().scroll_line;
 
@@ -1212,6 +1212,8 @@ fn fold_commands_and_the_gutter_mark_refold_unchanged_runs_in_a_diff() {
     }
     app.run(winc_editor::Command::Insert("// 新的一行\n".into()));
     assert!(app.run_action(Action::GitShowChanges));
+    // 开启折叠模式后测试折叠与行号栏收起标记。
+    app.press_diff(DiffTarget::Collapse);
     let folds = |app: &App| {
         let view = app.editor.active().unwrap().diff.as_deref().unwrap();
         let folded = view.rows[RIGHT]
@@ -1259,6 +1261,7 @@ fn folding_an_unchanged_run_in_a_diff_is_applied_when_its_transition_ends() {
     }
     app.run(winc_editor::Command::Insert("// 新的一行\n".into()));
     assert!(app.run_action(Action::GitShowChanges));
+    app.press_diff(DiffTarget::Collapse);
     let open = |app: &App, gap| {
         app.editor
             .active()

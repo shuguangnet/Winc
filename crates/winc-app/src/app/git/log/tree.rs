@@ -126,20 +126,26 @@ impl App {
     /// 在差异标签中打开当前文件列表中的第 `file` 个文件（在后台读取）。
     pub(in crate::app::git) fn open_log_diff_file(&mut self, file: usize) {
         if let Some(tree) = &self.git.log.tree {
-            self.load_log_diff(Arc::clone(&tree.source), file);
+            let show_tree = tree.shown;
+            self.load_log_diff_with(Arc::clone(&tree.source), file, show_tree);
         }
     }
 
     /// 记录差异标签显示的是 `source` 的第 `file` 个文件，选中它并展开所在的目录。
     ///
     /// `source` 与当前文件列表相同时保留展开状态和滚动位置，否则换成新的文件列表。
-    pub(super) fn select_log_diff(&mut self, source: Arc<LogDiffSource>, file: usize) {
+    pub(super) fn select_log_diff(
+        &mut self,
+        source: Arc<LogDiffSource>,
+        file: usize,
+        show_tree: bool,
+    ) {
         let keep = (self.git.log.tree.as_ref())
             .is_some_and(|tree| Arc::ptr_eq(&tree.source, &source) || tree.source == source);
         if keep {
             if let Some(tree) = &mut self.git.log.tree {
                 tree.selected = file;
-                tree.shown = true;
+                tree.shown = show_tree;
             }
         } else {
             self.git.log.list = CommitState::browsing(&self.git.commit);
@@ -147,7 +153,7 @@ impl App {
             self.git.log.tree = Some(LogDiffTree {
                 source,
                 selected: file,
-                shown: true,
+                shown: show_tree,
             });
         }
         let Some(tree) = &self.git.log.tree else {

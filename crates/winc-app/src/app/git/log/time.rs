@@ -42,6 +42,7 @@ pub(crate) fn display_time(commit: &Commit, now: i64) -> String {
 ///
 /// 月、日补零、不加汉字，列宽才能对齐。几分钟前这类更细的说法只在详情的 [`display_time`]
 /// 里写。
+#[cfg(test)]
 pub(crate) fn list_time(commit: &Commit, now: i64) -> String {
     let local = commit.local.as_str();
     let (Some(date), Some(clock)) = (local.get(..10), local.get(11..16)) else {

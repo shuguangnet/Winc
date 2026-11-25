@@ -263,6 +263,15 @@ impl Editor {
         self.show_readonly(title, |id| Document::output(id, title, text))
     }
 
+    /// 在只读标签中显示某次历史提交中的文件内容（按 `file_name` 启用语法高亮），标签标题为 `title`。
+    ///
+    /// 已存在标题相同且没有对应文件的标签时复用该标签。返回标签序号（从 0 起）。
+    pub fn show_snapshot(&mut self, title: &str, file_name: &str, text: &str) -> usize {
+        self.show_readonly(title, |id| {
+            Document::readonly_file(id, title, file_name, text)
+        })
+    }
+
     /// 更新标题为 `title` 的输出标签，不切换标签：`more` 有值时接在末尾（光标和滚动位置不动），
     /// 否则把内容换成 `text`。没有这个标签时不做事，返回是否有这个标签。
     ///

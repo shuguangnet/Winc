@@ -269,6 +269,8 @@ pub fn log_commit_menu(enabled: bool, branch: &str, tags: &[&str]) -> Vec<MenuEn
         Separator,
         Item(LogCherryPick, enabled),
         Item(LogRevert, enabled),
+        Item(LogMerge, enabled),
+        Item(LogRebase, enabled),
         Item(LogInteractiveRebase, enabled),
         Submenu(
             t!("menu-log-reset-branch", branch = branch),
@@ -285,6 +287,7 @@ pub fn log_commit_menu(enabled: bool, branch: &str, tags: &[&str]) -> Vec<MenuEn
         Item(LogCopyMessage, true),
         Item(LogCopyPatch, true),
         Separator,
+        Item(LogSelectForCompare, true),
         Item(LogCompareRevision, true),
         Separator,
         Item(LogGoTo, true),

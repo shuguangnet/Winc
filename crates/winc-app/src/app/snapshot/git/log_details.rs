@@ -260,8 +260,12 @@ fn a_file_in_the_log_details_has_a_menu_and_a_full_path_tip() {
     app.git_refresh();
     app.run_action(Action::GitShowLog);
     paint(&mut app);
+    // 详情底部为全宽视图，长路径正常显示；切到窄左右分栏时路径截短并记入 `long_files`。
     let full = format!("{deep}/retry.rs");
     assert_eq!(app.log_file_tip(0).as_deref(), Some(full.as_str()));
+    app.git.log.side_by_side = true;
+    app.git.log.details_w = Some(300.0);
+    paint(&mut app);
     assert_eq!(app.git.log.long_files, [0]);
     assert!(Hover::Log(LogTarget::File(0)).has_tooltip());
 
@@ -318,8 +322,12 @@ fn text_in_the_log_details_can_be_selected_and_copied() {
     assert!(runs.len() >= 4, "说明、正文、作者、邮箱、时间都能选");
     assert_eq!(runs[0].text, "登录：失败三次后锁定");
 
-    // 从说明的第一个字按下，拖到正文那一行的行尾：说明和正文之间换行。
-    let (start, body) = (&runs[0], &runs[1]);
+    // 从说明的第一个字按下，拖到正文那一行的行尾（`gitHistoryVSCode` 布局中正文位于作者/邮箱/时间之下）。
+    let start = &runs[0];
+    let body = runs
+        .iter()
+        .find(|r| r.text.contains("锁定") && r.row.y > start.row.y)
+        .unwrap();
     let y0 = start.row.y + start.row.h / 2.0;
     app.on_mouse_move(start.x + 1.0, y0);
     assert_eq!(app.pointer.cursor_icon, CursorIcon::Text);
@@ -327,10 +335,14 @@ fn text_in_the_log_details_can_be_selected_and_copied() {
     let end = *body.edges.last().unwrap();
     app.on_mouse_move(end + 30.0, body.row.y + body.row.h / 2.0);
     app.on_mouse_up(MouseButton::Left);
-    let want = format!("{}\n{}", start.text, body.text);
-    assert_eq!(app.log_selected_text().as_deref(), Some(want.as_str()));
+    let selected_text = app.log_selected_text().unwrap();
+    assert!(selected_text.starts_with(&start.text));
+    assert!(selected_text.ends_with(&body.text));
     app.run_action(Action::Copy);
-    assert_eq!(app.clipboard.copied.as_deref(), Some(want.as_str()));
+    assert_eq!(
+        app.clipboard.copied.as_deref(),
+        Some(selected_text.as_str())
+    );
     paint(&mut app);
 
     // 双击一行选中整行（邮箱）；点空白处清掉，⌘C 回到复制提交号。
@@ -393,9 +405,9 @@ fn the_log_details_stop_scrolling_at_their_end() {
     assert!(!app.git.log.runs.is_empty());
     assert!(app.git.log.runs[0].row.y >= details.y);
 
-    // 窗口矮、详情放不下：最多滚到最后一行可见为止。
+    // 窗口矮、详情放不下：最多滚到最后一行可见为止（停在底部提示行上方）。
     app.frame.renderer =
-        Some(Renderer::offscreen(1280.0, 260.0, SCALE, app.palette.frame_bg, None, None).unwrap());
+        Some(Renderer::offscreen(1280.0, 380.0, SCALE, app.palette.frame_bg, None, None).unwrap());
     app.relayout();
     paint(&mut app);
     let details = app.log_parts().details;
@@ -510,31 +522,114 @@ fn refreshing_the_log_updates_the_repository_state_and_reports_it() {
     assert_eq!(app.log_file_order().len(), before_count);
 
     let first_file = app.log_file_order()[0];
-    let file_rect = app
-        .hits
-        .log
-        .iter()
-        .find(|(_, t)| *t == LogTarget::File(first_file))
-        .unwrap()
-        .0;
-    app.on_mouse_move(file_rect.x + 20.0, file_rect.y + 8.0);
+    // 1:1 `gitHistoryVSCode` `FileEntry`：每一文件行右侧始终直接展示 View / Workspace / Previous / History 四个显式链接。
+    for target in [
+        LogTarget::FileView(first_file),
+        LogTarget::FileCompareLocal(first_file),
+        LogTarget::FileComparePrevious(first_file),
+        LogTarget::FileHistory(first_file),
+    ] {
+        assert!(
+            app.hits.log.iter().any(|(_, t)| *t == target),
+            "缺少文件操作链接 {target:?}"
+        );
+    }
+
+    // 树形视图下提供「折叠/展开全部目录」按钮。
+    assert!(
+        app.hits
+            .log
+            .iter()
+            .any(|(_, t)| *t == LogTarget::FilesFoldAll)
+    );
+    app.press_log(LogTarget::FilesFoldAll);
+    paint(&mut app);
+    assert!(app.log_file_order().len() < before_count);
+    app.press_log(LogTarget::FilesFoldAll);
+    paint(&mut app);
+    assert_eq!(app.log_file_order().len(), before_count);
+
+    // 1:1 `gitHistoryVSCode` 提交行操作条与标题栏快捷按钮（CopyHash / Soft / Hard / +Tag / +Branch / More / JumpHead / LayoutToggle / CloseDetails）。
+    for target in [
+        LogTarget::JumpHead,
+        LogTarget::LayoutToggle,
+        LogTarget::CloseDetails,
+        LogTarget::CopyCommitText,
+        LogTarget::RowCopyHash(0),
+        LogTarget::RowResetSoft(0),
+        LogTarget::RowResetHard(0),
+        LogTarget::RowNewTag(0),
+        LogTarget::RowNewBranch(0),
+        LogTarget::RowMore(0),
+    ] {
+        assert!(
+            app.hits.log.iter().any(|(_, t)| *t == target),
+            "缺少快捷操作按钮 {target:?}"
+        );
+    }
+
+    // 「选择用于比较」+「与已选提交比较」（1:1 `gitHistoryVSCode` Compare workflow）。
+    let (oid0, oid1) = {
+        let v = app.editor.active().unwrap().log.as_deref().unwrap();
+        (v.commits[0].oid.clone(), v.commits[1].oid.clone())
+    };
+    app.run_log_commit_command(
+        crate::app::input::context_menu::MenuCommand::LogSelectForCompare,
+        &oid0,
+    );
+    assert_eq!(app.git.log.compare_selected.as_deref(), Some(oid0.as_str()));
+    app.run_log_commit_command(
+        crate::app::input::context_menu::MenuCommand::LogCompareSelected,
+        &oid1,
+    );
     paint(&mut app);
     assert!(
-        app.hits
-            .log
-            .iter()
-            .any(|(_, t)| *t == LogTarget::FileOpen(first_file))
+        app.editor
+            .active()
+            .and_then(|d| d.log.as_deref()?.compare.as_ref())
+            .is_some(),
+        "选择用于比较后可与另一提交进入比较模式"
     );
+
+    // 比较模式支持「交换两侧（⇄）」与「退出比较（×）」按钮。
+    app.press_log(LogTarget::Row(0));
+    app.pointer.modifiers = ModifiersState::SUPER;
+    app.press_log(LogTarget::Row(1));
+    app.pointer.modifiers = ModifiersState::empty();
+    paint(&mut app);
+    let before_pair = app
+        .editor
+        .active()
+        .and_then(|d| d.log.as_deref()?.compare.as_ref())
+        .map(|c| (c.from.clone(), c.to.clone()))
+        .expect("进入比较模式");
+    app.press_log(LogTarget::CompareSwap);
+    paint(&mut app);
+    let after_pair = app
+        .editor
+        .active()
+        .and_then(|d| d.log.as_deref()?.compare.as_ref())
+        .map(|c| (c.from.clone(), c.to.clone()))
+        .expect("交换后仍在比较模式");
+    assert_eq!(after_pair, (before_pair.1, before_pair.0));
+    app.press_log(LogTarget::CompareExit);
+    paint(&mut app);
     assert!(
-        app.hits
-            .log
-            .iter()
-            .any(|(_, t)| *t == LogTarget::FileCompareLocal(first_file))
+        app.editor
+            .active()
+            .and_then(|d| d.log.as_deref()?.compare.as_ref())
+            .is_none(),
+        "点击退出比较返回单提交详情"
     );
+
+    // 点击「查看此提交中的文件」打开带语法高亮的只读快照标签。
+    app.press_log(LogTarget::FileView(first_file));
+    paint(&mut app);
+    let snap = app.editor.active().expect("打开了历史快照标签");
+    assert!(snap.readonly && snap.diff.is_none() && snap.log.is_none());
     assert!(
-        app.hits
-            .log
-            .iter()
-            .any(|(_, t)| *t == LogTarget::FileHistory(first_file))
+        snap.title.as_deref().is_some_and(|t| t.contains(" @ ")),
+        "{:?}",
+        snap.title
     );
 }

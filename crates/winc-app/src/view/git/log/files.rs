@@ -1,19 +1,20 @@
-//! 详情栏里改动的文件和增删的行数。
+//! 详情栏改动文件列表（1:1 还原 `gitHistoryVSCode` `components/LogView/Commit/FileEntry/index.tsx`）。
 //!
-//! 平时由 [`draw_files`] 在详情一栏里逐个文件画出，每个文件一行，点击打开差异；可以按目录
-//! 分组（见 [`log_file_rows`]）。截短的路径记进 `long_files`，鼠标悬停时提示完整路径。
-//!
-//! 标题行右端的放大镜打开「查找文件」：详情底部的搜索框（[`draw_file_filter`]）按路径筛选
-//! 列出的文件；一个文件也不剩时写一行提示，点它清掉键入的文字。
+//! 每一行 `.diff-row` 包含：
+//! - 左侧：5 格增删色块（`.diff-stats`）+ 状态图标（`M/A/D/R`）+ 文件图标 + 完整相对路径
+//!   （当前文件历史高亮为 `#91b748` `.file-name-active`）；
+//! - 右侧：底色操作条（`.file-action`），始终显示 4 个显式蓝色链接按钮：
+//!   `[eye] View`、`[compare] Workspace`、`[compare] Previous`、`[history] History`
+//!   （窄屏左右分栏下自动紧凑为图标按钮，避免挤压文件路径）。
+//! - 详情右上角始终显示内联 `Find file` 输入框（[`draw_inline_file_filter`]）。
 
 use super::*;
 use crate::app::git::log::LogFileRow;
 
-/// 绘制改动的文件：标题行「N 个文件 +A −D」，下面一个文件一行（图标、按变化着色的名字、
-/// 淡色的目录、右端的增删统计），点击后打开差异。
-///
-/// 从 `(x, y)` 开始画，宽 `width`，返回画完后的 y 坐标；坐标都是逻辑像素。目录写不下而截短、
-/// 或改过名的文件记进 `long_files`：悬停时提示完整的路径。
+/// 1:1 对齐 `FileEntry/index.tsx`：`TotalDiffBlocks = 5`。
+const TOTAL_DIFF_BLOCKS: usize = 5;
+
+/// 绘制改动的文件列表（`.comitted-files`）。
 pub(super) fn draw_files(
     app: &App,
     frame: &mut Frame<'_>,
@@ -24,7 +25,6 @@ pub(super) fn draw_files(
 ) -> f32 {
     let p = app.palette;
     let rows = app.log_file_rows_of(files);
-    // 「查找文件」筛掉了文件时只统计留下来的，标题行写成「留下来的 / 全部」。
     let shown: Vec<usize> = rows
         .iter()
         .filter_map(|r| match r {
@@ -36,7 +36,8 @@ pub(super) fn draw_files(
         .iter()
         .filter_map(|i| files[*i].lines)
         .fold((0, 0), |(a, d), (x, y)| (a + x, d + y));
-    // 标题行高 22 逻辑像素（经验值），下面留 4 逻辑像素再开始画文件。
+
+    // 摘要标题行：「N 个文件 +A −D」。
     let row = Rect::new(x, y, width, 22.0);
     let title = match shown.len() == files.len() {
         true => t!("git-log-files-changed", count = files.len()),
@@ -65,32 +66,9 @@ pub(super) fn draw_files(
         p.git_deleted,
         area,
     );
-    // 标题行右端：平铺与按目录分组之间切换，图标是切换以后的样子（与提交视图一起切换）。
-    let flat = app.git.commit.flat();
-    let button = Rect::new(x + width - 24.0, y - 1.0, 24.0, 24.0);
-    let hovered = app.pointer.hover == Hover::Log(LogTarget::FilesLayout);
-    draw_button(frame, p, button, area, hovered, false);
-    let ink = if hovered { p.text } else { p.text_muted };
-    match flat {
-        true => icons::tree_view(frame, center(button), ink, area),
-        false => icons::list_view(frame, center(button), ink, area),
-    }
-    hits.push((button.intersect(area), LogTarget::FilesLayout));
-    // 它左边是「查找文件」：打开时详情底部出现搜索框，按路径筛选文件。
-    let find = Rect::new(button.x - 26.0, button.y, 24.0, 24.0);
-    let hovered = app.pointer.hover == Hover::Log(LogTarget::FindFiles);
-    let open = app.git.log.find_files;
-    draw_button(frame, p, find, area, hovered, open);
-    let ink = match (open, hovered) {
-        (true, _) => p.accent,
-        (false, true) => p.text,
-        (false, false) => p.text_muted,
-    };
-    icons::magnifier(frame, center(find), ink, area);
-    hits.push((find.intersect(area), LogTarget::FindFiles));
-    y += 26.0;
+    y += 24.0;
 
-    // 「查找文件」把文件全筛掉了：在标题下面写一行，点它清掉键入的文字。
+    // 「查找文件」把文件全筛掉了：写一行提示，点它清掉键入的文字。
     if rows.is_empty() && !files.is_empty() {
         let row = Rect::new(x, y, width, 24.0);
         if app.pointer.hover == Hover::Log(LogTarget::ClearFileFilter) {
@@ -109,8 +87,12 @@ pub(super) fn draw_files(
         return row.bottom();
     }
 
+    let flat = app.git.commit.flat();
     let root = app.git.root.as_deref();
-    // 预先统计按目录分组时每个目录标题下包含的文件数。
+    let history_file = app
+        .editor
+        .active()
+        .and_then(|d| d.log.as_deref()?.query.path.as_deref());
     let mut dir_counts: Vec<usize> = Vec::new();
     for entry in &rows {
         match entry {
@@ -125,6 +107,10 @@ pub(super) fn draw_files(
     let mut dir_idx = 0usize;
     let mut current_dir_collapsed = false;
     let mut current_dir_has_header = false;
+    // 宽度充足（≥ 520px，上下分栏模式永远满足）时显示带文字的 4 项 `FileEntry` 操作条；
+    // 窄屏左右分栏时紧凑为纯图标操作条。
+    let labeled_actions = width >= 500.0;
+
     for entry in rows {
         match entry {
             LogFileRow::Dir(dir) => {
@@ -132,7 +118,7 @@ pub(super) fn draw_files(
                 dir_idx += 1;
                 current_dir_has_header = true;
                 current_dir_collapsed = app.git.log.collapsed_dirs.contains(&dir);
-                let row = Rect::new(area.x + 6.0, y, area.w - 12.0, FILE_ROW);
+                let row = Rect::new(x, y, width, FILE_ROW);
                 y += FILE_ROW;
                 if row.bottom() < area.y || row.y > area.bottom() {
                     continue;
@@ -141,7 +127,6 @@ pub(super) fn draw_files(
                 if hovered {
                     frame.rect_clipped(row, p.hover, RADIUS_ROW, area);
                 }
-                // 目录标题：折叠箭头、打开/收起状态的文件夹图标、相对路径，右端显示该目录下的改动文件数。
                 let cy = row.y + row.h / 2.0;
                 let angle = if current_dir_collapsed {
                     0.0
@@ -162,7 +147,7 @@ pub(super) fn draw_files(
                 let count_w = frame.measure(FontKind::Ui, app.fonts.ui_small, &count_str) + 12.0;
                 let pill_h = 16.0;
                 let pill = Rect::new(
-                    row.right() - 8.0 - count_w,
+                    row.right() - 6.0 - count_w,
                     (row.y + (row.h - pill_h) / 2.0).round(),
                     count_w,
                     pill_h,
@@ -175,11 +160,9 @@ pub(super) fn draw_files(
                 hits.push((row.intersect(area), LogTarget::FileDir(idx)));
                 continue;
             }
-            LogFileRow::File(_) if current_dir_collapsed => {
-                continue;
-            }
+            LogFileRow::File(_) if current_dir_collapsed => continue,
             LogFileRow::File(i) => {
-                let row = Rect::new(area.x + 6.0, y, area.w - 12.0, FILE_ROW);
+                let row = Rect::new(x, y, width, FILE_ROW);
                 y += FILE_ROW;
                 if row.bottom() < area.y || row.y > area.bottom() {
                     continue;
@@ -189,17 +172,23 @@ pub(super) fn draw_files(
                     app.pointer.hover,
                     Hover::Log(
                         LogTarget::File(h)
-                            | LogTarget::FileOpen(h)
+                            | LogTarget::FileView(h)
                             | LogTarget::FileCompareLocal(h)
+                            | LogTarget::FileComparePrevious(h)
                             | LogTarget::FileHistory(h)
                     ) if h == i
                 );
-                // 键盘选中的文件（按 `→` 进入文件列表以后）铺选中的底色。
                 let chosen = app.git.log.file == Some(i);
                 if let Some(color) = row_color(p, chosen, app.focus == Focus::Editor, hovered) {
-                    frame.rect_clipped(row, color, RADIUS_ROW, area);
+                    frame.rect_clipped(row, color, 2.0, area);
                 }
-                // 按目录分组且有上级目录标题时，在目录折叠箭头正下方画一条缩进参考线。
+                // 对齐 `main.css:592-594`：每个 `.diff-row` 底部画 1px 分隔线。
+                frame.rect_clipped(
+                    Rect::new(row.x, row.bottom() - 1.0, row.w, 1.0),
+                    p.separator,
+                    0.0,
+                    area,
+                );
                 if !flat && current_dir_has_header {
                     controls::indent_guide(
                         frame,
@@ -211,82 +200,82 @@ pub(super) fn draw_files(
                         area,
                     );
                 }
-                let file_x = if flat {
-                    x
+
+                // 右侧始终可见的 `.file-action` 操作条（1:1 `FileEntry/index.tsx:91-134`）：
+                // `[eye] View` / `[compare] Workspace` / `[compare] Previous` / `[history] History`。
+                let action_left = draw_file_actions(
+                    app,
+                    frame,
+                    i,
+                    (row.right() - 2.0, row, labeled_actions),
+                    area,
+                    hits,
+                );
+
+                // 左侧依次：5 格 `.diff-stats` 色块 + 状态字母 + 文件图标 + 相对路径。
+                let mut cx = if flat {
+                    x + 4.0
                 } else {
                     x + crate::theme::TREE_INDENT
                 };
                 let cy = row.y + row.h / 2.0;
+                let left_clip =
+                    Rect::new(row.x, row.y, (action_left - row.x - 8.0).max(0.0), row.h)
+                        .intersect(area);
+
+                // 1. 5 格 `.diff-stats` 色块（1:1 `FileEntry/index.tsx:49-66`）。
+                cx = draw_diff_blocks(app, frame, file.lines, (cx, cy), left_clip) + 8.0;
+
+                // 2. 状态字母（M/A/D/R）。
+                let status_color = git_color(p, file.change);
+                let letter = file.change.letter().to_string();
+                let lw = frame.measure(FontKind::Ui, app.fonts.ui_small, &letter);
+                let status_slot = 13.0;
+                ui_text_small(
+                    frame,
+                    app,
+                    cx + (status_slot - lw) / 2.0,
+                    row,
+                    &letter,
+                    status_color,
+                    left_clip,
+                );
+                cx += status_slot + 3.0;
+
+                // 3. 文件图标 + 路径（平铺模式下显示完整相对路径，对齐 `FileEntry/index.tsx:88`；
+                //    当前文件历史高亮 `#91b748` `.file-name-active`）。
                 let name = winc_editor::display_name(&file.path).into_owned();
-                // 增删统计占行右端 96 逻辑像素（经验值）。
-                let stat_w = 96.0;
-                let clip = Rect::new(row.x, row.y, row.w - stat_w, row.h).intersect(area);
-                let icon_end = draw_file_icon(frame, p, (file_x, cy), &name, clip);
-                let color = git_color(p, file.change);
-                let end = ui_text(frame, app, icon_end + 6.0, row, &name, color, clip);
-                let dir = file
-                    .path
-                    .parent()
-                    .and_then(|d| root.and_then(|r| d.strip_prefix(r).ok()))
-                    .map(|d| d.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let dir = match (&file.from, file.change) {
+                let icon_end = draw_file_icon(frame, p, (cx, cy), &name, left_clip);
+                let rel_path = root
+                    .and_then(|r| file.path.strip_prefix(r).ok())
+                    .map(|rel| rel.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| name.clone());
+                let shown_text = match (&file.from, file.change) {
                     (Some(from), Change::Renamed) => {
-                        format!("← {}", winc_editor::display_name(from))
+                        let old_rel = root
+                            .and_then(|r| from.strip_prefix(r).ok())
+                            .map(|rel| rel.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| winc_editor::display_name(from).into_owned());
+                        format!("{old_rel} → {rel_path}")
                     }
-                    _ if !flat => String::new(),
-                    _ => dir,
+                    _ if !flat => name,
+                    _ => rel_path,
                 };
-                let room = (clip.right() - end - 12.0).max(0.0);
-                let full = frame.measure(FontKind::Ui, app.fonts.ui_small, &dir);
-                if full > room || file.from.is_some() {
+                let active_history = history_file.is_some_and(|h| h == file.path.as_path());
+                let path_color = if active_history {
+                    Color::hex(0x91B748)
+                } else {
+                    p.text
+                };
+                let text_x = icon_end + 6.0;
+                let room = (left_clip.right() - text_x - 4.0).max(0.0);
+                let full_w = frame.measure(FontKind::Ui, app.fonts.ui_small, &shown_text);
+                if full_w > room || file.from.is_some() {
                     long_files.push(i);
                 }
-                if !dir.is_empty() {
-                    let dir = truncate_end(frame, &dir, app.fonts.ui_small, room);
-                    ui_text_small(frame, app, end + 8.0, row, &dir, p.text_dim, clip);
-                }
-                if hovered {
-                    // 悬停在文件行上时，右端浮现「打开文件」「与工作区比较」「查看文件历史」三个快捷操作按钮。
-                    let btn_s = 22.0;
-                    let gap = 2.0;
-                    let btn_y = (row.y + (row.h - btn_s) / 2.0).round();
-                    let start_x = row.right() - 6.0 - 3.0 * btn_s - 2.0 * gap;
-                    let actions = [
-                        LogTarget::FileOpen(i),
-                        LogTarget::FileCompareLocal(i),
-                        LogTarget::FileHistory(i),
-                    ];
-                    for (k, target) in actions.into_iter().enumerate() {
-                        let btn =
-                            Rect::new(start_x + k as f32 * (btn_s + gap), btn_y, btn_s, btn_s);
-                        let on = app.pointer.hover == Hover::Log(target);
-                        draw_button(frame, p, btn, area, on, false);
-                        let ink = if on { p.text } else { p.text_muted };
-                        let (cx, cy) = center(btn);
-                        match target {
-                            LogTarget::FileOpen(_) => {
-                                let (w, h) = (10.0, 12.0);
-                                icons::document(
-                                    frame,
-                                    ((cx - w / 2.0).round(), (cy - h / 2.0).round()),
-                                    (w, h),
-                                    ink,
-                                    area,
-                                );
-                            }
-                            LogTarget::FileCompareLocal(_) => {
-                                icons::compare(frame, (cx, cy), ink, area);
-                            }
-                            _ => {
-                                icons::history(frame, (cx, cy), ink, area);
-                            }
-                        }
-                        hits.push((btn.intersect(area), target));
-                    }
-                } else {
-                    draw_stat(app, frame, file.lines, (row.right() - stat_w, row), area);
-                }
+                let shown = truncate_end(frame, &shown_text, app.fonts.ui_small, room);
+                ui_text_small(frame, app, text_x, row, &shown, path_color, left_clip);
+
                 hits.push((row.intersect(area), LogTarget::File(i)));
             }
         }
@@ -294,95 +283,184 @@ pub(super) fn draw_files(
     y
 }
 
-/// 绘制文件一行右边的增删统计：「+12 −3」，后面五格小方块按增删的比例上色。
+/// 绘制 1:1 `gitHistoryVSCode` 的 5 格 `.diff-stats` 色块（`FileEntry/index.tsx:49-66`）。
 ///
-/// 每格 6 逻辑像素见方，间距 1 逻辑像素，整组靠行右端对齐。
-fn draw_stat(
+/// 返回色块组右侧的 x 坐标。
+fn draw_diff_blocks(
     app: &App,
     frame: &mut Frame<'_>,
     lines: Option<(usize, usize)>,
-    (x, row): (f32, Rect),
+    (x, cy): (f32, f32),
     clip: Rect,
-) {
+) -> f32 {
     let p = app.palette;
-    let Some((added, removed)) = lines else {
-        ui_text_small(
-            frame,
-            app,
-            x + 30.0,
-            row,
-            t!("git-log-file-binary"),
-            p.text_dim,
-            clip,
-        );
-        return;
+    let block_s = 8.0;
+    let step = 9.0;
+    let (added_blocks, deleted_blocks) = match lines {
+        Some((a, d)) => {
+            let total = a + d;
+            if total == 0 {
+                (0, 0)
+            } else if total > TOTAL_DIFF_BLOCKS {
+                let ab = ((TOTAL_DIFF_BLOCKS * a) as f32 / total as f32).ceil() as usize;
+                let ab = ab.min(TOTAL_DIFF_BLOCKS);
+                (ab, TOTAL_DIFF_BLOCKS - ab)
+            } else {
+                (
+                    a.min(TOTAL_DIFF_BLOCKS),
+                    d.min(TOTAL_DIFF_BLOCKS - a.min(TOTAL_DIFF_BLOCKS)),
+                )
+            }
+        }
+        None => (0, 0),
     };
-    let text = format!("+{added} −{removed}");
-    let w = frame.measure(FontKind::Ui, app.fonts.ui_small, &text);
-    let blocks_x = row.right() - 5.0 * 7.0 - 6.0;
-    let end = ui_text_small(
-        frame,
-        app,
-        blocks_x - 8.0 - w,
-        row,
-        &format!("+{added}"),
-        p.git_added,
-        clip,
-    );
-    ui_text_small(
-        frame,
-        app,
-        end + 4.0,
-        row,
-        &format!("−{removed}"),
-        p.git_deleted,
-        clip,
-    );
-    let total = added + removed;
-    let green = if total == 0 {
-        0
-    } else {
-        ((added as f32 / total as f32) * 5.0).round() as usize
-    };
-    let red = if total == 0 { 0 } else { 5 - green };
-    let cy = row.y + row.h / 2.0;
-    for k in 0..5 {
-        let color = if k < green {
+    for k in 0..TOTAL_DIFF_BLOCKS {
+        let color = if k < added_blocks {
             p.git_added
-        } else if k < green + red {
+        } else if k < added_blocks + deleted_blocks {
             p.git_deleted
         } else {
             p.separator
         };
-        let block = Rect::new(blocks_x + k as f32 * 7.0, cy - 3.0, 6.0, 6.0);
-        frame.rect_clipped(block, color, 1.5, clip);
+        let rect = Rect::new(
+            x + k as f32 * step,
+            (cy - block_s / 2.0).round(),
+            block_s,
+            block_s,
+        );
+        frame.rect_clipped(rect, color, 1.0, clip);
+    }
+    x + TOTAL_DIFF_BLOCKS as f32 * step - 1.0
+}
+
+/// 在文件行右端绘制 1:1 `gitHistoryVSCode` `.file-action` 操作条：
+/// `[eye] View  [compare] Workspace  [compare] Previous  [history] History`。
+///
+/// 返回操作条的最左 x 坐标。
+fn draw_file_actions(
+    app: &App,
+    frame: &mut Frame<'_>,
+    i: usize,
+    (right_x, row, labeled): (f32, Rect, bool),
+    clip: Rect,
+    hits: &mut Vec<(Rect, LogTarget)>,
+) -> f32 {
+    let p = app.palette;
+    let size = app.fonts.ui_small * 0.92;
+    let strip_h = 20.0;
+    let y = (row.y + (row.h - strip_h) / 2.0).round();
+    let actions: [(LogTarget, &str); 4] = [
+        (LogTarget::FileView(i), t!("git-log-file-btn-view")),
+        (
+            LogTarget::FileCompareLocal(i),
+            t!("git-log-file-btn-workspace"),
+        ),
+        (
+            LogTarget::FileComparePrevious(i),
+            t!("git-log-file-btn-previous"),
+        ),
+        (LogTarget::FileHistory(i), t!("git-log-file-btn-history")),
+    ];
+
+    if !labeled {
+        // 窄屏紧凑图标条。
+        let btn_s = 20.0;
+        let gap = 2.0;
+        let total_w = 6.0 + actions.len() as f32 * btn_s + (actions.len() - 1) as f32 * gap + 4.0;
+        let x0 = right_x - total_w;
+        frame.rect_clipped(Rect::new(x0, y, total_w, strip_h), p.hover, 3.0, clip);
+        for (k, (target, _)) in actions.into_iter().enumerate() {
+            let btn = Rect::new(x0 + 3.0 + k as f32 * (btn_s + gap), y, btn_s, strip_h);
+            let on = app.pointer.hover == Hover::Log(target);
+            if on {
+                frame.rect_clipped(btn, p.selected_inactive, 2.0, clip);
+            }
+            let ink = if on { p.text } else { p.accent };
+            draw_file_action_icon(frame, target, center(btn), ink, clip);
+            hits.push((btn.intersect(clip), target));
+        }
+        return x0;
+    }
+
+    // 完整带图标+文字操作条（1:1 `FileEntry/index.tsx:91-134`）。
+    let icon_w = 15.0;
+    let item_gap = 12.0;
+    let mut item_ws = [0.0f32; 4];
+    let mut total_w = 14.0;
+    for (k, (_, label)) in actions.iter().enumerate() {
+        let w = icon_w + 4.0 + frame.measure(FontKind::Ui, size, label);
+        item_ws[k] = w;
+        total_w += w;
+        if k > 0 {
+            total_w += item_gap;
+        }
+    }
+    let x0 = right_x - total_w;
+    let strip = Rect::new(x0, y, total_w, strip_h);
+    frame.rect_clipped(strip, p.hover, 3.0, clip);
+
+    let (ua, ud) = (app.metrics.ui.ascent, app.metrics.ui.descent);
+    let uscale = size / app.fonts.ui;
+    let ubase = baseline_in(strip, ua * uscale, ud * uscale);
+    let mut cx = x0 + 7.0;
+    for (k, (target, label)) in actions.into_iter().enumerate() {
+        let w = item_ws[k];
+        let btn = Rect::new(cx - 3.0, y, w + 6.0, strip_h);
+        let on = app.pointer.hover == Hover::Log(target);
+        if on {
+            frame.rect_clipped(btn, p.selected_inactive, 2.0, clip);
+        }
+        let ink = if on { p.text } else { p.accent };
+        draw_file_action_icon(frame, target, (cx + 6.5, y + strip_h / 2.0), ink, clip);
+        frame.text(
+            FontKind::Ui,
+            size,
+            cx + icon_w + 3.0,
+            ubase,
+            label,
+            ink,
+            clip,
+        );
+        hits.push((btn.intersect(clip), target));
+        cx += w + item_gap;
+    }
+    x0
+}
+
+fn draw_file_action_icon(
+    frame: &mut Frame<'_>,
+    target: LogTarget,
+    pos: (f32, f32),
+    ink: Color,
+    clip: Rect,
+) {
+    match target {
+        LogTarget::FileView(_) => icons::eye(frame, pos, 0.72, ink, clip),
+        LogTarget::FileCompareLocal(_) | LogTarget::FileComparePrevious(_) => {
+            icons::compare(frame, pos, ink, clip);
+        }
+        _ => icons::history(frame, pos, ink, clip),
     }
 }
 
-/// 详情底部的「查找文件」搜索框：与快捷键提示占同一条，打开时替代提示行。
-///
-/// 放在底部而不是文件列表上方，是因为详情的内容整体滚动，跟着滚的搜索框会移出视野。键入的
-/// 文字按路径筛选选中提交改动的文件（见 [`App::log_file_rows_of`]）。
-pub(super) fn draw_file_filter(
+/// 绘制详情右上角始终可见的内联「Find file」输入框（1:1 对齐 `Commit/index.tsx:117-127`）。
+pub(super) fn draw_inline_file_filter(
     app: &mut App,
     frame: &mut Frame<'_>,
     parts: &LogParts,
     hits: &mut Vec<(Rect, LogTarget)>,
 ) {
     let p = app.palette;
-    let area = parts.details;
-    let row = Rect::new(area.x, area.bottom() - 30.0, area.w, 30.0);
-    frame.rect(Rect::new(area.x, row.y, area.w, 1.0), p.separator);
-    let rect = Rect::new(row.x + 10.0, row.y + 3.0, (row.w - 20.0).max(0.0), 24.0);
+    let rect = inline_file_filter_rect(app, parts);
     let focused = app.focus == Focus::LogFileFilter;
     field_box(app, frame, rect, p.editor_bg, focused, false);
     icons::magnifier(
         frame,
-        (rect.x + 14.0, rect.y + rect.h / 2.0),
+        (rect.x + 12.0, rect.y + rect.h / 2.0),
         p.text_dim,
         rect,
     );
-    let inside = Rect::new(rect.x + 26.0, rect.y, rect.w - 32.0, rect.h);
+    let inside = Rect::new(rect.x + 24.0, rect.y, (rect.w - 28.0).max(0.0), rect.h);
     let mut field = std::mem::take(&mut app.git.log.file_filter);
     let caret = draw_bar_field(
         app,

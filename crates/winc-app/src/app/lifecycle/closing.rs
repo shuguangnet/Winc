@@ -90,6 +90,9 @@ impl App {
     /// 处理关闭窗口：标题栏左侧的关闭按钮、`⇧⌘W`，以及没有标签时的 `⌘W`；开了关闭前确认
     /// 时先询问。
     pub(in crate::app) fn request_close_window(&mut self) {
+        if self.window.hide_after_fullscreen {
+            return;
+        }
         if !self.ask_before_close(CloseRequest::CloseWindow) {
             self.close_window_confirmed();
         }

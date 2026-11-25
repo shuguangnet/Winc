@@ -439,10 +439,10 @@ impl App {
             self.log_active() && self.log_branches_shown() >= 1.0,
             &self.git.log.branch_filter,
         ));
-        // 详情里的「查找文件」只在点开放大镜时绘制（见 `view::git::log::files`）。
+        // 详情里的「查找文件」在详情打开时始终显示（对齐 `gitHistoryVSCode` 的 `Find file` 输入框）。
         let log_files = Some((
             Focus::LogFileFilter,
-            self.log_active() && self.git.log.find_files,
+            self.log_active() && self.git.log.details_open,
             &self.git.log.file_filter,
         ));
 

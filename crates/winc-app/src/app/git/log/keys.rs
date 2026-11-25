@@ -29,7 +29,7 @@ impl App {
         if count == 0 {
             return;
         }
-        let page = ((self.log_parts().list.h - self.log_list_top()) / self.fonts.line_height)
+        let page = ((self.log_parts().list.h - self.log_list_top()) / LOG_ROW_HEIGHT)
             .floor()
             .max(2.0) as usize
             - 1;
@@ -96,7 +96,7 @@ impl App {
     /// 跳转前选中的提交记入后退历史（见 [`App::log_navigate`]）。目标行不可见时滚动到距列表
     /// 顶部约三分之一处，使目标前后的提交都可见。
     pub(super) fn jump_log_row(&mut self, row: usize) {
-        let visible = ((self.log_parts().list.h - self.log_list_top()) / self.fonts.line_height)
+        let visible = ((self.log_parts().list.h - self.log_list_top()) / LOG_ROW_HEIGHT)
             .floor()
             .max(1.0) as f64;
         let Some((from, shown)) = self.editor.active().and_then(|d| {

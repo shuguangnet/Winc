@@ -724,7 +724,8 @@ fn the_graph_buttons_run_fetch_pull_and_push() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-/// 展开的提交：文件就地列在这一行下面，点一个文件打开它的当前内容。
+/// 展开的提交：文件就地列在这一行下面，点一个文件直接打开该文件在该提交中的差异（同时保留侧栏提交图），
+/// 点悬停时的「打开文件」快捷按钮则打开工作区中的当前内容。
 #[test]
 fn the_expanded_files_open_in_the_editor() {
     let Some((mut app, root)) = git_app("git-commit-graph-files", false) else {
@@ -756,18 +757,42 @@ fn the_expanded_files_open_in_the_editor() {
         expanded > app.graph_scroll_max(rows),
         "展开时滚得更远：{expanded}"
     );
-    // 点第一个文件：编辑区打开它的当前内容。
-    let first = app.git.graph.commits[0].oid.clone();
-    app.expand_graph_commit(&first);
+    // 点第一个文件：编辑区直接打开该文件在此提交中的完整内容差异，并且侧栏提交图依然可见！
+    let first_oid = app.git.graph.commits[0].oid.clone();
+    app.expand_graph_commit(&first_oid);
     paint(&mut app);
     let first = files[0].path.clone();
     app.press_commit(CommitTarget::GraphFile(0));
+    paint(&mut app);
+    let active = app.editor.active().expect("点开的文件差异在编辑区打开");
+    let diff = active
+        .diff
+        .as_deref()
+        .expect("点击提交图文件直接打开差异视图");
+    assert!(!diff.collapses(), "提交图差异默认展示完整文件内容");
+    assert_eq!(diff.snapshot_path.as_deref(), Some(first.as_path()));
+    assert_eq!(app.git.graph.selected_file, Some(0));
+    assert!(
+        app.commit_parts().graph.is_some(),
+        "打开提交图文件差异后侧栏提交图仍保持可见"
+    );
+
+    // 点悬停的「打开文件」快捷按钮：打开工作区中的当前文件。
+    app.press_commit(CommitTarget::GraphFileOpen(0));
     let opened = app
         .editor
         .active()
         .and_then(|d| d.path.clone())
-        .expect("点开的文件在编辑区里打开");
+        .expect("点击打开文件按钮在编辑区打开当前文件");
     assert_eq!(opened, first);
+
+    // 点击标题行折叠/展开提交图，点击聚焦 HEAD 按钮自动展开并回到 HEAD。
+    app.press_commit(CommitTarget::GraphToggle);
+    assert!(app.git.graph.collapsed);
+    assert_eq!(app.commit_parts().graph.map(|r| r.h), Some(GRAPH_HEADER));
+    app.press_commit(CommitTarget::GraphFocusHead);
+    assert!(!app.git.graph.collapsed);
+    assert!(app.commit_parts().graph.is_some_and(|r| r.h > GRAPH_HEADER));
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -846,7 +871,7 @@ fn the_graph_right_click_menu_offers_the_log_actions() {
         app.git.graph.commits.first().map(|c| c.oid.as_str())
     );
 
-    // 悬停在展开的文件行上时，右端浮现「查看差异」快捷按钮，点击打开该提交下该文件的差异标签。
+    // 悬停在展开的文件行上时，右端浮现「打开当前文件」快捷按钮；点击文件行本身则直接打开差异标签。
     let file_rect = app
         .hits
         .commit
@@ -860,9 +885,9 @@ fn the_graph_right_click_menu_offers_the_log_actions() {
         app.hits
             .commit
             .iter()
-            .any(|(_, t)| *t == CommitTarget::GraphFileDiff(0))
+            .any(|(_, t)| *t == CommitTarget::GraphFileOpen(0))
     );
-    app.press_commit(CommitTarget::GraphFileDiff(0));
+    app.press_commit(CommitTarget::GraphFile(0));
     paint(&mut app);
     assert!(app.editor.active().is_some_and(|d| d.diff.is_some()));
 

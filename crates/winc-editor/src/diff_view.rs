@@ -340,7 +340,7 @@ pub struct DiffView {
 impl DiffView {
     /// 比较 `old` 和 `new` 两侧，创建差异视图并排列两侧的显示行。
     ///
-    /// 长段未改动的内容默认折叠。
+    /// 默认展示完整文件内容（不折叠未改动区域），用户仍可按需切换折叠未改动区域。
     pub fn new(old: DiffSide, new: DiffSide) -> DiffView {
         let Compared {
             hunks,
@@ -357,7 +357,7 @@ impl DiffView {
             fold_rows: Vec::new(),
             open_folds: Vec::new(),
             knots: Vec::new(),
-            collapse: true,
+            collapse: false,
             unified: false,
             wrap: None,
             focus: None,

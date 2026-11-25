@@ -140,34 +140,109 @@ pub(super) fn draw_tooltip(app: &App, frame: &mut Frame<'_>) {
                     _ => return,
                 }
             }
-            // 日志详情栏及标题栏按钮（复制提交号、刷新、树形/列表布局切换、查找文件、文件行内快捷按钮）。
+            // 日志详情栏及标题栏按钮（复制提交号、刷新、定位 HEAD、布局切换、提交行内按钮、引用徽章操作、文件行内快捷按钮）。
             Hover::Log(
                 target @ (crate::app::git::log::LogTarget::CopyOid
+                | crate::app::git::log::LogTarget::CopyCommitText
+                | crate::app::git::log::LogTarget::CloseDetails
+                | crate::app::git::log::LogTarget::DetailsFilterAuthor
                 | crate::app::git::log::LogTarget::Refresh
+                | crate::app::git::log::LogTarget::JumpHead
+                | crate::app::git::log::LogTarget::LayoutToggle
+                | crate::app::git::log::LogTarget::ClearSearch
                 | crate::app::git::log::LogTarget::FilesLayout
-                | crate::app::git::log::LogTarget::FindFiles
-                | crate::app::git::log::LogTarget::FileOpen(_)
+                | crate::app::git::log::LogTarget::FilesFoldAll
+                | crate::app::git::log::LogTarget::FileView(_)
                 | crate::app::git::log::LogTarget::FileCompareLocal(_)
-                | crate::app::git::log::LogTarget::FileHistory(_)),
+                | crate::app::git::log::LogTarget::FileComparePrevious(_)
+                | crate::app::git::log::LogTarget::FileHistory(_)
+                | crate::app::git::log::LogTarget::CompareSwap
+                | crate::app::git::log::LogTarget::CompareExit
+                | crate::app::git::log::LogTarget::RowFilterAuthor(_)
+                | crate::app::git::log::LogTarget::RowCopyHash(_)
+                | crate::app::git::log::LogTarget::RowResetSoft(_)
+                | crate::app::git::log::LogTarget::RowResetHard(_)
+                | crate::app::git::log::LogTarget::RowNewTag(_)
+                | crate::app::git::log::LogTarget::RowNewBranch(_)
+                | crate::app::git::log::LogTarget::RowMore(_)
+                | crate::app::git::log::LogTarget::RefCheckout(..)
+                | crate::app::git::log::LogTarget::RefRemove(..)),
             ) => {
                 use crate::app::git::log::LogTarget;
                 let Some(&(rect, _)) = app.hits.log.iter().find(|(_, t)| *t == target) else {
                     return;
                 };
-                let label = match target {
-                    LogTarget::CopyOid => t!("menu-log-copy-oid"),
-                    LogTarget::Refresh => t!("workspace-tip-git-refresh"),
-                    LogTarget::FilesLayout if app.git.commit.flat() => {
-                        t!("workspace-tip-show-as-tree")
+                let label: String = match target {
+                    LogTarget::CopyOid | LogTarget::RowCopyHash(_) => {
+                        t!("git-log-row-copy-hash").to_owned()
                     }
-                    LogTarget::FilesLayout => t!("workspace-tip-show-as-list"),
-                    LogTarget::FindFiles => t!("workspace-find-placeholder"),
-                    LogTarget::FileOpen(_) => t!("workspace-tip-open-file"),
-                    LogTarget::FileCompareLocal(_) => t!("menu-log-compare-with-local"),
-                    LogTarget::FileHistory(_) => t!("menu-git-file-history"),
+                    LogTarget::CopyCommitText => t!("git-log-copy-commit-text").to_owned(),
+                    LogTarget::CloseDetails => t!("git-log-close-details").to_owned(),
+                    LogTarget::DetailsFilterAuthor | LogTarget::RowFilterAuthor(_) => {
+                        t!("git-log-filter-by-author").to_owned()
+                    }
+                    LogTarget::Refresh => t!("workspace-tip-git-refresh").to_owned(),
+                    LogTarget::JumpHead => t!("git-graph-focus-head-tip").to_owned(),
+                    LogTarget::LayoutToggle => if app.git.log.side_by_side {
+                        t!("git-log-layout-toggle-stack")
+                    } else {
+                        t!("git-log-layout-toggle-side")
+                    }
+                    .to_owned(),
+                    LogTarget::ClearSearch => t!("git-log-clear-filter").to_owned(),
+                    LogTarget::FilesLayout if app.git.commit.flat() => {
+                        t!("workspace-tip-show-as-tree").to_owned()
+                    }
+                    LogTarget::FilesLayout => t!("workspace-tip-show-as-list").to_owned(),
+                    LogTarget::FilesFoldAll => t!("git-log-files-fold-all-tip").to_owned(),
+                    LogTarget::FileView(_) => t!("git-log-file-view-at-commit").to_owned(),
+                    LogTarget::FileCompareLocal(_) => t!("menu-log-compare-with-local").to_owned(),
+                    LogTarget::FileComparePrevious(_) => {
+                        t!("git-log-file-btn-previous-tip").to_owned()
+                    }
+                    LogTarget::FileHistory(_) => t!("menu-git-file-history").to_owned(),
+                    LogTarget::CompareSwap => t!("git-compare-swap").to_owned(),
+                    LogTarget::CompareExit => t!("git-log-hint-exit-compare").to_owned(),
+                    LogTarget::RowResetSoft(_) => t!("git-log-row-soft-tip").to_owned(),
+                    LogTarget::RowResetHard(_) => t!("git-log-row-hard-tip").to_owned(),
+                    LogTarget::RowNewTag(_) => t!("git-log-row-tag-tip").to_owned(),
+                    LogTarget::RowNewBranch(_) => t!("git-log-row-branch-tip").to_owned(),
+                    LogTarget::RowMore(_) => t!("git-log-row-more-tip").to_owned(),
+                    LogTarget::RefCheckout(row, ref_idx) => {
+                        let name = app
+                            .editor
+                            .active()
+                            .and_then(|d| d.log.as_deref()?.commits.get(row)?.refs.get(ref_idx))
+                            .and_then(|r| match r {
+                                winc_editor::git::Ref::Branch(n) => Some(n.as_str()),
+                                _ => None,
+                            });
+                        match name {
+                            Some(n) => t!("git-log-ref-checkout-tip", name = n),
+                            None => return,
+                        }
+                    }
+                    LogTarget::RefRemove(row, ref_idx) => {
+                        let r = app
+                            .editor
+                            .active()
+                            .and_then(|d| d.log.as_deref()?.commits.get(row)?.refs.get(ref_idx));
+                        match r {
+                            Some(winc_editor::git::Ref::Branch(n)) => {
+                                t!("git-log-ref-remove-branch-tip", name = n.as_str())
+                            }
+                            Some(winc_editor::git::Ref::Remote(n)) => {
+                                t!("git-log-ref-remove-remote-tip", name = n.as_str())
+                            }
+                            Some(winc_editor::git::Ref::Tag(n)) => {
+                                t!("git-log-ref-remove-tag-tip", name = n.as_str())
+                            }
+                            _ => return,
+                        }
+                    }
                     _ => return,
                 };
-                (rect, label.to_owned())
+                (rect, label)
             }
             // 日志列表中延伸到右端仍放不下的提交说明：提示整句。
             Hover::Log(crate::app::git::log::LogTarget::Row(i))

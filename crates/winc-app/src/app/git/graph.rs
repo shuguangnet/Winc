@@ -57,10 +57,14 @@ pub(crate) struct GraphPart {
     pub compare: Option<GraphCompare>,
     /// 展开的提交（完整的提交号）：点了它，它改动的文件就地列在这一行下面。
     pub expanded: Option<String>,
+    /// 展开的提交中当前选中（已打开差异）的文件下标。
+    pub selected_file: Option<usize>,
     /// 展开的提交改动的文件；还在读取、读取失败时为空。
     pub files: Vec<CommitFile>,
     /// 展开的提交的文件还在读取。
     pub files_loading: bool,
+    /// 提交图区域是否已通过点击标题行折叠（仅保留标题行）。
+    pub collapsed: bool,
     /// 读取文件的版本号：发出请求与返回不一致时丢弃结果。
     files_generation: u64,
     /// 上一次读取时的 `HEAD`（空仓库时是空串）：`HEAD` 不变的失败或空结果不重复读。
@@ -191,6 +195,7 @@ impl App {
                     && !self.git.graph.commits.iter().any(|c| &c.oid == oid)
                 {
                     self.git.graph.expanded = None;
+                    self.git.graph.selected_file = None;
                     self.git.graph.files = Vec::new();
                     self.git.graph.files_loading = false;
                 }
@@ -231,6 +236,7 @@ impl App {
             .and_then(|c| c.parents.first().cloned());
         let oid = oid.to_owned();
         self.git.graph.expanded = Some(oid.clone());
+        self.git.graph.selected_file = None;
         self.git.graph.files = Vec::new();
         self.git.graph.files_loading = true;
         self.git.graph.files_generation += 1;
@@ -253,8 +259,42 @@ impl App {
     /// 收起展开的文件列表。
     pub(in crate::app) fn collapse_graph_files(&mut self) {
         self.git.graph.expanded = None;
+        self.git.graph.selected_file = None;
         self.git.graph.files = Vec::new();
         self.git.graph.files_loading = false;
+        self.request_redraw();
+    }
+
+    /// 折叠或展开提交图区域本身（点击标题行左侧的「v 图表」）。
+    pub(in crate::app) fn toggle_graph_collapsed(&mut self) {
+        self.git.graph.collapsed = !self.git.graph.collapsed;
+        self.request_redraw();
+    }
+
+    /// 滚动提交图到 `HEAD` 所在提交（点击标题行工具栏中的 `◎` 按钮）；若提交图处于折叠状态则一并展开。
+    pub(in crate::app) fn focus_graph_head(&mut self) {
+        self.git.graph.collapsed = false;
+        let head_idx = self
+            .git
+            .graph
+            .commits
+            .iter()
+            .position(|c| {
+                c.refs.iter().any(|r| {
+                    matches!(
+                        r,
+                        winc_editor::git::Ref::Head(_) | winc_editor::git::Ref::Detached
+                    )
+                })
+            })
+            .unwrap_or(0);
+        if let Some(area) = self.commit_parts().graph {
+            let rows = graph_rows(area);
+            let target = (head_idx as f32 * GRAPH_ROW - rows.h * 0.25).max(0.0);
+            self.git.graph.scroll = target.min(self.graph_scroll_max(rows));
+        } else {
+            self.git.graph.scroll = 0.0;
+        }
         self.request_redraw();
     }
 
@@ -276,17 +316,22 @@ impl App {
         self.request_redraw();
     }
 
-    /// 点中展开列表里的第 `index` 个文件：文件在工作区里就直接打开它（当前内容），方便查看；
-    /// 已被删除的到日志里看这个提交的差异。
+    /// 点中展开列表里的第 `index` 个文件：直接打开该文件在此次提交中的差异（与 VS Code 行为一致），
+    /// 同时保持侧栏提交视图与提交图可见。
     pub(in crate::app) fn press_graph_file(&mut self, index: usize) {
+        self.open_graph_file_diff(index);
+    }
+
+    /// 点中展开文件行右端的「打开文件」快捷按钮：打开该文件在工作区中的当前内容。
+    pub(in crate::app) fn open_graph_file_workspace(&mut self, index: usize) {
         let Some(path) = self.git.graph.files.get(index).map(|f| f.path.clone()) else {
             return;
         };
         if self.may_be_file(&path) {
             self.open_path(&path);
             self.focus = Focus::Editor;
-        } else if let Some(oid) = self.git.graph.expanded.clone() {
-            self.show_log_commit(&oid, false);
+        } else {
+            self.flash(t!("git-commit-open-deleted"));
         }
         self.request_redraw();
     }
@@ -333,7 +378,7 @@ impl App {
         Some(format!("{}\n{meta}", commit.subject))
     }
 
-    /// 点中展开文件列表第 `index` 个文件行右端的「查看差异」按钮：在差异标签中打开该文件在此提交中的差异。
+    /// 打开展开文件列表第 `index` 个文件在此提交中的差异（保持侧栏提交视图与提交图可见）。
     pub(in crate::app) fn open_graph_file_diff(&mut self, index: usize) {
         let Some(root) = self.git.root.clone() else {
             return;
@@ -344,13 +389,14 @@ impl App {
         if index >= self.git.graph.files.len() {
             return;
         }
+        self.git.graph.selected_file = Some(index);
         let old = self
             .graph_commit(&oid)
             .and_then(|c| c.parents.first().cloned());
         let version = crate::app::git::log::short(&oid).to_owned();
         let files = self.git.graph.files.clone();
         self.diff.land = None;
-        self.load_log_diff(
+        self.load_log_diff_with(
             std::sync::Arc::new(crate::app::git::log::LogDiffSource {
                 root,
                 old,
@@ -359,6 +405,7 @@ impl App {
                 files,
             }),
             index,
+            false,
         );
         self.request_redraw();
     }
@@ -490,6 +537,12 @@ impl App {
     /// 提交图标题行上的按钮、对比控件的悬停提示：不能用的写明原因（没有远程仓库、正在做别的
     /// 操作）。
     pub(crate) fn graph_tip(&self, target: CommitTarget) -> String {
+        match target {
+            CommitTarget::GraphFocusHead => return t!("git-graph-focus-head-tip").to_owned(),
+            CommitTarget::GraphRefresh => return t!("workspace-tip-git-refresh").to_owned(),
+            CommitTarget::GraphMore => return t!("git-graph-open-history-tip").to_owned(),
+            _ => {}
+        }
         let upstream = self.graph_upstream();
         let busy = self.git.branch.running.as_deref();
         if target != CommitTarget::GraphCompare {
@@ -544,15 +597,32 @@ impl App {
         self.request_redraw();
     }
 
-    /// 提交图占的高度（逻辑像素）：拖过就是拖出来的高度，没拖过时是 [`GRAPH_HEIGHT`]。
-    ///
-    /// 侧栏太矮时不显示提交图，改动列表优先。
+    /// 为改动列表预留的最小高度：有待提交改动时保留 [`GRAPH_MIN_ROOM`]，无待提交改动时缩减到
+    /// 更紧凑的高度，确保提交区域始终清晰展示提交图。
+    fn graph_min_room(&self) -> f32 {
+        let has_changes = self
+            .git
+            .status
+            .as_ref()
+            .is_some_and(|s| !s.entries.is_empty());
+        if has_changes { GRAPH_MIN_ROOM } else { 72.0 }
+    }
+
+    /// 提交图占的高度（逻辑像素）：折叠时仅占一行标题（[`GRAPH_HEADER`]），展开时拖过就是拖出来
+    /// 的高度，没拖过时是 [`GRAPH_HEIGHT`]。
     pub(crate) fn graph_section_height(&self, room: f32) -> Option<f32> {
-        if self.git.graph.is_empty() || room < GRAPH_MIN_ROOM + GRAPH_MIN {
+        if self.git.graph.is_empty() {
+            return None;
+        }
+        if self.git.graph.collapsed {
+            return (room >= GRAPH_HEADER).then_some(GRAPH_HEADER);
+        }
+        let min_room = self.graph_min_room();
+        if room < min_room + GRAPH_MIN {
             return None;
         }
         let want = self.git.graph.height.unwrap_or(GRAPH_HEIGHT);
-        Some(want.clamp(GRAPH_MIN, room - GRAPH_MIN_ROOM))
+        Some(want.clamp(GRAPH_MIN, room - min_room))
     }
 
     /// 启动时按状态文件恢复提交图的高度。
@@ -590,7 +660,7 @@ impl App {
         };
         // 改动列表和提交图共用的那段空间：上沿上下移动时，列表按剩下的高度重排。
         let room = graph.y + graph.h - parts.list.y;
-        let limit = (room - GRAPH_MIN_ROOM).max(GRAPH_MIN);
+        let limit = (room - self.graph_min_room()).max(GRAPH_MIN);
         let height = (height - (y - start_y)).clamp(GRAPH_MIN, limit);
         if self.git.graph.height == Some(height) {
             return;

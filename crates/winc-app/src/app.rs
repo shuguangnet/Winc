@@ -152,6 +152,12 @@ pub enum UserEvent {
     /// 需要重新计算布局并重绘。
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     TrafficLightsMoved,
+    /// macOS 上窗口已完成进入原生全屏：若进入途中请求了关闭窗口，此刻开始退出全屏再隐藏。
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    FullscreenEntered,
+    /// macOS 上窗口已完成退出原生全屏：若之前因处于全屏而推迟隐藏窗口，此刻完成隐藏。
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    FullscreenExited,
     /// 询问是否将应用移到「应用程序」文件夹（见 `crate::macos::install`）；在窗口显示后处理，
     /// 提示框依附于窗口。
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -617,14 +623,32 @@ impl Hover {
                 | Hover::RulerChange(_)
                 | Hover::Log(
                     git::log::LogTarget::CopyOid
+                        | git::log::LogTarget::CopyCommitText
+                        | git::log::LogTarget::CloseDetails
+                        | git::log::LogTarget::DetailsFilterAuthor
                         | git::log::LogTarget::Refresh
+                        | git::log::LogTarget::JumpHead
+                        | git::log::LogTarget::LayoutToggle
+                        | git::log::LogTarget::ClearSearch
                         | git::log::LogTarget::FilesLayout
-                        | git::log::LogTarget::FindFiles
-                        | git::log::LogTarget::FileOpen(_)
+                        | git::log::LogTarget::FilesFoldAll
+                        | git::log::LogTarget::FileView(_)
                         | git::log::LogTarget::FileCompareLocal(_)
+                        | git::log::LogTarget::FileComparePrevious(_)
                         | git::log::LogTarget::FileHistory(_)
+                        | git::log::LogTarget::CompareSwap
+                        | git::log::LogTarget::CompareExit
                         | git::log::LogTarget::Avatar(_)
                         | git::log::LogTarget::Row(_)
+                        | git::log::LogTarget::RowFilterAuthor(_)
+                        | git::log::LogTarget::RowCopyHash(_)
+                        | git::log::LogTarget::RowResetSoft(_)
+                        | git::log::LogTarget::RowResetHard(_)
+                        | git::log::LogTarget::RowNewTag(_)
+                        | git::log::LogTarget::RowNewBranch(_)
+                        | git::log::LogTarget::RowMore(_)
+                        | git::log::LogTarget::RefCheckout(..)
+                        | git::log::LogTarget::RefRemove(..)
                         | git::log::LogTarget::File(_)
                         | git::log::LogTarget::Line(..)
                 )
@@ -651,10 +675,13 @@ impl Hover {
                         | CommitTarget::GraphRow(_)
                         | CommitTarget::GraphOpenLog(_)
                         | CommitTarget::GraphCopyOid(_)
-                        | CommitTarget::GraphFileDiff(_)
+                        | CommitTarget::GraphFileOpen(_)
+                        | CommitTarget::GraphFocusHead
                         | CommitTarget::GraphFetch
                         | CommitTarget::GraphPull
                         | CommitTarget::GraphPush
+                        | CommitTarget::GraphRefresh
+                        | CommitTarget::GraphMore
                         | CommitTarget::GraphCompare
                 )
                 | Hover::Diff(
@@ -739,10 +766,11 @@ enum Drag {
     PaneDivider {
         index: usize,
     },
-    /// 拖动日志标签中列表与详情之间的分隔线：按下时的横坐标、详情栏当时的宽度。
+    /// 拖动日志标签中列表与详情之间的分隔线：按下时的位置（横或纵）、详情栏当时的尺寸（宽或高）。
     LogDivider {
-        start_x: f32,
-        start_width: f32,
+        start_pos: f32,
+        start_size: f32,
+        horizontal: bool,
     },
     /// 上下拖动提交图的上沿，调整图占的高度（`App::drag_graph_resize`）。
     ///
@@ -770,6 +798,7 @@ enum Drag {
         row: Option<usize>,
     },
     /// 拖动日志列表里作者一列的左边缘：按下时的横坐标、作者一列当时的宽度。
+    #[allow(dead_code)]
     LogColumn {
         start_x: f32,
         start_width: f32,

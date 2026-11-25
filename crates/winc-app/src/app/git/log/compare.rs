@@ -30,6 +30,7 @@ impl App {
     /// 在当前日志标签里比较 `from`（旧）和 `to`（新），在后台取两者之间改了的文件。
     pub(super) fn start_log_compare(&mut self, from: String, to: String) {
         self.git.log.file = None;
+        self.git.log.details_open = true;
         let Some(root) = self.git.root.clone() else {
             return;
         };
@@ -123,6 +124,30 @@ impl App {
                 result,
             });
         });
+    }
+
+    /// 交换比较模式中的旧/新两侧版本，并重新读取改动的文件。
+    pub(super) fn swap_log_compare(&mut self) {
+        let Some((from, to, from_name, to_name)) = self.editor.active().and_then(|d| {
+            let c = d.log.as_deref()?.compare.as_ref()?;
+            Some((
+                c.to.clone(),
+                c.from.clone(),
+                c.to_name.clone(),
+                c.from_name.clone(),
+            ))
+        }) else {
+            return;
+        };
+        self.start_log_compare(from, to);
+        if let Some(c) = self
+            .editor
+            .active_mut()
+            .and_then(|d| d.log.as_deref_mut()?.compare.as_mut())
+        {
+            c.from_name = from_name;
+            c.to_name = to_name;
+        }
     }
 
     /// 退出比较，详情一栏回到选着的提交。

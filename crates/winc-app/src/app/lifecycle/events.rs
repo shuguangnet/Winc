@@ -192,9 +192,8 @@ impl ApplicationHandler<UserEvent> for App {
             let proxy = self.link.proxy.clone();
             self.link.traffic_lights = crate::macos::TrafficLights::new(
                 &window,
-                // 这三个按钮在卡片顶部的顶栏里垂直居中：顶栏上方有 `ISLAND_MARGIN` 的留白，
-                // 按钮按高度为留白两倍加顶栏高度的区域居中。
-                f64::from(2.0 * crate::theme::ISLAND_MARGIN + crate::theme::TOP_BAR),
+                // 红绿灯在顶部全宽标题栏中垂直居中。
+                f64::from(crate::theme::TITLE_BAR),
                 f64::from(crate::theme::TRAFFIC_LIGHT_LEFT),
                 move || {
                     if let Some(proxy) = &proxy {

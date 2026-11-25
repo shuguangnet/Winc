@@ -352,16 +352,16 @@ fn settings_keyboard_walks_every_item_and_adjusts() {
     }
     assert_eq!(app.settings.selected, Setting::LightTheme);
     app.settings_step(true);
-    assert_eq!(app.config.light_theme.as_deref(), Some("winc-paper"));
+    assert_eq!(app.config.light_theme.as_deref(), Some("winc-day"));
     assert_eq!(app.theme_choice, ThemeChoice::Light);
-    assert!(std::ptr::eq(app.palette, &crate::theme::WINC_PAPER));
+    assert!(std::ptr::eq(app.palette, &crate::theme::WINC_DAY));
     app.settings_move(true);
     assert_eq!(app.settings.selected, Setting::DarkTheme);
     app.settings_step(true);
-    assert_eq!(app.config.dark_theme.as_deref(), Some("winc-slate"));
+    assert_eq!(app.config.dark_theme.as_deref(), Some("vscode-dark-plus"));
     assert_eq!(app.theme_choice, ThemeChoice::Dark);
-    assert!(std::ptr::eq(app.palette, &crate::theme::WINC_SLATE));
-    for _ in 0..10 {
+    assert!(std::ptr::eq(app.palette, &crate::theme::VSCODE_DARK_PLUS));
+    for _ in 0..12 {
         app.settings_step(true);
     }
     let last = crate::theme::DARK_THEMES.last().unwrap().palette;
@@ -374,7 +374,7 @@ fn settings_keyboard_walks_every_item_and_adjusts() {
     for _ in 0..10 {
         app.settings_step(false);
     }
-    assert!(std::ptr::eq(app.palette, &crate::theme::WINC_NIGHT));
+    assert!(std::ptr::eq(app.palette, &crate::theme::VSCODE_DARK_MODERN));
 
     // 编辑器字号：→ 加 1；到达上限后不再变化，对应一侧的按钮变淡。
     for _ in 0..2 {
@@ -1002,7 +1002,6 @@ fn line_numbers_and_the_status_bar_can_be_hidden() {
     assert!(app.layout.editor.bottom() > editor_bottom);
     paint(&mut app);
     assert!(app.hits.status.is_empty());
-    assert!(app.hits.crumbs.is_empty());
 
     // 短提示本来显示在状态栏上，隐藏后改到右上角。
     app.flash("copied");
@@ -1208,7 +1207,7 @@ fn the_start_page_shows_only_first_time_setup_until_it_is_finished() {
     pick(&mut app, StartAction::Module(Module::Git));
     assert!(!app.git_enabled());
 
-    // 快捷键一页：各方案在前，默认选中 IDEA 方案；选 VS Code 后完成，写入配置。「返回」回到
+    // 快捷键一页：各方案在前，默认选中 VS Code 方案；选 IDEA 后完成，写入配置。「返回」回到
     // 上一页，选择保留。
     pick(&mut app, StartAction::SetupNext);
     assert!(app.setup.shown && app.setup.choice == 0);
@@ -1228,11 +1227,8 @@ fn the_start_page_shows_only_first_time_setup_until_it_is_finished() {
     assert_eq!(app.setup.choice, 1);
     pick(&mut app, StartAction::FinishSetup);
     assert!(!app.state.setup_pending);
-    assert_eq!(app.config.keymap.as_deref(), Some("vscode"));
-    assert_eq!(
-        crate::keymap::current_preset(),
-        crate::keymap::Preset::VsCode
-    );
+    assert_eq!(app.config.keymap.as_deref(), Some("idea"));
+    assert_eq!(crate::keymap::current_preset(), crate::keymap::Preset::Idea);
     assert!(has(&app, StartAction::Settings) && !has(&app, StartAction::FinishSetup));
     assert!(!has(&app, StartAction::Appearance(ThemeChoice::Auto)));
 

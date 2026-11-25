@@ -919,8 +919,9 @@ fn a_retracting_name_is_not_drawn_once_the_tree_is_hidden() {
         let (x, y) = ((x * SCALE) as usize, (y * SCALE) as usize);
         image.pixels[y * image.width as usize + x]
     };
-    let band = pixel(app.layout.tree.right() + 40.0, top + 4.0);
-    let below = pixel(app.layout.tree.right() + 40.0, top + 4.0 + TREE_ROW * 3.0);
+    let probe_y = app.layout.editor.y + 4.0;
+    let band = pixel(app.layout.tree.right() + 40.0, probe_y);
+    let below = pixel(app.layout.tree.right() + 40.0, probe_y + TREE_ROW * 3.0);
     assert_eq!(band, below);
 }
 

@@ -58,6 +58,12 @@ fn draw_panel(app: &mut App, frame: &mut Frame<'_>) {
     let p = app.palette;
     let focused = app.focus == Focus::Terminal;
     frame.rect(card, p.editor_bg);
+    // 贴边工作台中用 1px 细边线将终端面板与编辑区分隔开。
+    if card.x > app.layout.editor.x {
+        frame.rect(Rect::new(card.x, card.y, 1.0, card.h), p.border);
+    } else {
+        frame.rect(Rect::new(card.x, card.y, card.w, 1.0), p.border);
+    }
     app.note_terminal_tabs();
     draw_header(app, frame, card);
     let opacity = app
@@ -453,20 +459,9 @@ fn draw_header(app: &mut App, frame: &mut Frame<'_>, card: Rect) {
     let p = app.palette;
     let header = Rect::new(card.x, card.y, card.w, header_height(card));
     let y = card.y + (header.h - TAB_H) / 2.0;
-    // 面板在右边时标签栏在顶栏那一行，右端让给窗口按钮（由应用绘制标题栏时）；最大化、侧栏
-    // 收起时面板伸到窗口左边，左端让给侧栏开关（macOS 上还有它左边的红绿灯）。
-    let toggle = app.layout.sidebar_button;
-    let left = if toggle.y < header.bottom() && toggle.right() > card.x {
-        (card.x + tab_inset(card)).max(toggle.right() + TAB_GAP)
-    } else {
-        card.x + tab_inset(card)
-    };
-    let controls = app.layout.controls;
-    let end = if controls.w > 0.0 && controls.y < header.bottom() && controls.x < header.right() {
-        controls.x - TAB_GAP
-    } else {
-        header.right()
-    };
+    // 标题栏（含布局按钮和窗口按钮）独立于 `0..TITLE_BAR`，终端标签栏始终占据完整宽度。
+    let left = card.x + tab_inset(card);
+    let end = header.right();
     // 按钮的尺寸和间距与编辑区标签栏相同；标签放不下时「+」紧贴右边的按钮。
     let button_y = card.y + (header.h - BUTTON) / 2.0;
     let hide = Rect::new(end - BUTTONS_END - BUTTON, button_y, BUTTON, BUTTON);

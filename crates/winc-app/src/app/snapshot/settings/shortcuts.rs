@@ -41,6 +41,7 @@ fn show_row(app: &mut App, action: Action) {
 fn keys_page() -> App {
     crate::keymap::install(Preset::Idea, &Custom::default());
     let mut app = blank_app(false);
+    app.config.keymap = Some("idea".to_owned());
     app.open_settings();
     click_part(&mut app, SettingsPart::Page(SettingsPage::Keys));
     paint(&mut app);
@@ -55,11 +56,11 @@ fn the_keymap_menu_switches_presets() {
     let menu = app.overlays.context_menu.as_ref().expect("键位方案菜单");
     assert_eq!(menu.target, MenuTarget::Keymap);
     let entries = menu_commands(&app);
-    assert_eq!(entries[0], (MenuCommand::KeymapPreset(Preset::Idea), true));
     assert_eq!(
-        entries[1],
+        entries[0],
         (MenuCommand::KeymapPreset(Preset::VsCode), true)
     );
+    assert_eq!(entries[1], (MenuCommand::KeymapPreset(Preset::Idea), true));
     assert_eq!(
         entries.last(),
         Some(&(MenuCommand::ResetAllShortcuts, false))

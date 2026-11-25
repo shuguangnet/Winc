@@ -3,10 +3,14 @@
 use super::*;
 use crate::app::TabHit;
 
-/// 绘制顶栏：底色与编辑区相同，与下方的代码区之间不绘制分隔线。
-///
-/// 标签为胶囊形状，一直排到顶栏右端；右端不放按钮。
+/// 绘制标签栏槽位底色、底部 1px 分隔线及各贴边直角标签。
 pub(in crate::view) fn draw_top_bar(app: &mut App, frame: &mut Frame<'_>) {
+    let bar = app.layout.top_bar;
+    if bar.w > 0.0 && bar.h > 0.0 {
+        let p = app.palette;
+        frame.rect(bar, p.tab_bar_bg);
+        frame.rect(Rect::new(bar.x, bar.bottom() - 1.0, bar.w, 1.0), p.border);
+    }
     draw_tabs(app, frame);
 }
 
@@ -150,7 +154,8 @@ const TAB_LIST_GAP: f32 = 2.0;
 fn draw_tabs(app: &mut App, frame: &mut Frame<'_>) {
     let p = app.palette;
     let area = app.layout.tabs;
-    let top = area.y + (area.h - TAB_HEIGHT) / 2.0;
+    let tab_h = area.h;
+    let top = area.y;
     let button_y = area.y + (area.h - BUTTON) / 2.0;
 
     app.note_opened_tabs();
@@ -171,7 +176,7 @@ fn draw_tabs(app: &mut App, frame: &mut Frame<'_>) {
     // 第 `i` 个标签的左边缘相对第一个标签的偏移；最后一项是全部标签排开的总宽度。
     let offsets: Vec<f32> = std::iter::once(0.0)
         .chain(labels.iter().scan(0.0, |x, l| {
-            *x += l.width + TAB_GAP;
+            *x += l.width + EDITOR_TAB_GAP;
             Some(*x)
         }))
         .collect();
@@ -199,7 +204,7 @@ fn draw_tabs(app: &mut App, frame: &mut Frame<'_>) {
             .map_or(0.0, |d| app.tab_slide(d.id));
         let ghosts = app.tabs.closing.iter().map(|g| {
             let shrink = g.width * (1.0 - g.clock.progress());
-            g.left + shrink + TAB_GAP - content
+            g.left + shrink + EDITOR_TAB_GAP - content
         });
         ghosts.fold(last, f32::max).max(0.0)
     };
@@ -267,7 +272,7 @@ fn draw_tabs(app: &mut App, frame: &mut Frame<'_>) {
         if opacity <= 0.0 {
             continue;
         }
-        let tab = Rect::new(view.x - scroll + ghost.left, top, ghost.width, TAB_HEIGHT);
+        let tab = Rect::new(view.x - scroll + ghost.left, top, ghost.width, tab_h);
         let clip = tab.intersect(view);
         frame.with_opacity(opacity, |frame| {
             if ghost.active {
@@ -289,7 +294,7 @@ fn draw_tabs(app: &mut App, frame: &mut Frame<'_>) {
 
     for (index, (doc, label)) in app.editor.tabs().iter().zip(&labels).enumerate() {
         let slot = x;
-        x += label.width + TAB_GAP;
+        x += label.width + EDITOR_TAB_GAP;
 
         // 被拖动的标签跟随鼠标，最后绘制，压在其他标签之上；其他标签刚让位时仍在滑动动画中。
         let left = match dragged {
@@ -299,7 +304,7 @@ fn draw_tabs(app: &mut App, frame: &mut Frame<'_>) {
             }
             _ => slot + app.tab_slide(doc.id),
         };
-        let tab = Rect::new(left, top, label.width, TAB_HEIGHT);
+        let tab = Rect::new(left, top, label.width, tab_h);
         if tab.right() < view.x || tab.x > view.right() {
             continue;
         }
@@ -307,8 +312,8 @@ fn draw_tabs(app: &mut App, frame: &mut Frame<'_>) {
         // 竖线跟随右侧标签绘制在其左边的间距正中，让位动画中随标签一起滑动。
         if index > 0 && plain(index) && plain(index - 1) {
             let line = Rect::new(
-                left - TAB_GAP / 2.0 - 0.5,
-                top + (TAB_HEIGHT - TAB_DIVIDER) / 2.0,
+                left - EDITOR_TAB_GAP / 2.0 - 0.5,
+                top + (tab_h - TAB_DIVIDER) / 2.0,
                 1.0,
                 TAB_DIVIDER,
             );
@@ -332,11 +337,11 @@ fn draw_tabs(app: &mut App, frame: &mut Frame<'_>) {
     }
 
     if let Some((index, left)) = lifted {
-        let tab = Rect::new(left, top, labels[index].width, TAB_HEIGHT);
+        let tab = Rect::new(left, top, labels[index].width, tab_h);
         hits.push(draw_tab(app, frame, index, tab, &labels[index], view));
     }
 
-    let fade_h = Rect::new(view.x, top, TAB_FADE, TAB_HEIGHT);
+    let fade_h = Rect::new(view.x, top, TAB_FADE, tab_h);
 
     // 渐隐的强度随离两端的距离在 `TAB_FADE` 内线性变化，滚到两端附近时不突然出现或消失。
     let left = (scroll / TAB_FADE).min(1.0);
@@ -346,7 +351,7 @@ fn draw_tabs(app: &mut App, frame: &mut Frame<'_>) {
 
     let rest = ((app.tabs.max_scroll() - scroll) / TAB_FADE).min(1.0);
     if rest > 0.0 {
-        let right = Rect::new(view.right() - TAB_FADE, top, TAB_FADE, TAB_HEIGHT);
+        let right = Rect::new(view.right() - TAB_FADE, top, TAB_FADE, tab_h);
         frame.with_opacity(rest, |frame| fade(frame, right, p.editor_bg, false));
     }
 
@@ -460,9 +465,19 @@ fn draw_tab(
     // 不在前台的窗格的当前标签：底色同样一半深，文字淡一些，看得出哪个窗格在前台。
     let behind = active && app.panes.drawing_background;
 
-    // 当前的是一块带细边的底（颜色由主题定：带一点强调色，其余是凸起的一块灰），悬停只铺浅色。
-    if marked || behind {
+    // VS Code Modern 风格贴边标签：激活标签与编辑区无缝连通并带顶部 2px 强调色条；
+    // 非前台窗格的激活标签使用柔和底色与细灰顶线，便于区分焦点窗格。
+    if marked {
         frame.rect_clipped(tab, p.tab_fill.alpha(p.tab_fill.a * 0.5), RADIUS_TAB, view);
+    } else if behind {
+        frame.rect_clipped(tab, p.editor_bg, RADIUS_TAB, view);
+        frame.rect_clipped(Rect::new(tab.x, tab.y, tab.w, 1.0), p.border, 0.0, view);
+        frame.rect_clipped(
+            Rect::new(tab.right() - 1.0, tab.y, 1.0, tab.h),
+            p.border,
+            0.0,
+            view,
+        );
     } else {
         draw_tab_fill(frame, p, tab, active, hovered, view);
     }
@@ -516,10 +531,10 @@ fn draw_tab(
     }
 }
 
-/// 标签的底（编辑区和终端面板的标签共用）：当前标签是一块实底（`tab_fill`）加一圈细描边（`tab_edge`），
-/// 颜色由主题定，带一点强调色；悬停只铺浅色。
+/// 标签的底（编辑区和终端面板的标签共用）：VS Code Modern 风格贴边直角标签。
 ///
-/// 选中与悬停的区分依靠带细边的实底与浅色，而非两种相近的灰色。
+/// 激活标签铺满 `editor_bg` 并覆盖底部分隔线，顶部绘制 2px 强调色高亮条，右侧绘制 1px 分隔线；
+/// 非激活标签悬停时铺柔和底色，底部保留 1px 分隔线，右侧绘制 1px 分隔线。
 pub(in crate::view) fn draw_tab_fill(
     frame: &mut Frame<'_>,
     p: &Palette,
@@ -529,11 +544,31 @@ pub(in crate::view) fn draw_tab_fill(
     clip: Rect,
 ) {
     if active {
-        frame.rect_clipped(tab, p.tab_edge, RADIUS_TAB, clip);
-        let inner = tab.inset(1.0, 1.0);
-        frame.rect_clipped(inner, p.tab_fill, (RADIUS_TAB - 1.0).max(0.0), clip);
-    } else if hovered {
-        frame.rect_clipped(tab, p.hover, RADIUS_TAB, clip);
+        frame.rect_clipped(tab, p.editor_bg, RADIUS_TAB, clip);
+        // VS Code Modern 标志性顶部 2px 强调色高亮条。
+        frame.rect_clipped(Rect::new(tab.x, tab.y, tab.w, 2.0), p.accent, 0.0, clip);
+        frame.rect_clipped(
+            Rect::new(tab.right() - 1.0, tab.y, 1.0, tab.h),
+            p.border,
+            0.0,
+            clip,
+        );
+    } else {
+        if hovered {
+            frame.rect_clipped(tab, p.hover, RADIUS_TAB, clip);
+        }
+        frame.rect_clipped(
+            Rect::new(tab.right() - 1.0, tab.y, 1.0, tab.h),
+            p.border,
+            0.0,
+            clip,
+        );
+        frame.rect_clipped(
+            Rect::new(tab.x, tab.bottom() - 1.0, tab.w, 1.0),
+            p.border,
+            0.0,
+            clip,
+        );
     }
 }
 

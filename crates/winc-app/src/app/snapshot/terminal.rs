@@ -257,10 +257,7 @@ fn clicks_move_the_focus_and_the_gap_resizes_the_panel() {
     app.on_mouse_move(x, 0.0);
     assert!(app.terminal.maximized);
     assert_eq!(app.layout.editor.w, 0.0);
-    assert_eq!(
-        app.layout.terminal.y,
-        app.layout.window.y + crate::theme::ISLAND_MARGIN
-    );
+    assert_eq!(app.layout.terminal.y, app.layout.title_bar.bottom());
     assert_eq!(app.layout.terminal.bottom(), column_bottom);
     // 同一次拖动中往回拖：松开吸附，从最小高度接着拖。
     app.on_mouse_move(x, y + 100.0);
@@ -1323,7 +1320,10 @@ fn a_maximized_terminal_on_the_right_leaves_the_sidebar_toggle_usable() {
         .find(|(_, hit)| matches!(hit, terminal::HeaderHit::Tab(..)))
         .map(|(rect, _)| *rect)
         .unwrap();
-    assert!(tab.x >= toggle.right(), "标签让开开关");
+    assert!(
+        toggle.bottom() <= tab.y,
+        "开关位于标题栏内，与下方终端标签互不遮挡"
+    );
     click(
         &mut app,
         (toggle.x + toggle.w / 2.0, toggle.y + toggle.h / 2.0),

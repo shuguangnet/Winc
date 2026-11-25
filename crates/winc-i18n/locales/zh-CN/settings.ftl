@@ -232,6 +232,9 @@ settings-theme-used-when-light = 系统使用浅色外观时采用此主题
 
 ## 主题名称。
 
+settings-theme-name-vscode-light-modern = VS Code 浅色现代
+settings-theme-name-vscode-dark-modern = VS Code 深色现代
+settings-theme-name-vscode-dark-plus = VS Code Dark+
 settings-theme-name-winc-day = Winc 晴昼
 settings-theme-name-winc-paper = Winc 宣纸
 settings-theme-name-sky = 晴空

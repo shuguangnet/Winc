@@ -6,11 +6,13 @@
 mod kinds;
 mod palettes;
 mod veil;
+mod vscode;
 mod winc;
 
 pub use kinds::*;
 pub use palettes::*;
 pub use veil::*;
+pub use vscode::*;
 pub use winc::*;
 
 use std::borrow::Cow;
@@ -46,11 +48,21 @@ pub struct Palette {
     pub dark: bool,
 
     // 底色
-    /// 窗口底色：侧栏、编辑区两张卡片四周和之间的留白，以及状态栏。
+    /// 窗口框架底色。
     pub frame_bg: Color,
-    /// 侧栏卡片的底色；所有配色里都与编辑区相同。
+    /// 顶部标题栏底色（VS Code Title Bar）。
+    pub title_bar_bg: Color,
+    /// 最左侧垂直活动栏底色（VS Code Activity Bar）。
+    pub activity_bar_bg: Color,
+    /// 侧栏底色（VS Code Primary Side Bar，与编辑区区分明度）。
     pub sidebar_bg: Color,
-    /// 编辑区卡片的底色，代码和差异都画在此颜色上。
+    /// 编辑区标签栏槽位底色（VS Code Editor Group Header / Tab Well）。
+    pub tab_bar_bg: Color,
+    /// 底部状态栏底色（VS Code Status Bar）。
+    pub status_bar_bg: Color,
+    /// 底部状态栏默认文字/图标颜色（经典 Dark+ 蓝底状态栏为白色）。
+    pub status_bar_fg: Color,
+    /// 编辑区底色，代码和差异都画在此颜色上。
     pub editor_bg: Color,
     /// 浮层底色：快速打开、菜单和设置卡片。
     pub popup_bg: Color,
@@ -412,13 +424,18 @@ impl Palette {
         Palette {
             dark,
             frame_bg: t.frame,
-            sidebar_bg: t.card,
+            title_bar_bg: t.frame,
+            activity_bar_bg: t.frame,
+            sidebar_bg: t.frame,
+            tab_bar_bg: t.frame,
+            status_bar_bg: t.frame,
+            status_bar_fg: t.text_muted,
             editor_bg: t.card,
             popup_bg: t.popup,
             tab_fill,
             tab_edge,
             group_bg: mix(ink, t.card, if dark { 0.035 } else { 0.03 }),
-            border: mix(ink, t.card, if dark { 0.07 } else { 0.09 }),
+            border: mix(ink, t.card, 0.11),
             popup_border: ink.alpha(if dark { 0.09 } else { 0.08 }),
             shadow: BLACK.alpha(if dark { 0.5 } else { 0.14 }),
             tab_divider: ink.alpha(if dark { 0.08 } else { 0.1 }),
@@ -499,6 +516,25 @@ impl Palette {
             syntax_property: t.syntax[8],
             ansi: t.ansi,
         }
+    }
+
+    /// 覆盖工作台各框架表面颜色（如 VS Code Dark+ 的独立活动栏与亮蓝状态栏）。
+    pub(super) const fn with_chrome(
+        mut self,
+        title_bar_bg: Color,
+        activity_bar_bg: Color,
+        sidebar_bg: Color,
+        tab_bar_bg: Color,
+        status_bar_bg: Color,
+        status_bar_fg: Color,
+    ) -> Self {
+        self.title_bar_bg = title_bar_bg;
+        self.activity_bar_bg = activity_bar_bg;
+        self.sidebar_bg = sidebar_bg;
+        self.tab_bar_bg = tab_bar_bg;
+        self.status_bar_bg = status_bar_bg;
+        self.status_bar_fg = status_bar_fg;
+        self
     }
 }
 
@@ -662,23 +698,29 @@ impl Default for ViewFonts {
     }
 }
 
-// 区域尺寸（逻辑像素）：按三档字号下的界面比例调参得出。
-/// 顶栏高度：红绿灯、侧栏开关和标签都在这一行，位于两张卡片的顶部。
-pub const TOP_BAR: f32 = 40.0;
-/// 窗口边缘到侧栏、编辑区两张卡片的留白；卡片底边贴着状态栏，下方不留。
-pub const ISLAND_MARGIN: f32 = 6.0;
-/// 侧栏卡片与编辑区卡片之间的间距，拖动调整侧栏宽度的分隔条就在这里。
-pub const ISLAND_GAP: f32 = 6.0;
-/// 顶栏下边缘的纵坐标：卡片上方的留白加顶栏高度。
-pub const TOP_BAR_END: f32 = ISLAND_MARGIN + TOP_BAR;
-/// 状态栏高度。
-pub const STATUS_HEIGHT: f32 = 26.0;
-/// 侧栏第二行（项目、分支和当前视图的工具）的高度。
-pub const SIDEBAR_HEADER: f32 = 32.0;
+// 区域尺寸（逻辑像素）：对齐 VS Code Modern 贴边工作台几何比例。
+/// 顶部全宽标题栏高度（VS Code Title Bar：红绿灯、居中命令中心与右侧布局控制按钮）。
+pub const TITLE_BAR: f32 = 35.0;
+/// 最左侧垂直活动栏宽度（VS Code Activity Bar：资源管理器、搜索、源代码管理与底部设置齿轮）。
+pub const ACTIVITY_BAR_W: f32 = 48.0;
+/// 编辑区顶置面包屑导航栏高度（VS Code Breadcrumbs）。
+pub const BREADCRUMBS_H: f32 = 22.0;
+/// 编辑区标签栏高度（VS Code Editor Tabs，与侧栏标题行等高）。
+pub const TOP_BAR: f32 = 35.0;
+/// 窗口外围边距：贴边工作台为 0。
+pub const ISLAND_MARGIN: f32 = 0.0;
+/// 侧栏、编辑区与终端面板之间的分隔线宽度（1px 细边）。
+pub const ISLAND_GAP: f32 = 1.0;
+/// 标题栏与编辑区标签栏底部（即编辑区内容与侧栏列表起点）的纵坐标。
+pub const TOP_BAR_END: f32 = TITLE_BAR + TOP_BAR;
+/// 状态栏高度（VS Code Status Bar）。
+pub const STATUS_HEIGHT: f32 = 24.0;
+/// 侧栏标题行（项目、视图标题与当前视图工具）的高度，与标签栏等高以保证横向边线齐平。
+pub const SIDEBAR_HEADER: f32 = 35.0;
 /// 侧栏里上下相邻两块（第二行的按钮、输入框、「提交」按钮）之间看得见的间距，各个视图统一。
 pub const SIDEBAR_GAP: f32 = 8.0;
 /// 第二行下面第一块的纵向偏移（相对第二行下沿）：第二行里的按钮都是 `BUTTON_SMALL` 高、上下
-/// 居中，下面已经留了 4，再加 4 正好是 `SIDEBAR_GAP`。
+/// 居中，下面已经留了 5.5，补足到 `SIDEBAR_GAP`。
 pub const SIDEBAR_FIRST: f32 = SIDEBAR_GAP - (SIDEBAR_HEADER - BUTTON_SMALL) / 2.0;
 /// 输入框、按钮到下方列表的间距：列表行自带上下留白（24 高的行里内容约 16），
 /// 因此只留一半，视觉上与 `SIDEBAR_GAP` 相等。
@@ -686,36 +728,32 @@ pub const SIDEBAR_FIRST: f32 = SIDEBAR_GAP - (SIDEBAR_HEADER - BUTTON_SMALL) / 2
 /// 文件树紧接在第二行下方，间距也是该值。
 pub const SIDEBAR_LIST_GAP: f32 = SIDEBAR_GAP / 2.0;
 /// 侧栏的默认宽度。
-pub const DEFAULT_PANEL_WIDTH: f32 = 300.0;
+pub const DEFAULT_PANEL_WIDTH: f32 = 280.0;
 /// 侧栏的最小宽度。
-///
-/// macOS 上要恰好放下顶部的红绿灯（右端 80）、侧栏开关和靠右的视图切换（文件、搜索、提交三段
-/// 的分段控件，由 `layout::view_tabs` 计算）：开关右端 118，隔 `SEGMENT_GAP` 6，底槽
-/// 3 × `SEGMENT_W` + 2 × `SEGMENT_SPACING` + 4 = 92，离侧栏右边 8，再加 `ISLAND_GAP` / 2，
-/// 合计 227；取 230 留出余量。
-pub const MIN_PANEL_WIDTH: f32 = 230.0;
+pub const MIN_PANEL_WIDTH: f32 = 200.0;
 /// 文件树一行的高度。
 pub const TREE_ROW: f32 = 24.0;
 /// 文件树每一级缩进的宽度。
 pub const TREE_INDENT: f32 = 16.0;
-/// 标签的高度（编辑区和终端面板的标签同高），与侧栏「文件 / 搜索 / 提交」分段控件的底槽
-/// 同高（每段 22，上下各留 2）。
+/// 终端面板标签与查找条的基准高度（逻辑像素）；编辑区标签在 `view::workspace::top_bar` 中撑满 `TOP_BAR`。
 pub const TAB_HEIGHT: f32 = 26.0;
-/// 标签之间的间距。
+/// 终端标签栏与工具按钮组内元素之间的间距（逻辑像素）。
 pub const TAB_GAP: f32 = 4.0;
-/// 第一个文件标签离标签栏左边的距离（逻辑像素），与标签上下的留白相同。
-pub const TAB_INSET: f32 = (TOP_BAR - TAB_HEIGHT) / 2.0;
+/// 相邻编辑区标签之间的间距（逻辑像素）：VS Code 贴边直角标签紧挨排列，中间以 1px 细线分隔。
+pub const EDITOR_TAB_GAP: f32 = 0.0;
+/// 第一个文件标签离标签栏左边的距离（逻辑像素）：贴边排列。
+pub const TAB_INSET: f32 = 0.0;
 /// 标签的最大宽度。
 ///
 /// 标签宽度贴合文件名，文件名更长时截短；所有标签放不下时横向滚动。
-pub const TAB_WIDTH_MAX: f32 = 180.0;
+pub const TAB_WIDTH_MAX: f32 = 190.0;
 /// 标签的最小宽度：文件名很短时也不窄于该宽度，留出足够的点击范围。
-pub const TAB_WIDTH_MIN: f32 = 80.0;
+pub const TAB_WIDTH_MIN: f32 = 88.0;
 /// 查找条、跳转条（单行）的高度。
 pub const BAR_HEIGHT: f32 = 36.0;
 
 // 按钮尺寸：只有 `BUTTON`、`BUTTON_SMALL` 和 `TOGGLE_W`（宽度）三种，圆角均为 `RADIUS_ROW`。
-/// 顶栏上的按钮（侧栏开关、「文件 / 搜索」、新建标签）和设置卡片的关闭按钮。
+/// 顶栏上的按钮（布局切换、新建标签）和设置卡片的关闭按钮。
 pub const BUTTON: f32 = 28.0;
 /// 工具栏、查找条、列表行上的图标按钮。
 pub const BUTTON_SMALL: f32 = 24.0;
@@ -726,20 +764,20 @@ pub const TOGGLE_W: f32 = 26.0;
 pub const BUTTON_GAP: f32 = 2.0;
 
 // 圆角半径（逻辑像素）
-/// 列表行和按钮的圆角半径。
-pub const RADIUS_ROW: f32 = 6.0;
-/// 标签的圆角半径，与侧栏分段控件的底槽相同。
-pub const RADIUS_TAB: f32 = RADIUS_ROW + 2.0;
+/// 列表行和按钮的圆角半径（VS Code 风格的利落小圆角）。
+pub const RADIUS_ROW: f32 = 3.0;
+/// 标签的圆角半径：VS Code 贴边直角标签。
+pub const RADIUS_TAB: f32 = 0.0;
 /// 菜单、悬停提示、改动卡片这类贴着内容弹出的小浮层的圆角半径。
-pub const RADIUS_POPUP: f32 = RADIUS_ROW + 2.0;
+pub const RADIUS_POPUP: f32 = 6.0;
 /// 查找条、跳转条、右上角的提醒这类浮动单行条的圆角半径。
-pub const RADIUS_BAR: f32 = 10.0;
+pub const RADIUS_BAR: f32 = 6.0;
 /// 设置等较大的浮动卡片的圆角半径（逻辑像素）。
-pub const RADIUS_CARD: f32 = 12.0;
-/// 侧栏、编辑区两张卡片的圆角半径。
-pub const RADIUS_ISLAND: f32 = 10.0;
+pub const RADIUS_CARD: f32 = 8.0;
+/// 侧栏、编辑区工作台区域的圆角半径：贴边无圆角。
+pub const RADIUS_ISLAND: f32 = 0.0;
 /// 文本选区的圆角半径。
-pub const RADIUS_SELECTION: f32 = 4.0;
+pub const RADIUS_SELECTION: f32 = 2.0;
 
 // 编辑区内部
 /// 行号栏左右两侧的留白（逻辑像素）。
@@ -897,11 +935,5 @@ pub const TRAFFIC_LIGHTS_END: f32 = if cfg!(target_os = "macos") {
 } else {
     0.0
 };
-/// 红绿灯与右侧第一个图标之间的距离（逻辑像素，按两者可见的边缘计算）。
-///
-/// 与顶栏上并排的两个图标之间的距离相同：14 宽的图标在 `BUTTON` 宽的按钮里两侧各留 7，
-/// 加上按钮间的 `BUTTON_GAP`，共 16。
-pub const LIGHTS_GAP: f32 = (BUTTON - 14.0) + BUTTON_GAP;
-
 #[cfg(test)]
 mod tests;

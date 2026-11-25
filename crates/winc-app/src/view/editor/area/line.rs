@@ -87,7 +87,8 @@ impl Screen<'_> {
             Some(s) => {
                 let base = s.cell % self.tab_width.max(1);
                 let before = (s.cell - base) as f64 * f64::from(self.cell);
-                ((f64::from(self.origin_x) + before) as f32, base)
+                let origin = f64::from(text_rect.x + TEXT_PAD) - f64::from(self.doc.scroll_x);
+                ((origin + before) as f32, base)
             }
             None => (self.origin_x, 0),
         };
@@ -486,9 +487,33 @@ impl Screen<'_> {
         let tail_baseline = row.baseline + (row.breaks.rows() - 1) as f32 * self.lh;
 
         if row.truncated {
-            let x = origin_x + cells as f32 * self.cell + 4.0;
+            let mut x = origin_x + cells as f32 * self.cell + 4.0;
             let size = app.fonts.ui_small;
             let note = t!("editor-line-truncated", count = MAX_LINE_CHARS);
+            let show = t!("editor-line-show-whole");
+            // 自动换行时无法横向滚动：若最后一段接近右边界，把提示和「显示整行」贴在文本区右端
+            // （滚动条命中区左侧）并垫上背景色，避免被裁剪或被滚动条/缩略图遮挡。
+            if self.doc.is_wrapping() {
+                let note_w = frame.measure(FontKind::Ui, size, &note);
+                let show_w = if self.columns.is_none() {
+                    8.0 + frame.measure(FontKind::Ui, size, show)
+                } else {
+                    0.0
+                };
+                let total_w = note_w + show_w;
+                let safe_right = text_rect.right() - SCROLLBAR_HIT - 4.0;
+                if x + total_w > safe_right {
+                    x = (safe_right - total_w).max(text_rect.x + 4.0);
+                    let pad = 6.0;
+                    let bg = Rect::new(
+                        (x - pad).max(text_rect.x),
+                        tail_y,
+                        (total_w + pad * 2.0).min(text_rect.right() - (x - pad).max(text_rect.x)),
+                        self.lh,
+                    );
+                    frame.rect_clipped(bg, p.editor_bg, 0.0, text_rect);
+                }
+            }
             let x = frame.text(
                 FontKind::Ui,
                 size,
@@ -502,7 +527,6 @@ impl Screen<'_> {
             if self.columns.is_none() {
                 let hovered = app.pointer.hover == Hover::LongLine(row.line);
                 let color = if hovered { p.text } else { p.accent };
-                let show = t!("editor-line-show-whole");
                 let (from, clip) = (x + 8.0, text_rect);
                 let to = frame.text(FontKind::Ui, size, from, tail_baseline, show, color, clip);
                 long_hits.push((Rect::new(from, tail_y, to - from, self.lh), row.line));

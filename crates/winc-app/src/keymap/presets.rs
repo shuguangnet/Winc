@@ -9,16 +9,16 @@ use super::*;
 /// 内置的键位方案。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Preset {
-    /// IDEA 的默认快捷键。
-    #[default]
-    Idea,
     /// VS Code 的默认快捷键。
+    #[default]
     VsCode,
+    /// IDEA 的默认快捷键。
+    Idea,
 }
 
 impl Preset {
     /// 全部方案，按设置中列出的顺序。
-    pub const ALL: [Preset; 2] = [Preset::Idea, Preset::VsCode];
+    pub const ALL: [Preset; 2] = [Preset::VsCode, Preset::Idea];
 
     /// 返回配置文件中的写法。
     pub fn key(self) -> &'static str {
@@ -177,6 +177,9 @@ pub(super) const COMMON: &[PresetRow] = &[
     ),
     row(ClearTerminal, Terminal, &["cmd+k"], &["ctrl+shift+k"]),
     row(Paste, Terminal, &[], &["ctrl+shift+v"]),
+    row(ChangesShowDiff, Changes, &["cmd+d"], &["ctrl+d"]),
+    row(ChangesOpenSource, Changes, &["f4", "cmd+down"], &["f4"]),
+    row(ChangesRollback, Changes, &["alt+cmd+z"], &["ctrl+alt+z"]),
 ];
 
 /// 共用的键在 Linux 上与 Windows 不同的部分。
@@ -210,9 +213,6 @@ pub(super) const IDEA: &[PresetRow] = &[
     ),
     row(FindInFolder, Tree, &["shift+cmd+f"], &["ctrl+shift+f"]),
     row(Copy, Tree, &["cmd+c"], &["ctrl+c"]),
-    row(ChangesShowDiff, Changes, &["cmd+d"], &["ctrl+d"]),
-    row(ChangesOpenSource, Changes, &["f4", "cmd+down"], &["f4"]),
-    row(ChangesRollback, Changes, &["alt+cmd+z"], &["ctrl+alt+z"]),
     row(
         MaximizeTerminal,
         Terminal,
@@ -533,6 +533,14 @@ pub(super) const VSCODE: &[PresetRow] = &[
         &["ctrl+shift+l"],
     ),
     row(RemoveSecondaryCursors, Editor, &["escape"], &["escape"]),
+    row(ClearWordHighlights, Editor, &["escape"], &["escape"]),
+    row(
+        CopyReference,
+        Editor,
+        &["shift+alt+cmd+c"],
+        &["ctrl+shift+alt+c"],
+    ),
+    row(HighlightWord, Editor, &["shift+cmd+f7"], &["ctrl+shift+f7"]),
     row(
         AddCursorsToLineEnds,
         Editor,

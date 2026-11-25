@@ -232,6 +232,9 @@ settings-theme-used-when-light = This theme is used when the system appearance i
 
 ## Theme names.
 
+settings-theme-name-vscode-light-modern = VS Code Light Modern
+settings-theme-name-vscode-dark-modern = VS Code Dark Modern
+settings-theme-name-vscode-dark-plus = VS Code Dark+
 settings-theme-name-winc-day = Winc Daylight
 settings-theme-name-winc-paper = Winc Rice Paper
 settings-theme-name-sky = Clear Sky

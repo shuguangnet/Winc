@@ -310,6 +310,7 @@ impl App {
             self.gutter_width(),
             status_height,
         );
+        self.place_breadcrumbs();
         self.place_places();
         self.place_git_picker();
         self.animate_picker((w, h));
@@ -344,6 +345,24 @@ impl App {
         self.place_split();
         self.place_merge_panes();
         self.place_minimap();
+    }
+
+    /// 打开文档且高度充足时，在标签栏正下方留出 VS Code 顶置面包屑条，编辑区下移让出空间。
+    fn place_breadcrumbs(&mut self) {
+        let has_doc = self.editor.active().is_some();
+        let l = &mut self.layout;
+        l.breadcrumbs = Rect::default();
+        if !has_doc || l.editor.h < BREADCRUMBS_H + 64.0 || l.editor.w <= 0.0 {
+            return;
+        }
+        l.breadcrumbs = Rect::new(l.editor.x, l.editor.y, l.editor.w, BREADCRUMBS_H);
+        for rect in [&mut l.editor, &mut l.gutter, &mut l.text] {
+            rect.y += BREADCRUMBS_H;
+            rect.h = (rect.h - BREADCRUMBS_H).max(0.0);
+        }
+        if l.search.h > 0.0 {
+            l.search.y += BREADCRUMBS_H;
+        }
     }
 
     /// 当前文件能预览（SVG）时，在标签栏右端留出「源代码 / 分栏 / 预览」三个按钮，标签栏
@@ -405,7 +424,7 @@ impl App {
     /// 两边都放不下 `SPLIT_MIN` 时不分，只显示源代码。
     fn place_minimap(&mut self) {
         // 编辑区窄于该宽度时不显示（逻辑像素，经验值）：优先留给代码。
-        const MINIMAP_MIN: f32 = 480.0;
+        const MINIMAP_MIN: f32 = 440.0;
         // 缩略图占的宽度（逻辑像素，经验值），右边一段让给滚动条。
         const MINIMAP_W: f32 = 84.0;
         self.layout.minimap = Rect::default();
@@ -508,7 +527,13 @@ impl App {
             };
             let w = w.clamp(terminal::MIN_WIDTH, room);
             let shrink = ((w + ISLAND_GAP) * shown).round();
-            for rect in [&mut l.top_bar, &mut l.tabs, &mut l.editor, &mut l.text] {
+            for rect in [
+                &mut l.top_bar,
+                &mut l.tabs,
+                &mut l.breadcrumbs,
+                &mut l.editor,
+                &mut l.text,
+            ] {
                 rect.w = (rect.w - shrink).max(0.0);
             }
             // 查找条贴着编辑区右边；⌘P 面板在编辑区里居中，放不下时变窄。
@@ -570,6 +595,7 @@ impl App {
         for rect in [
             &mut l.top_bar,
             &mut l.tabs,
+            &mut l.breadcrumbs,
             &mut l.editor,
             &mut l.gutter,
             &mut l.text,

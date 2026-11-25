@@ -28,13 +28,13 @@ impl App {
         // 窗口过程只除以系统 DPI；布局区域需先乘应用缩放，与其输入坐标保持一致。
         let zoom = self.zoom();
         crate::windows::WindowHitTest {
-            caption_height: TOP_BAR_END * zoom,
+            caption_height: TITLE_BAR * zoom,
             resize_border: if self.window.controls {
                 crate::app::lifecycle::title_bar::RESIZE_EDGE * zoom
             } else {
                 0.0
             },
-            control_gap: TAB_GAP * zoom,
+            control_gap: BUTTON_GAP * zoom,
             client: self
                 .caption_controls()
                 .into_iter()
@@ -65,7 +65,10 @@ impl App {
     pub(in crate::app) fn caption_controls(&self) -> Vec<winc_render::Rect> {
         let l = &self.layout;
         let mut client = vec![
+            l.command_center,
             l.sidebar_button,
+            l.panel_button,
+            l.split_button,
             self.tabs.new_tab,
             l.terminal_divider,
             l.split_divider,
@@ -111,7 +114,7 @@ impl App {
         if self.browser_page().is_some() {
             client.push(l.browser);
         }
-        client.retain(|r| r.w > 0.0 && r.h > 0.0 && r.y < TOP_BAR_END && r.bottom() > 0.0);
+        client.retain(|r| r.w > 0.0 && r.h > 0.0 && r.y < TITLE_BAR && r.bottom() > 0.0);
         client
     }
 
@@ -229,6 +232,10 @@ impl App {
             Target::TreeTool(tool) => Hover::TreeTool(tool),
             Target::ProjectName => Hover::ProjectName,
             Target::SidebarButton => Hover::SidebarButton,
+            Target::CommandCenter => Hover::CommandCenter,
+            Target::PanelButton => Hover::PanelButton,
+            Target::SplitButton => Hover::SplitButton,
+            Target::ActivitySettings => Hover::ActivitySettings,
             Target::NewTab => Hover::NewTab,
             Target::TabList => Hover::TabList,
             Target::Preview(mode) => Hover::Preview(mode),
@@ -372,8 +379,20 @@ impl App {
         if self.hits.project.contains(x, y) {
             return Target::ProjectName;
         }
+        if l.command_center.contains(x, y) {
+            return Target::CommandCenter;
+        }
         if l.sidebar_button.contains(x, y) {
             return Target::SidebarButton;
+        }
+        if l.panel_button.contains(x, y) {
+            return Target::PanelButton;
+        }
+        if l.split_button.contains(x, y) {
+            return Target::SplitButton;
+        }
+        if l.activity_settings.contains(x, y) {
+            return Target::ActivitySettings;
         }
         if self.tabs.new_tab.contains(x, y) {
             return Target::NewTab;
@@ -439,7 +458,7 @@ impl App {
         if let Some(hit) = hit(&self.hits.terminal, x, y) {
             return Target::TerminalHeader(hit);
         }
-        if y < TOP_BAR_END {
+        if y < TITLE_BAR {
             return Target::TitleBar;
         }
         if l.terminal.contains(x, y) {
@@ -1014,6 +1033,10 @@ pub(super) enum Target {
     TreeTool(crate::layout::TreeTool),
     ProjectName,
     SidebarButton,
+    CommandCenter,
+    PanelButton,
+    SplitButton,
+    ActivitySettings,
     NewTab,
     /// 标签栏无法容纳全部标签时显示在最右端的「⌄」。
     TabList,

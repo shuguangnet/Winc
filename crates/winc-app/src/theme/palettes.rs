@@ -439,6 +439,7 @@ impl ThemeEntry {
     /// 返回设置里显示的主题名。
     pub fn name(&self) -> &'static str {
         match self.id {
+            "vscode-light-modern" => t!("settings-theme-name-vscode-light-modern"),
             "winc-day" => t!("settings-theme-name-winc-day"),
             "winc-paper" => t!("settings-theme-name-winc-paper"),
             "sky" => t!("settings-theme-name-sky"),
@@ -447,6 +448,8 @@ impl ThemeEntry {
             "mist" => t!("settings-theme-name-mist"),
             "veil-snow" => t!("settings-theme-name-veil-snow"),
             "veil-linen" => t!("settings-theme-name-veil-linen"),
+            "vscode-dark-modern" => t!("settings-theme-name-vscode-dark-modern"),
+            "vscode-dark-plus" => t!("settings-theme-name-vscode-dark-plus"),
             "winc-night" => t!("settings-theme-name-winc-night"),
             "winc-slate" => t!("settings-theme-name-winc-slate"),
             "ink" => t!("settings-theme-name-ink"),
@@ -464,8 +467,9 @@ const fn entry(id: &'static str, palette: &'static Palette) -> ThemeEntry {
     ThemeEntry { id, palette }
 }
 
-/// 可选的浅色主题，第一个是默认的：Winc 系列排在前面，为背景图设计的「幕」系列排在最后。
-pub static LIGHT_THEMES: [ThemeEntry; 8] = [
+/// 可选的浅色主题，第一个是默认的：VS Code Modern 在最前，其后是 Winc 系列与「幕」系列。
+pub static LIGHT_THEMES: [ThemeEntry; 9] = [
+    entry("vscode-light-modern", &VSCODE_LIGHT_MODERN),
     entry("winc-day", &WINC_DAY),
     entry("winc-paper", &WINC_PAPER),
     entry("sky", &LIGHT),
@@ -476,8 +480,10 @@ pub static LIGHT_THEMES: [ThemeEntry; 8] = [
     entry("veil-linen", &VEIL_LINEN),
 ];
 
-/// 可选的深色主题，第一个是默认的：Winc 系列排在前面，为背景图设计的「幕」系列排在最后。
-pub static DARK_THEMES: [ThemeEntry; 8] = [
+/// 可选的深色主题，第一个是默认的：VS Code Modern / Dark+ 在最前，其后是 Winc 系列与「幕」系列。
+pub static DARK_THEMES: [ThemeEntry; 10] = [
+    entry("vscode-dark-modern", &VSCODE_DARK_MODERN),
+    entry("vscode-dark-plus", &VSCODE_DARK_PLUS),
     entry("winc-night", &WINC_NIGHT),
     entry("winc-slate", &WINC_SLATE),
     entry("ink", &DARK),

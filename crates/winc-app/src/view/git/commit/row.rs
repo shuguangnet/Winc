@@ -178,20 +178,21 @@ pub(super) fn draw_row(
             CommitRow::Group(_) => None,
         };
         for level in 1..=*depth {
-            let x = r.arrow_x(level).round();
-            let guide = Rect::new(x, y, 1.0, COMMIT_ROW);
             let is_active = match (active_guide, row_scope) {
                 (Some((ag, adir, alevel)), Some((rg, rpath))) => {
                     alevel == level && ag == rg && rpath.starts_with(adir) && rpath != adir
                 }
                 _ => false,
             };
-            let color = if is_active {
-                app.palette.indent_guide_active
-            } else {
-                app.palette.indent_guide
-            };
-            frame.rect_clipped(guide, color, 0.0, list);
+            controls::indent_guide(
+                frame,
+                app.palette,
+                r.arrow_x(level),
+                y,
+                COMMIT_ROW,
+                is_active,
+                list,
+            );
         }
     }
     match row {

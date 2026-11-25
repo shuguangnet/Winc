@@ -588,8 +588,8 @@ impl App {
         };
         let at = hits.iter().filter(|h| h.tab.x + h.tab.w / 2.0 < x).count();
         let line_x = match (hits.get(at), hits.last()) {
-            (Some(next), _) => next.tab.x - TAB_GAP / 2.0,
-            (None, Some(last)) => last.tab.right() + TAB_GAP / 2.0,
+            (Some(next), _) => next.tab.x - EDITOR_TAB_GAP / 2.0,
+            (None, Some(last)) => last.tab.right() + EDITOR_TAB_GAP / 2.0,
             (None, None) => pane.tabs.x,
         };
         let bar = pane.tabs;

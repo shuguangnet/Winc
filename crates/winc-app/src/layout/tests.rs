@@ -181,76 +181,43 @@ fn the_sidebar_toggle_stays_next_to_the_traffic_lights() {
         .map(|shown| Layout::compute(1000.0, 600.0, 260.0, shown, 0, 0, 40.0, STATUS_HEIGHT));
     for l in &layouts {
         assert_eq!(l.sidebar_button, layouts[0].sidebar_button);
-    }
-    let toggle = layouts[0].sidebar_button.x + (BUTTON - icons::SIDEBAR_WIDTH) / 2.0;
-    if cfg!(target_os = "macos") {
-        assert_eq!(traffic_lights_end(), 80.0);
-        assert_eq!(toggle, 80.0 + LIGHTS_GAP);
+        assert_eq!(l.activity_bar, layouts[0].activity_bar);
+        assert_eq!(l.title_bar, layouts[0].title_bar);
     }
 
-    // 视图切换靠侧栏右端（底槽离右边 8），相邻两段隔一道缝，和开关垂直居中；收起时标签从
-    // 开关右边开始。
+    // 视图切换位于最左侧 48px 垂直活动栏，按列向下依次排列；模块视图出现/消失时按比例伸缩高度。
     let (open, closed) = (layouts[0], layouts[3]);
-    let tabs = view_tabs(
-        open.sidebar_button,
-        open.sidebar,
-        &BASE_VIEWS.map(|v| (v, 1.0)),
-    );
+    let tabs = view_tabs(open.activity_bar, &BASE_VIEWS.map(|v| (v, 1.0)));
     let (files, search) = (tabs[0].0, tabs[1].0);
-    let last = tabs.last().unwrap().0;
-    assert_eq!(last.right() + 2.0, open.sidebar.right() - 8.0);
-    assert_eq!(search.x, files.right() + SEGMENT_SPACING);
-    assert_eq!(
-        files.y + files.h / 2.0,
-        open.sidebar_button.y + open.sidebar_button.h / 2.0
-    );
-    // 侧栏最窄时也放得下：不压到开关上，不伸出侧栏。
-    let narrow = Layout::compute(
-        1000.0,
-        600.0,
-        MIN_PANEL_WIDTH,
-        1.0,
-        0,
-        0,
-        40.0,
-        STATUS_HEIGHT,
-    );
+    assert_eq!(files.x, 0.0);
+    assert_eq!(files.w, ACTIVITY_BAR_W);
+    assert_eq!(files.y, TITLE_BAR);
+    assert_eq!(files.h, ACTIVITY_ITEM_H);
+    assert_eq!(search.y, files.bottom());
+
     let all = [SidebarView::Files, SidebarView::Search, SidebarView::Commit].map(|v| (v, 1.0));
-    let tabs = view_tabs(narrow.sidebar_button, narrow.sidebar, &all);
-    assert!(tabs[0].0.x - 2.0 >= narrow.sidebar_button.right() + SEGMENT_GAP);
-    assert!(tabs.last().unwrap().0.right() + 2.0 <= narrow.sidebar.right() - 8.0);
-    // 「提交」一段出现到一半：它和前面的缝都只有一半宽，整个控件仍靠右，前两段往右让出一半。
     let mut growing = all;
     growing[2].1 = 0.5;
-    let half = view_tabs(open.sidebar_button, open.sidebar, &growing);
-    let full = view_tabs(open.sidebar_button, open.sidebar, &all);
-    assert_eq!(half[2].0.w, SEGMENT_W / 2.0);
-    assert_eq!(half[2].0.right(), full[2].0.right());
-    assert_eq!(half[2].0.x, half[1].0.right() + SEGMENT_SPACING / 2.0);
-    assert_eq!(
-        half[0].0.x - full[0].0.x,
-        (SEGMENT_W + SEGMENT_SPACING) / 2.0
-    );
-    assert_eq!(closed.tabs.x - closed.sidebar_button.right(), TAB_GAP);
+    let half = view_tabs(open.activity_bar, &growing);
+    let full = view_tabs(open.activity_bar, &all);
+    assert_eq!(half[2].0.h, (ACTIVITY_ITEM_H * 0.5).round());
+    assert_eq!(half[2].0.y, full[2].0.y);
+    assert_eq!(closed.tabs.x, ACTIVITY_BAR_W + ISLAND_GAP);
 }
 
 #[test]
 fn hidden_sidebar_moves_button_next_to_traffic_lights() {
     let layout = Layout::compute(1000.0, 600.0, 260.0, 0.0, 0, 0, 40.0, STATUS_HEIGHT);
-    assert!(layout.sidebar.right() <= 0.0);
-    assert_eq!(layout.editor.x, ISLAND_MARGIN);
-    assert_eq!(
-        layout.sidebar_button.x,
-        first_button_x(icons::SIDEBAR_WIDTH)
-    );
-    assert!(layout.tabs.x > layout.sidebar_button.right());
-    // 顶栏右端不放按钮，标签栏延伸到编辑区卡片的右端，只留出边距。
+    assert!(!layout.sidebar_visible());
+    assert_eq!(layout.editor.x, ACTIVITY_BAR_W + ISLAND_GAP);
     assert_eq!(layout.tabs.right(), layout.top_bar.right() - 8.0);
-    assert_eq!(
-        layout.top_bar.right(),
-        layout.window.right() - ISLAND_MARGIN
-    );
+    assert_eq!(layout.top_bar.right(), layout.window.right());
     assert_eq!(layout.editor.bottom(), layout.status.y);
+    // 顶部标题栏右端排列侧栏/面板/分栏三个布局按钮，居中为命令中心。
+    assert!(layout.command_center.w > 0.0);
+    assert!(layout.command_center.right() < layout.sidebar_button.x);
+    assert!(layout.sidebar_button.right() <= layout.panel_button.x);
+    assert!(layout.panel_button.right() <= layout.split_button.x);
 }
 
 #[test]
@@ -260,36 +227,33 @@ fn sidebar_slides_during_animation() {
     let tiny = Layout::compute(1000.0, 600.0, 260.0, 0.1, 0, 0, 40.0, STATUS_HEIGHT);
     let closed = Layout::compute(1000.0, 600.0, 260.0, 0.0, 0, 0, 40.0, STATUS_HEIGHT);
 
-    // 侧栏卡片保持原宽滑出，与编辑区卡片之间始终隔 `ISLAND_GAP`。
-    let card_w = 260.0 - ISLAND_MARGIN - ISLAND_GAP / 2.0;
+    // 侧栏保持原宽滑入/滑出活动栏右侧，与编辑区始终隔 1px 分隔线。
+    let side_left = ACTIVITY_BAR_W + ISLAND_GAP;
     assert_eq!(
         (half.sidebar.w, half.sidebar.right()),
-        (card_w, 130.0 - ISLAND_GAP / 2.0)
+        (260.0, side_left + 130.0)
     );
     assert_eq!(half.editor.x - half.sidebar.right(), ISLAND_GAP);
     assert_eq!(half.splitter.w, 0.0);
     assert!(open.splitter.w > 0.0);
 
-    // 开关不动；标签始终在开关右侧，位置不跳变。
+    // 标题栏布局开关不动；标签栏始终紧贴编辑区左缘。
     assert_eq!(tiny.sidebar_button.x, closed.sidebar_button.x);
     for l in [open, half, tiny, closed] {
-        assert!(l.tabs.x >= l.sidebar_button.right() + TAB_GAP);
-        assert!(l.tabs.x >= l.editor.x + TAB_INSET);
+        assert_eq!(l.tabs.x, l.editor.x + TAB_INSET);
     }
     assert!(open.tabs.x > half.tabs.x && half.tabs.x > closed.tabs.x);
 }
 
 #[test]
 fn dragging_the_splitter_keeps_the_sidebar_in_place() {
-    // 拖动分隔条时宽度带小数（来自鼠标位置）。侧栏卡片的左边缘始终离窗口左边缘
-    // `ISLAND_MARGIN`，右边缘与编辑区卡片相隔 `ISLAND_GAP`，都在整像素上；宽度逐步增大时编辑区
-    // 只向右移动，不会回跳。
+    let side_left = ACTIVITY_BAR_W + ISLAND_GAP;
     let mut last = 0.0;
     for i in 0..=40 {
         let width = 260.0 + i as f32 * 0.125;
         let l = Layout::compute(1000.0, 600.0, width, 1.0, 0, 0, 40.0, STATUS_HEIGHT);
         for rect in [l.sidebar, l.sidebar_header, l.tree] {
-            assert_eq!(rect.x, ISLAND_MARGIN, "{width}");
+            assert_eq!(rect.x, side_left, "{width}");
         }
         assert_eq!(l.sidebar.right() + ISLAND_GAP, l.editor.x, "{width}");
         assert_eq!(l.editor.x, l.editor.x.round(), "{width}");
@@ -328,7 +292,7 @@ fn search_floats_inside_editor() {
     let layout = Layout::compute(1000.0, 600.0, 260.0, 1.0, 1, 0, 40.0, STATUS_HEIGHT);
     assert!(layout.search.x > layout.editor.x && layout.search.right() < layout.editor.right());
     assert_eq!(layout.text.y, layout.editor.y);
-    assert!(layout.sidebar_button.right() <= layout.sidebar.right());
+    assert!(layout.sidebar_button.right() <= layout.window.right());
 
     // 部件从左到右排开，互不重叠，都在查找条里。
     let bar = layout.search;

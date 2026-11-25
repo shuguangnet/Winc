@@ -516,7 +516,7 @@ fn a_right_terminal_leaves_room_for_the_window_buttons() {
     let controls = app.layout.controls;
     assert!(controls.w > 0.0 && controls.x > app.layout.terminal.x);
     let hide = header_hit(&app, HeaderHit::Hide);
-    assert!(hide.right() <= controls.x, "{hide:?} {controls:?}");
+    assert!(controls.bottom() <= hide.y, "{hide:?} {controls:?}");
     assert_eq!(
         app.hover_at(hide.x + 4.0, hide.y + 4.0),
         Hover::TerminalHeader(HeaderHit::Hide)

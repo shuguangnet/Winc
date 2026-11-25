@@ -10,7 +10,6 @@ use winc_render::{Color, Frame, Rect};
 use winc_config::ThemeChoice;
 
 use crate::app::{PICKER_PAD, PICKER_ROW, PLACES_FOOTER};
-use crate::icons;
 use crate::keymap::{self, Action, KeyCode, Mods, Os, Stroke};
 use crate::theme::*;
 
@@ -34,28 +33,41 @@ pub use wrap::wrap_text;
 pub struct Layout {
     /// 整个窗口。
     pub window: Rect,
-    /// 侧栏卡片，从窗口顶部的留白之下到状态栏。
+    /// 顶部全宽标题栏（VS Code Title Bar）。
+    pub title_bar: Rect,
+    /// 标题栏正中可点击的命令中心搜索条（VS Code Command Center），窗口过窄时为空矩形。
+    pub command_center: Rect,
+    /// 最左侧 48px 垂直活动栏（VS Code Activity Bar）。
+    pub activity_bar: Rect,
+    /// 活动栏底部的设置齿轮按钮。
+    pub activity_settings: Rect,
+    /// 主侧栏，位于活动栏右侧，从标题栏下沿延伸到状态栏上沿。
     ///
-    /// 宽度不随展开比例变化：未完全展开时左侧伸到窗口外，
-    /// 隐藏时整个位于窗口外（`right()` 不大于 0）。
+    /// 宽度不随展开比例变化：未完全展开时左侧藏入活动栏后方，隐藏时右边缘贴齐活动栏右边缘。
     pub sidebar: Rect,
-    /// 侧栏第二行：左边项目和分支，右端当前视图的工具。
+    /// 侧栏标题行：项目/视图标题与当前视图工具，与标签栏等高。
     pub sidebar_header: Rect,
-    /// 侧栏中的文件树区域，位于项目名所在行之下；文件视图里不含底部的大纲。
+    /// 侧栏中的文件树区域，位于标题行之下；文件视图里不含底部的大纲。
     pub tree: Rect,
     /// 文件视图底部的大纲：标题行连同展开时的符号列表；不在文件视图时为空。
     pub outline: Rect,
     /// 侧栏和编辑区之间可拖动的分隔条。
     pub splitter: Rect,
-    /// 侧栏开关按钮：固定在红绿灯右侧，侧栏展开、收起时都不动。
+    /// 标题栏右侧「切换主侧栏」布局按钮。
     pub sidebar_button: Rect,
-    /// 编辑区卡片顶部的顶栏。
+    /// 标题栏右侧「切换底部终端面板」布局按钮。
+    pub panel_button: Rect,
+    /// 标题栏右侧「向右拆分编辑器」布局按钮。
+    pub split_button: Rect,
+    /// 编辑区顶部的标签栏（VS Code Editor Tabs）。
     pub top_bar: Rect,
     /// 顶栏右端的窗口按钮（最小化、最大化、关闭），由应用绘制标题栏时才有，否则为空矩形；由
     /// `App::relayout` 放置。
     pub controls: Rect,
-    /// 顶栏中放置标签和新建按钮的区域。
+    /// 标签栏中放置标签和新建按钮的区域。
     pub tabs: Rect,
+    /// 编辑区顶置面包屑导航栏（VS Code Breadcrumbs）；无打开文档时高度为 0。
+    pub breadcrumbs: Rect,
     /// 标签栏右端切换「源代码 / 分栏 / 预览」的三个按钮（仅 SVG 等可预览的文件有，见
     /// [`preview_segments`]）；没有时为空矩形，由 `App::relayout` 放置。
     pub preview: Rect,
@@ -80,16 +92,21 @@ pub struct Layout {
     pub picker: Rect,
     /// 窗口底部的状态栏。
     pub status: Rect,
-    /// 编辑区旁边的终端面板：位于下方时从编辑区卡片下部划出，位于右侧时从右部划出；
+    /// 编辑区旁边的终端面板：位于下方时从编辑区下部划出，位于右侧时从右部划出；
     /// 关闭时尺寸为 0。
     ///
     /// 由 `App::relayout` 计算。
     pub terminal: Rect,
-    /// 编辑区和终端面板之间的间距：面板在下方时上下拖动调整高度，在右侧时左右拖动调整宽度。
+    /// 编辑区和终端面板之间的分隔线：面板在下方时上下拖动调整高度，在右侧时左右拖动调整宽度。
     pub terminal_divider: Rect,
 }
 
 impl Layout {
+    /// 主侧栏当前是否露在活动栏右侧（可见或展开动画中）。
+    pub fn sidebar_visible(&self) -> bool {
+        self.sidebar.right() > ACTIVITY_BAR_W + ISLAND_GAP
+    }
+
     /// 根据窗口大小和界面状态计算各区域的位置。
     ///
     /// - `width`、`height`：窗口的逻辑大小。
@@ -113,60 +130,77 @@ impl Layout {
         let window = Rect::new(0.0, 0.0, width, height);
         let status = Rect::new(0.0, height - status_height, width, status_height);
         let body_h = status.y.max(0.0);
+        let title_bar = Rect::new(0.0, 0.0, width, TITLE_BAR.min(body_h));
+        let body_y = title_bar.bottom();
+        let content_h = (body_h - body_y).max(0.0);
 
-        // 取整：拖动分隔条时宽度来自鼠标位置，可能是小数。`visible_w` 已取整；若 `full_w` 不取整，
-        // 两者的小数差会计入侧栏起点，拖动时整个侧栏随鼠标左右抖动。
+        let activity_bar = Rect::new(0.0, body_y, ACTIVITY_BAR_W.min(width), content_h);
+        let gear_h = ACTIVITY_BAR_W.min(activity_bar.h);
+        let activity_settings = Rect::new(
+            activity_bar.x,
+            (activity_bar.bottom() - gear_h).max(activity_bar.y),
+            activity_bar.w,
+            gear_h,
+        );
+
+        // 标题栏右侧三个 VS Code 布局切换按钮（切换侧栏、切换终端面板、向右拆分编辑器）。
+        let btn_y = ((title_bar.h - BUTTON) / 2.0).max(0.0);
+        let right_edge = width - 8.0;
+        let split_button = Rect::new(right_edge - BUTTON, btn_y, BUTTON, BUTTON);
+        let panel_button = Rect::new(split_button.x - BUTTON_GAP - BUTTON, btn_y, BUTTON, BUTTON);
+        let sidebar_button = Rect::new(panel_button.x - BUTTON_GAP - BUTTON, btn_y, BUTTON, BUTTON);
+
+        // 标题栏正中的命令中心搜索条（VS Code Command Center），避开左侧红绿灯和右侧布局按钮。
+        let left_safe = traffic_lights_end().max(16.0) + 12.0;
+        let right_safe = sidebar_button.x - 12.0;
+        let cc_room = (right_safe - left_safe).max(0.0);
+        let command_center = if cc_room >= 140.0 && title_bar.h >= 24.0 {
+            let cc_w = (width * 0.36).clamp(180.0, 460.0).min(cc_room).round();
+            let cc_h = 22.0;
+            let cc_x = ((width - cc_w) / 2.0)
+                .clamp(left_safe, (right_safe - cc_w).max(left_safe))
+                .round();
+            let cc_y = ((title_bar.h - cc_h) / 2.0).round();
+            Rect::new(cc_x, cc_y, cc_w, cc_h)
+        } else {
+            Rect::default()
+        };
+
+        // 侧栏紧接活动栏右侧（留出 1px 活动栏右边框）；收起动画时向左滑入活动栏后方。
+        let side_left = activity_bar.right() + ISLAND_GAP;
         let full_w = panel_width
-            .min((width - 320.0).max(MIN_PANEL_WIDTH))
+            .min((width - side_left - 320.0).max(MIN_PANEL_WIDTH))
             .round();
         let visible_w = (full_w * shown.clamp(0.0, 1.0)).round();
-        let side_x = visible_w - full_w;
-        // 侧栏占据的一列宽 `full_w`：左侧和上方留出 `ISLAND_MARGIN`，右侧留出卡片间距的一半，
-        // 其余是侧栏卡片。
-        let m = ISLAND_MARGIN;
-        let sidebar = Rect::new(
-            side_x + m,
-            m,
-            full_w - m - ISLAND_GAP / 2.0,
-            (body_h - m).max(0.0),
-        );
-        let sidebar_header = Rect::new(sidebar.x, TOP_BAR_END, sidebar.w, SIDEBAR_HEADER);
+        let side_x = side_left + visible_w - full_w;
+        let sidebar = Rect::new(side_x, body_y, full_w, content_h);
+        let sidebar_header = Rect::new(sidebar.x, body_y, sidebar.w, SIDEBAR_HEADER);
         let tree = Rect::new(
             sidebar.x,
             sidebar_header.bottom(),
             sidebar.w,
             (body_h - sidebar_header.bottom()).max(0.0),
         );
-        // 侧栏动画进行中（`shown` 小于 1）不显示分隔条，因此不能拖动；显示时宽 6 像素
-        // （`ISLAND_GAP`）。
-        let splitter_w = if shown >= 1.0 { 6.0 } else { 0.0 };
-        let splitter = Rect::new(visible_w - 3.0, 0.0, splitter_w, body_h);
+        // 侧栏展开完毕后在侧栏右边缘放置 5px 宽的可拖动热区（仅侵入侧栏 1px，不遮挡树滚动条）。
+        let splitter_w = if shown >= 1.0 { 5.0 } else { 0.0 };
+        let splitter = Rect::new(side_left + visible_w - 1.0, body_y, splitter_w, content_h);
 
-        // 编辑区卡片从侧栏卡片右侧的间距之后开始；侧栏隐藏时与窗口左边缘相隔 `ISLAND_MARGIN`。
-        let main_x = (visible_w + ISLAND_GAP / 2.0).max(m);
-        let main_w = (width - m - main_x).max(0.0);
-        let top_bar = Rect::new(main_x, m, main_w, TOP_BAR);
+        // 编辑区列：侧栏展开时在侧栏右边框之后；侧栏收起时紧接活动栏右边框。
+        let main_x = if visible_w > 0.0 {
+            side_left + visible_w + ISLAND_GAP
+        } else {
+            side_left
+        };
+        let main_w = (width - main_x).max(0.0);
+        let top_bar = Rect::new(main_x, body_y, main_w, TOP_BAR);
+        let tabs = Rect::new(main_x, body_y, (main_w - 8.0).max(0.0), TOP_BAR);
 
-        // 侧栏开关固定在红绿灯右侧，侧栏展开、收起和动画期间位置不变，连续点击时无需重新定位。
-        // 侧栏收起时标签从开关右侧开始，与开关相隔 `TAB_GAP`，和标签之间的间距相同；
-        // 侧栏展开时开关右边是视图切换图标（`view_tabs`）。
-        let button_y = m + (TOP_BAR - BUTTON) / 2.0;
-        let sidebar_button = Rect::new(
-            first_button_x(icons::SIDEBAR_WIDTH),
-            button_y,
-            BUTTON,
-            BUTTON,
+        let editor = Rect::new(
+            main_x,
+            top_bar.bottom(),
+            main_w,
+            (body_h - top_bar.bottom()).max(0.0),
         );
-        let tabs_x = (main_x + TAB_INSET).max(sidebar_button.right() + TAB_GAP);
-        // 标签栏延伸到顶栏右端：查找由快捷键打开，设置的入口位于菜单栏和命令面板中。
-        let tabs = Rect::new(
-            tabs_x,
-            m,
-            (top_bar.right() - 8.0 - tabs_x).max(0.0),
-            TOP_BAR,
-        );
-
-        let editor = Rect::new(main_x, TOP_BAR_END, main_w, (body_h - TOP_BAR_END).max(0.0));
         let gutter = Rect::new(editor.x, editor.y, gutter_width, editor.h);
         let text = Rect::new(
             gutter.right(),
@@ -188,26 +222,32 @@ impl Layout {
         };
 
         let picker = if picker_rows > 0 {
-            // 面板宽度以编辑区为基准，左右合计留出 48 像素（与查找条相同）；窄窗口下随编辑区收窄。
             let w = PICKER_WIDTH.min(editor.w - 48.0).max(0.0);
             let h = BAR_HEIGHT + picker_rows as f32 * PICKER_ROW + 2.0 * PICKER_PAD;
             let x = (editor.x + (editor.w - w) / 2.0).round();
-            Rect::new(x, editor.y + 8.0, w, h)
+            Rect::new(x, body_y + 8.0, w, h)
         } else {
             Rect::default()
         };
 
         Layout {
             window,
+            title_bar,
+            command_center,
+            activity_bar,
+            activity_settings,
             sidebar,
             sidebar_header,
             tree,
             outline: Rect::default(),
             splitter,
             sidebar_button,
+            panel_button,
+            split_button,
             top_bar,
             controls: Rect::default(),
             tabs,
+            breadcrumbs: Rect::default(),
             preview: Rect::default(),
             browser: Rect::default(),
             split: Rect::default(),

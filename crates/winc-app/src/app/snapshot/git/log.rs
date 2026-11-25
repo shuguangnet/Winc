@@ -551,12 +551,12 @@ fn log_spills_long_subjects_on_hover_and_drags_the_divider() {
     app.on_mouse_move(x, y);
     assert_eq!(app.pointer.hover, Hover::Log(LogTarget::Divider));
     app.on_mouse_down(MouseButton::Left);
-    app.on_mouse_move(x - 100.0, y);
+    app.on_mouse_move(x - 80.0, y);
     app.on_mouse_up(MouseButton::Left);
-    assert_eq!(app.log_parts().details.w, before + 100.0);
-    assert_eq!(app.git.log.details_w, Some(before + 100.0));
+    assert_eq!(app.log_parts().details.w, before + 80.0);
+    assert_eq!(app.git.log.details_w, Some(before + 80.0));
     // 拖动距离再大，列表也保留最小宽度。
-    app.on_mouse_move(x - 100.0, y);
+    app.on_mouse_move(x - 80.0, y);
     app.on_mouse_down(MouseButton::Left);
     app.on_mouse_move(-5000.0, y);
     app.on_mouse_up(MouseButton::Left);

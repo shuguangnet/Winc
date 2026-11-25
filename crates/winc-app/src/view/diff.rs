@@ -309,8 +309,7 @@ fn draw_header(
             let pill_w = w + 10.0;
             right -= pill_w;
             let pill = Rect::new(right, pill_y, pill_w, pill_h);
-            frame.rect_clipped(pill, *fill, 4.0, header);
-            ui_text_small(frame, app, right + 5.0, pill, text, *color, header);
+            controls::soft_pill(app, frame, pill, text, (*color, *fill, 4.0), 5.0, header);
             right -= 6.0;
         }
     }

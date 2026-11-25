@@ -2,6 +2,8 @@
 //!
 //! 信任按 [`Risks::fingerprint`] 判断：配置或 hooks 变化以后指纹随之改变，需要用户重新确认。
 
+use std::collections::HashMap;
+
 use super::*;
 
 /// 会让 `git` 运行命令的设置项，写成小写，`*` 代表任意一段名字。

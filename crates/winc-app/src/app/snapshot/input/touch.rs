@@ -95,20 +95,20 @@ fn double_clicks_beside_top_bar_controls_do_not_zoom_the_window() {
     app.relayout();
     app.new_file();
     paint(&mut app);
-    // 标签页、窗口按钮所在的列（正上方、正下方的空白同属这一列）以及相邻按钮之间的间隙。
-    let tab = app.hits.tabs[0].tab;
-    assert!(!app.title_bar_double_click_zooms(tab.x + tab.w / 2.0));
+    // 命令中心、布局按钮、窗口按钮所在的列以及相邻按钮之间的间隙。
+    let cc = app.layout.command_center;
+    assert!(!app.title_bar_double_click_zooms(cc.x + cc.w / 2.0));
     let [(minimize, _), (maximize, _), _] = app.window_control_rects();
     assert!(!app.title_bar_double_click_zooms(maximize.x + 1.0));
     assert!(!app.title_bar_double_click_zooms((minimize.right() + maximize.x) / 2.0));
-    // 标签页与窗口按钮之间的空白列仍然切换最大化。
-    let blank = (app.tabs.new_tab.right() + app.layout.controls.x) / 2.0;
-    assert!(app.over_title_bar(blank, TOP_BAR_END / 2.0));
+    // 命令中心与右侧布局按钮之间的空白列仍然切换最大化。
+    let blank = (cc.right() + app.layout.sidebar_button.x) / 2.0;
+    assert!(app.over_title_bar(blank, TITLE_BAR / 2.0));
     assert!(app.title_bar_double_click_zooms(blank));
     // 界面缩放后规则不变：窗口过程使用乘过缩放倍数的区域，结论与布局坐标下一致。
     app.set_zoom(150);
     paint(&mut app);
-    let blank = (app.tabs.new_tab.right() + app.layout.controls.x) / 2.0;
+    let blank = (app.layout.command_center.right() + app.layout.sidebar_button.x) / 2.0;
     assert!(app.title_bar_double_click_zooms(blank));
     assert!(!app.title_bar_double_click_zooms(app.layout.controls.x + 1.0));
 }
@@ -135,7 +135,7 @@ fn caption_controls_cover_top_bar_targets() {
     let verify = |app: &App| {
         let controls = app.caption_controls();
         let size = app.layout.window;
-        for y in (0..TOP_BAR_END as usize).step_by(2) {
+        for y in (0..TITLE_BAR as usize).step_by(2) {
             for x in (0..size.w as usize).step_by(2) {
                 let (x, y) = (x as f32 + 0.5, y as f32 + 0.5);
                 // 系统命中测试先判断窗口边缘、后判断控件（`WindowHitTest::hit`），边缘处无须检查。
@@ -361,8 +361,8 @@ fn touch_title_bar_starts_on_contact_without_scrolling_or_long_press() {
     app.window.controls = true;
     app.relayout();
     paint(&mut app);
-    let x = app.layout.window.w / 2.0;
-    let y = ISLAND_MARGIN + TOP_BAR / 2.0;
+    let x = (app.layout.command_center.right() + app.layout.sidebar_button.x) / 2.0;
+    let y = TITLE_BAR / 2.0;
     assert_eq!(
         app.touch_window_at(x, y),
         Some(crate::app::input::touch::WindowTouch::Move)
@@ -439,7 +439,7 @@ fn native_touch_caption_matches_application_targets() {
                 );
             }
         }
-        for y in (0..TOP_BAR_END as usize).step_by(2) {
+        for y in (0..TITLE_BAR as usize).step_by(2) {
             for x in (0..size.w as usize).step_by(2) {
                 let (x, y) = (x as f32 + 0.5, y as f32 + 0.5);
                 let hit = native.hit(x * zoom, y * zoom, size.w * zoom, size.h * zoom, false);

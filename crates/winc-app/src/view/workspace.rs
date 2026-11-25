@@ -2,8 +2,11 @@
 
 use super::*;
 
+pub(super) mod activity_bar;
+pub(super) mod breadcrumbs;
 pub(super) mod outline;
 pub(super) mod panel;
 pub(super) mod sidebar;
 pub(super) mod start;
+pub(super) mod title_bar;
 pub(super) mod top_bar;

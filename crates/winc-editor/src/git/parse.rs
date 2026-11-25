@@ -2,7 +2,7 @@
 //!
 //! 各命令的输出格式见各函数的文档；本模块不启动进程，输入由 [`Git`] 的方法取回。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::*;
 

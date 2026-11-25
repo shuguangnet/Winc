@@ -463,7 +463,10 @@ fn a_drawn_title_bar_has_window_buttons_and_resize_edges() {
     let window = app.layout.window;
     assert!(controls.w > 0.0 && controls.right() < window.right());
     assert!(controls.y >= 0.0 && controls.bottom() <= TOP_BAR_END);
-    assert!(app.layout.tabs.right() <= controls.x, "标签栏让出窗口按钮");
+    assert!(
+        controls.bottom() <= app.layout.tabs.y,
+        "窗口按钮位于标题栏内，与下方标签栏互不遮挡"
+    );
 
     let rects = app.window_control_rects();
     let order: Vec<_> = rects.iter().map(|&(_, c)| c).collect();

@@ -58,7 +58,8 @@ pub struct TabSlide {
 /// 关掉以后的宽度去掉这一个，`lock` 给出用鼠标关时锁定的下标和宽度（见 `TabBar::width_lock`），
 /// 该下标的宽度改用锁定值。不动的不列出。
 fn close_shifts(widths: &[f32], index: usize, lock: Option<(usize, f32)>) -> Vec<(usize, f32)> {
-    let slot = |widths: &[f32], i: usize| -> f32 { widths[..i].iter().map(|w| w + TAB_GAP).sum() };
+    let slot =
+        |widths: &[f32], i: usize| -> f32 { widths[..i].iter().map(|w| w + EDITOR_TAB_GAP).sum() };
     let mut after = widths.to_vec();
     after.remove(index);
     if let Some((locked, width)) = lock
@@ -258,7 +259,10 @@ impl App {
 
     /// 返回第 `index` 个标签左边在内容中的横坐标（逻辑像素）。
     fn tab_slot(&self, index: usize) -> f32 {
-        self.tabs.widths[..index].iter().map(|w| w + TAB_GAP).sum()
+        self.tabs.widths[..index]
+            .iter()
+            .map(|w| w + EDITOR_TAB_GAP)
+            .sum()
     }
 
     /// 返回拖动中的第 `index` 个标签左边在内容中的横坐标（逻辑像素）。
@@ -269,7 +273,7 @@ impl App {
         let width = tabs.widths.get(index).copied().unwrap_or(0.0);
         let left = self.pointer.mouse.0 - grab - tabs.view.x + tabs.scroll;
         let low = tabs.scroll;
-        let high = (tabs.content - TAB_GAP - width).min(tabs.scroll + tabs.view.w - width);
+        let high = (tabs.content - EDITOR_TAB_GAP - width).min(tabs.scroll + tabs.view.w - width);
         left.min(high).max(low)
     }
 
@@ -360,11 +364,14 @@ impl App {
             (index, index)
         };
         let span = |tabs: &TabBar, from: usize, to: usize| -> f32 {
-            tabs.widths[from..to].iter().map(|w| w + TAB_GAP).sum()
+            tabs.widths[from..to]
+                .iter()
+                .map(|w| w + EDITOR_TAB_GAP)
+                .sum()
         };
         let left = self.dragged_tab_left(index, drag.grab);
         let block_left = left - span(&self.tabs, lo, index);
-        let block_right = left + span(&self.tabs, index, hi + 1) - TAB_GAP;
+        let block_right = left + span(&self.tabs, index, hi + 1) - EDITOR_TAB_GAP;
         let shift = span(&self.tabs, lo, hi + 1);
         loop {
             let (from, to, offset) = if lo > 0 && block_left < self.tab_center(lo - 1) {
@@ -414,8 +421,9 @@ impl App {
             return;
         }
         let doc = &self.editor.documents[index];
-        let slot =
-            |widths: &[f32], i: usize| -> f32 { widths[..i].iter().map(|w| w + TAB_GAP).sum() };
+        let slot = |widths: &[f32], i: usize| -> f32 {
+            widths[..i].iter().map(|w| w + EDITOR_TAB_GAP).sum()
+        };
         let name = doc.name().into_owned();
         let icon = doc
             .diff

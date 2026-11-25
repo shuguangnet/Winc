@@ -71,3 +71,58 @@ pub(in crate::view) fn segment_track(
         frame.rect_clipped(slot.inset(0.5, 0.5), raised, RADIUS_ROW - 0.5, clip);
     }
 }
+
+/// 绘制一条 1 逻辑像素宽的垂直缩进参考线；`active` 为真时使用强调后的高亮颜色，用于标识当前
+/// 焦点/悬停/选中项所属的层级。
+pub(in crate::view) fn indent_guide(
+    frame: &mut Frame<'_>,
+    p: &Palette,
+    x: f32,
+    y: f32,
+    h: f32,
+    active: bool,
+    clip: Rect,
+) {
+    let color = if active {
+        p.indent_guide_active
+    } else {
+        p.indent_guide
+    };
+    frame.rect_clipped(Rect::new(x.round(), y, 1.0, h), color, 0.0, clip);
+}
+
+/// 绘制柔和圆角胶囊徽章：填充 `fill` 底色后在水平留白 `pad_x` 处以小号 UI 字体绘制 `text`。
+pub(in crate::view) fn soft_pill(
+    app: &App,
+    frame: &mut Frame<'_>,
+    rect: Rect,
+    text: &str,
+    (color, fill, radius): (Color, Color, f32),
+    pad_x: f32,
+    clip: Rect,
+) {
+    frame.rect_clipped(rect, fill, radius, clip);
+    ui_text_small(frame, app, rect.x + pad_x, rect, text, color, clip);
+}
+
+/// 绘制右侧计数胶囊徽章：半圆角底色配居中数字文本。
+pub(in crate::view) fn count_pill(
+    app: &App,
+    frame: &mut Frame<'_>,
+    rect: Rect,
+    text: &str,
+    pad_x: f32,
+    clip: Rect,
+) {
+    let p = app.palette;
+    frame.rect_clipped(rect, p.hover, rect.h / 2.0, clip);
+    caps_label(
+        frame,
+        app,
+        app.fonts.ui_small,
+        (rect.x + pad_x, rect),
+        text,
+        p.text_muted,
+        clip,
+    );
+}

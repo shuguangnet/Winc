@@ -229,6 +229,8 @@ fn showing_as_tree_switches_the_changes_between_a_tree_and_a_flat_list() {
         return;
     };
     let mut app = app_with(&dir, false);
+    app.panels.sidebar.width = 300.0;
+    app.relayout();
     app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
@@ -384,6 +386,8 @@ fn hovering_a_long_change_name_shows_it_in_full_with_its_buttons_after_it() {
         return;
     };
     let mut app = app_with(&dir, false);
+    app.panels.sidebar.width = 300.0;
+    app.relayout();
     app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
@@ -474,6 +478,8 @@ fn a_long_change_name_slides_out_and_back_like_the_file_tree() {
         return;
     };
     let mut app = app_with(&dir, false);
+    app.panels.sidebar.width = 300.0;
+    app.relayout();
     app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
@@ -550,6 +556,8 @@ fn names_that_only_make_room_for_the_buttons_slide_the_buttons_out() {
     }
     git_in(&dir, &["add", "-A"]);
     let mut app = app_with(&dir, false);
+    app.panels.sidebar.width = 300.0;
+    app.relayout();
     app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
@@ -873,6 +881,8 @@ fn the_full_name_row_covers_the_scrollbar_like_the_file_tree() {
         return;
     };
     let mut app = app_with(&dir, false);
+    app.panels.sidebar.width = 300.0;
+    app.relayout();
     app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
@@ -924,6 +934,8 @@ fn the_full_name_row_covers_the_splitter_like_the_file_tree() {
         return;
     };
     let mut app = app_with(&dir, false);
+    app.panels.sidebar.width = 300.0;
+    app.relayout();
     app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;

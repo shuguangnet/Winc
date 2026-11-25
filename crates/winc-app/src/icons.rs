@@ -1082,3 +1082,35 @@ pub fn copy(frame: &mut Frame<'_>, (cx, cy): (f32, f32), color: Color, clip: Rec
     ];
     frame.stroke(&back, STROKE, color, clip);
 }
+
+/// 绘制缩放后的「设置」齿轮图标，约 16×16（`scale = 1.0`）：内外双圆环加八个均布轮齿。
+pub fn gear_scaled(
+    frame: &mut Frame<'_>,
+    (cx, cy): (f32, f32),
+    scale: f32,
+    color: Color,
+    clip: Rect,
+) {
+    let w = STROKE * scale;
+    let inner = 2.6 * scale;
+    let outer = 5.6 * scale;
+    let tip = 7.4 * scale;
+    let tau = 2.0 * PI;
+    frame.stroke(&[Stroke::Arc(cx, cy, inner, 0.0, tau)], w, color, clip);
+    frame.stroke(&[Stroke::Arc(cx, cy, outer, 0.0, tau)], w, color, clip);
+    for i in 0..8 {
+        let a = i as f32 * (tau / 8.0);
+        let (dx, dy) = (a.cos(), a.sin());
+        frame.stroke(
+            &[Stroke::Line(
+                cx + dx * outer,
+                cy + dy * outer,
+                cx + dx * tip,
+                cy + dy * tip,
+            )],
+            w * 1.25,
+            color,
+            clip,
+        );
+    }
+}

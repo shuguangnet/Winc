@@ -16,4 +16,5 @@ pub(super) mod tab_selection;
 pub(super) mod tabs;
 pub(super) mod tree;
 mod tree_drag;
+mod vscode_ui;
 pub(super) mod watch;

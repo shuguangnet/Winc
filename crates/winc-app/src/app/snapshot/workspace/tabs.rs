@@ -134,7 +134,7 @@ fn dragging_a_tab_reorders_the_tabs() {
     app.tabs.slides.clear();
     paint(&mut app);
     let (a, b) = (tab_rect(&app, 1), tab_rect(&app, 2));
-    assert_eq!(b.x, a.right() + TAB_GAP);
+    assert_eq!(b.x, a.right() + EDITOR_TAB_GAP);
 
     // 一次向左拖动越过两个标签。
     let (x, y) = tab_point(&app, 2);
@@ -533,7 +533,10 @@ fn a_newly_opened_tab_is_scrolled_into_view_once_it_has_grown() {
     // 展开完成后的一帧：滚动位置跟到标签的右边缘，标签完整可见。
     app.tabs.opening.clear();
     paint(&mut app);
-    let left: f32 = app.tabs.widths[..index].iter().map(|w| w + TAB_GAP).sum();
+    let left: f32 = app.tabs.widths[..index]
+        .iter()
+        .map(|w| w + EDITOR_TAB_GAP)
+        .sum();
     let right = left + app.tabs.widths[index];
     assert!(app.tabs.scroll > narrow);
     assert!(left >= app.tabs.scroll, "{left} {}", app.tabs.scroll);

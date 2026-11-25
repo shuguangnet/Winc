@@ -188,30 +188,27 @@ fn draw_rows(
             app.pointer.hover,
             Hover::Outline(OutlineTarget::Row(h) | OutlineTarget::Arrow(h)) if h == i
         );
-        let pill = Rect::new(
-            row.x + 8.0,
-            row.y + 1.0,
-            (row.w - 16.0).max(0.0),
-            row.h - 2.0,
-        );
+        let pill = Rect::new(row.x, row.y, row.w, row.h);
         if let Some(color) = row_color(p, highlight == Some(i), focused, hovered) {
-            frame.rect_clipped(pill, color, RADIUS_ROW, clip);
+            frame.rect_clipped(pill, color, 0.0, clip);
         }
 
         let indent = row.x + INDENT;
         let cy = icon_center_y(app, row, app.fonts.ui);
         // 缩进参考线：每级一条，位于上级箭头的正下方，相邻行的参考线连成竖线；当前高亮符号所属层级加深。
         for level in 0..symbol.depth {
-            let x = (indent + level as f32 * TREE_INDENT + 4.0).round();
             let is_active = active_guide
                 .as_ref()
                 .is_some_and(|(d, range)| *d == level && range.contains(&v));
-            let guide_color = if is_active {
-                p.indent_guide_active
-            } else {
-                p.indent_guide
-            };
-            frame.rect_clipped(Rect::new(x, row.y, 1.0, row.h), guide_color, 0.0, clip);
+            controls::indent_guide(
+                frame,
+                p,
+                indent + level as f32 * TREE_INDENT + 4.0,
+                row.y,
+                row.h,
+                is_active,
+                clip,
+            );
         }
         let x = indent + symbol.depth as f32 * TREE_INDENT;
         // 箭头在行内，先于整行记下：命中时按记下的先后取第一个。

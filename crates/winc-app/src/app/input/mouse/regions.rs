@@ -3,19 +3,20 @@
 use super::*;
 
 impl App {
-    /// 返回侧栏顶部切换按钮和搜索面板中的悬停目标；不在这些位置时返回 `None`。
+    /// 返回最左侧垂直活动栏及侧栏面板中的悬停目标；不在这些位置时返回 `None`。
     pub(super) fn panel_hover_at(&self, x: f32, y: f32) -> Option<Hover> {
-        let sidebar = self.layout.sidebar;
-
-        let spilled = self.in_commit_overflow(x, y) || self.in_result_overflow(x, y);
-        if sidebar.right() <= 0.0 || !(sidebar.contains(x, y) || spilled) {
-            return None;
-        }
-
         if let Some(view) = hit(&self.sidebar_tabs(), x, y) {
             return Some(Hover::ViewTab(view));
         }
-        // 第二行的项目和分支，三个视图都一样。
+
+        let sidebar = self.layout.sidebar;
+
+        let spilled = self.in_commit_overflow(x, y) || self.in_result_overflow(x, y);
+        if !self.layout.sidebar_visible() || !(sidebar.contains(x, y) || spilled) {
+            return None;
+        }
+
+        // 标题行的项目和分支，三个视图都一样。
         if self.hits.project.contains(x, y) {
             return Some(Hover::ProjectName);
         }
@@ -292,25 +293,29 @@ impl App {
             && !self.over_commit_overflow_row(y)
     }
 
-    /// 是否已处理对侧栏顶部切换按钮或搜索面板的点击。
+    /// 是否已处理对活动栏图标或侧栏面板的点击。
     pub(super) fn click_panel(&mut self, x: f32, y: f32) -> bool {
+        // VS Code 习惯：点击已激活的活动栏图标折叠/展开侧栏；点击其他视图则切换并展开侧栏。
+        if let Some(view) = hit(&self.sidebar_tabs(), x, y) {
+            if self.panels.sidebar.visible && self.panels.sidebar.view == view {
+                self.toggle_sidebar();
+            } else {
+                match view {
+                    SidebarView::Files => self.show_files(),
+                    SidebarView::Search => self.open_global_search(false),
+                    SidebarView::Commit => self.show_commit(),
+                }
+            }
+            return true;
+        }
+
         let sidebar = self.layout.sidebar;
 
         let spilled = self.in_commit_overflow(x, y) || self.in_result_overflow(x, y);
-        if sidebar.right() <= 0.0 || !(sidebar.contains(x, y) || spilled) {
+        if !self.layout.sidebar_visible() || !(sidebar.contains(x, y) || spilled) {
             return false;
         }
 
-        // 点击切换按钮：已在该页时也把焦点交给它（文件树或搜索输入框）。
-        if let Some(view) = hit(&self.sidebar_tabs(), x, y) {
-            match view {
-                SidebarView::Files => self.show_files(),
-                SidebarView::Search => self.open_global_search(false),
-                SidebarView::Commit => self.show_commit(),
-            }
-
-            return true;
-        }
         if self.hits.project.contains(x, y) {
             self.open_project_menu();
             return true;

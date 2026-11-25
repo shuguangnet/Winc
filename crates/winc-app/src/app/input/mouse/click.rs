@@ -227,6 +227,14 @@ impl App {
             Target::TreeMore => self.open_tree_tools_menu(),
             Target::ProjectName => self.open_project_menu(),
             Target::SidebarButton => self.toggle_sidebar(),
+            Target::CommandCenter => self.open_picker(),
+            Target::PanelButton => self.toggle_terminal(),
+            Target::SplitButton => {
+                if self.editor.active.is_some() {
+                    self.split_editor(winc_editor::panes::Axis::Row);
+                }
+            }
+            Target::ActivitySettings => self.open_settings(),
             Target::NewTab => self.new_file(),
             Target::TabList => self.open_tab_list_menu(),
             Target::Preview(mode) => self.choose_preview_mode(mode),

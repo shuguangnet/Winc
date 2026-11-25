@@ -65,12 +65,25 @@ impl App {
         if !self.window.controls {
             return;
         }
-        let top = ISLAND_MARGIN + (TOP_BAR - BUTTON) / 2.0;
-        let right = l.window.right() - ISLAND_MARGIN - 6.0;
+        let top = ((TITLE_BAR - BUTTON) / 2.0).max(0.0);
+        let right = l.window.right() - 8.0;
         l.controls = Rect::new(right - WINDOW_CONTROLS_W, top, WINDOW_CONTROLS_W, BUTTON);
-        let end = l.controls.x - TAB_GAP;
-        if l.tabs.right() > end {
-            l.tabs.w = (end - l.tabs.x).max(0.0);
+        // 标题栏右侧的布局控制按钮紧贴窗口按钮左侧排列，命令中心避让它们。
+        let gap = 8.0;
+        let btn_right = l.controls.x - gap;
+        l.split_button = Rect::new(btn_right - BUTTON, top, BUTTON, BUTTON);
+        l.panel_button = Rect::new(l.split_button.x - BUTTON_GAP - BUTTON, top, BUTTON, BUTTON);
+        l.sidebar_button = Rect::new(l.panel_button.x - BUTTON_GAP - BUTTON, top, BUTTON, BUTTON);
+        let right_safe = l.sidebar_button.x - 12.0;
+        if l.command_center.right() > right_safe {
+            let left_safe = crate::layout::traffic_lights_end().max(16.0) + 12.0;
+            let room = (right_safe - left_safe).max(0.0);
+            if room < 140.0 {
+                l.command_center = Rect::default();
+            } else {
+                l.command_center.w = l.command_center.w.min(room);
+                l.command_center.x = (right_safe - l.command_center.w).max(left_safe);
+            }
         }
     }
 

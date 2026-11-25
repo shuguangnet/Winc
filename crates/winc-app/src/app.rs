@@ -488,6 +488,14 @@ pub enum Hover {
     PickerPart(PickerPart),
     ProjectName,
     SidebarButton,
+    /// 标题栏正中的命令中心搜索条（点击打开快速打开/命令面板）。
+    CommandCenter,
+    /// 标题栏右侧「切换终端面板」按钮。
+    PanelButton,
+    /// 标题栏右侧「向右拆分编辑器」按钮。
+    SplitButton,
+    /// 左侧垂直活动栏底部的设置齿轮按钮。
+    ActivitySettings,
     NewTab,
     /// 标签栏无法容纳全部标签时显示在最右端的「⌄」，用于列出全部标签。
     TabList,

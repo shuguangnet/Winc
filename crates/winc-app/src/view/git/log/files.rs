@@ -167,16 +167,7 @@ pub(super) fn draw_files(
                     count_w,
                     pill_h,
                 );
-                frame.rect_clipped(pill, p.hover, pill_h / 2.0, area);
-                caps_label(
-                    frame,
-                    app,
-                    app.fonts.ui_small,
-                    (pill.x + 6.0, pill),
-                    &count_str,
-                    p.text_muted,
-                    area,
-                );
+                controls::count_pill(app, frame, pill, &count_str, 6.0, area);
                 let left = folder_x + icons::FOLDER_WIDTH + 6.0;
                 let room = (pill.x - 8.0 - left).max(0.0);
                 let shown_dir = truncate_end(frame, &dir, app.fonts.ui_small, room);
@@ -210,13 +201,15 @@ pub(super) fn draw_files(
                 }
                 // 按目录分组且有上级目录标题时，在目录折叠箭头正下方画一条缩进参考线。
                 if !flat && current_dir_has_header {
-                    let gx = (x + 4.0).round();
-                    let guide_color = if chosen || hovered {
-                        p.indent_guide_active
-                    } else {
-                        p.indent_guide
-                    };
-                    frame.rect_clipped(Rect::new(gx, row.y, 1.0, row.h), guide_color, 0.0, area);
+                    controls::indent_guide(
+                        frame,
+                        p,
+                        x + 4.0,
+                        row.y,
+                        row.h,
+                        chosen || hovered,
+                        area,
+                    );
                 }
                 let file_x = if flat {
                     x

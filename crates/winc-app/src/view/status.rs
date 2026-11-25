@@ -10,9 +10,6 @@ use super::*;
 use crate::app::{StatusEntry, StatusItem, StatusKey, StatusMotion, indent_label};
 use crate::icons::Direction;
 
-/// 路径中相邻两段文字之间的距离（逻辑像素），箭头绘制在正中。
-const CRUMB_GAP: f32 = 22.0;
-
 /// 状态栏右侧相邻两项之间的距离（逻辑像素）。
 const STATUS_GAP: f32 = 15.0;
 
@@ -204,7 +201,7 @@ fn draw_content(
     let hovered = app.pointer.hover == Hover::Status(StatusItem::Update);
     let ink = match update_button(app).filter(|_| key == StatusKey::Update) {
         Some(button) => button.colors(p, hovered).1,
-        None => p.text_muted,
+        None => p.status_bar_fg,
     };
     let picker = matches!(key, StatusKey::Branch | StatusKey::Worktree);
     let icon = match key {
@@ -217,13 +214,24 @@ fn draw_content(
         let text_w = frame.measure(FontKind::Ui, app.fonts.ui_small, text);
         if key == StatusKey::Branch {
             let active_sync = text.contains('↑') || text.contains('↓') || text.contains(" · ");
-            let icon_color = if active_sync { p.accent } else { p.text_muted };
+            let icon_color = if active_sync && p.status_bar_bg == p.frame_bg {
+                p.accent
+            } else {
+                p.status_bar_fg
+            };
             icons::branch_small(frame, (x + 4.0, cy), fade(icon_color), clip);
         } else {
-            icons::folder_small(frame, (x + 4.0, cy), fade(p.text_muted), clip);
+            icons::folder_small(frame, (x + 4.0, cy), fade(p.status_bar_fg), clip);
         }
         let arrow = (x + icon + text_w + 7.0, cy);
-        icons::chevron(frame, arrow, 5.5, Direction::Down, fade(p.text_dim), clip);
+        icons::chevron(
+            frame,
+            arrow,
+            5.5,
+            Direction::Down,
+            fade(p.status_bar_fg.alpha(p.status_bar_fg.a * 0.75)),
+            clip,
+        );
     }
     ui_text_small(frame, app, x + icon, bar, text, fade(ink), clip);
 }
@@ -322,11 +330,17 @@ pub(in crate::view) fn update_tooltip(app: &App) -> Option<String> {
     Some(tip)
 }
 
-/// 绘制状态栏，并更新路径段和右侧可点击项的命中区域（`StatusState::crumb_hits`、`StatusState::hits`）。
+/// 绘制状态栏，并更新右侧可点击项的命中区域（`StatusState::hits`）。
+///
+/// 面包屑路径已迁至编辑区顶置栏（`view::workspace::breadcrumbs`），状态栏遵循 VS Code
+/// 布局：最左端为远程连接色块，左侧为 Vim 模式与提示消息，右侧为 Git 分支、文档信息与设置。
 pub(super) fn draw_status(app: &mut App, frame: &mut Frame<'_>) {
     let p = app.palette;
     let bar = app.layout.status;
-    frame.rect(bar, p.frame_bg);
+    frame.rect(bar, p.status_bar_bg);
+    if bar.h > 1.0 {
+        frame.rect(Rect::new(bar.x, bar.y, bar.w, 1.0), p.border);
+    }
     // Vim 模式的命令行与查找占用整行。
     if app.vim_prompt_open() {
         draw_command_line(app, frame);
@@ -359,7 +373,7 @@ pub(super) fn draw_status(app: &mut App, frame: &mut Frame<'_>) {
     let hovered = app.pointer.hover == Hover::Status(item);
     draw_button(frame, p, pill, bar, hovered, false);
     let center = (slot + icons::SIDEBAR_WIDTH / 2.0, bar.y + bar.h / 2.0);
-    let color = if hovered { p.text } else { p.text_muted };
+    let color = if hovered { p.text } else { p.status_bar_fg };
     icons::gear(frame, center, color, bar);
     status_hits.push((pill, item));
 
@@ -678,72 +692,19 @@ pub(super) fn draw_status(app: &mut App, frame: &mut Frame<'_>) {
     }
 
     let left = Rect::new(bar.x, bar.y, (right - 16.0 - bar.x).max(0.0), bar.h);
-    let mut x = bar.x + 14.0;
-    let mut hits = Vec::new();
-
-    if doc.is_some() {
-        let crumbs = app.crumbs();
-        // 工作区以外的文件只有一段完整路径，最多占左侧的一半，放不下时从中间截短并保留完整
-        // 文件名：长路径能占满大半个状态栏，把临时消息挤掉。
-        let half = left.w / 2.0;
-
-        for (i, crumb) in crumbs.iter().enumerate() {
-            let name = if crumbs.len() == 1 && crumb.path.is_some() {
-                shorten_path(frame, &crumb.name, app.fonts.ui_small, half)
-            } else {
-                Cow::Borrowed(crumb.name.as_str())
-            };
-            if i > 0 {
-                let arrow = (
-                    x + CRUMB_GAP / 2.0,
-                    icon_center_y(app, bar, app.fonts.ui_small),
-                );
-                icons::chevron(frame, arrow, 6.5, Direction::Right, p.text_dim, left);
-                x += CRUMB_GAP;
-            }
-
-            // 有路径的段可点击：悬停时铺按钮底色，其目录菜单打开时显示为按下状态。
-            if crumb.path.is_some() {
-                let w = frame.measure(FontKind::Ui, app.fonts.ui_small, &name);
-                let pill = Rect::new(x - CRUMB_PAD, bar.y + 4.0, w + 2.0 * CRUMB_PAD, bar.h - 8.0);
-                let hovered = app.pointer.hover == Hover::Crumb(i);
-                draw_button(
-                    frame,
-                    p,
-                    pill,
-                    left,
-                    hovered,
-                    app.overlays.menu_button == Some(MenuButton::Crumb(i)),
-                );
-                if pill.x < left.right() {
-                    let visible = pill.w.min(left.right() - pill.x);
-                    hits.push((Rect::new(pill.x, pill.y, visible, pill.h), i));
-                }
-            }
-
-            let color = if i + 1 == crumbs.len() {
-                p.text
-            } else {
-                p.text_muted
-            };
-            x = ui_text_small(frame, app, x, bar, &name, color, left);
-        }
-
-        // 配置文件中光标所在的键路径：接在文件名之后，颜色较淡，放不下时从中间截短。
-        if let Some(path) = app.key_path() {
-            let arrow = (
-                x + CRUMB_GAP / 2.0,
-                icon_center_y(app, bar, app.fonts.ui_small),
-            );
-            icons::chevron(frame, arrow, 6.5, Direction::Right, p.text_dim, left);
-            x += CRUMB_GAP;
-            let room = (left.right() - x).max(0.0);
-            let path = ellipsize(frame, &path, app.fonts.ui_small, room);
-            x = ui_text_small(frame, app, x, bar, &path, p.text_muted, left);
-        }
-
-        x += 24.0;
+    // VS Code 状态栏最左端远程指示块（36px 强调色块 + 白色 `><` 图标）。
+    let remote_w = 36.0_f32.min(left.w);
+    if remote_w >= 24.0 {
+        let remote_box = Rect::new(bar.x, bar.y, remote_w, bar.h);
+        frame.rect_clipped(remote_box, p.accent_fill, 0.0, left);
+        icons::remote(
+            frame,
+            super::center(remote_box),
+            p.text_on_accent,
+            remote_box,
+        );
     }
+    let mut x = bar.x + remote_w + 12.0;
 
     // Vim 模式的状态（模式、未完成的按键）排在消息之前，以柔和圆角胶囊标示当前模式。
     if let Some(vim) = app.vim_status() {
@@ -754,15 +715,14 @@ pub(super) fn draw_status(app: &mut App, frame: &mut Frame<'_>) {
         } else if vim.starts_with(t!("workspace-status-vim-visual")) {
             p.accent
         } else {
-            p.text_muted
+            p.status_bar_fg
         };
         let vim_w = frame.measure(FontKind::Ui, app.fonts.ui_small, &vim);
         let pill_w = vim_w + 12.0;
-        let pill_h = bar.h - 8.0;
-        let pill = Rect::new(x, bar.y + 4.0, pill_w, pill_h);
+        let pill_h = (bar.h - 6.0).max(14.0);
+        let pill = Rect::new(x, bar.y + (bar.h - pill_h) / 2.0, pill_w, pill_h);
         let fill = mode_color.alpha(if p.dark { 0.18 } else { 0.14 });
-        frame.rect_clipped(pill, fill, 4.0, left);
-        ui_text_small(frame, app, x + 6.0, pill, &vim, mode_color, left);
+        controls::soft_pill(app, frame, pill, &vim, (mode_color, fill, 3.0), 6.0, left);
         x = pill.right() + 12.0;
     }
 
@@ -781,7 +741,6 @@ pub(super) fn draw_status(app: &mut App, frame: &mut Frame<'_>) {
     }
 
     app.status.motion = motion;
-    app.hits.crumbs = hits;
     app.hits.status = status_hits;
 }
 

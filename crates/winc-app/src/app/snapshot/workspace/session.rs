@@ -11,8 +11,11 @@ fn no_history_starts_on_the_start_page() {
 
     // 没有目录时侧栏收起，编辑区卡片占满整个宽度；开始页上有应用设置、新建文件和打开操作，没有
     // 最近列表。只有 macOS 的选择器能同时选文件和目录，其他平台上打开文件和打开目录是两项。
-    assert!(app.layout.sidebar.right() <= 0.0);
-    assert_eq!(app.layout.editor.x, ISLAND_MARGIN);
+    assert!(!app.layout.sidebar_visible());
+    assert_eq!(
+        app.layout.editor.x,
+        crate::theme::ACTIVITY_BAR_W + crate::theme::ISLAND_GAP
+    );
     let actions: Vec<StartAction> = app.hits.start.iter().map(|(_, a)| *a).collect();
     let mut expected = vec![
         StartAction::Settings,
@@ -60,7 +63,7 @@ fn a_file_dropped_on_the_start_page_opens_without_its_folder() {
     assert_eq!(app.focus, Focus::Editor);
     paint(&mut app);
     assert!(app.hits.start.is_empty());
-    assert!(app.layout.sidebar.right() <= 0.0);
+    assert!(!app.layout.sidebar_visible());
 
     // 拖进目录才打开目录，刚才的文件留在标签里。
     app.open_path(&dir);

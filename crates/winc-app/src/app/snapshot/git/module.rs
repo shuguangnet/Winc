@@ -583,8 +583,8 @@ fn the_project_leads_the_second_row_and_git_context_sits_below_it() {
     let project = app.hits.project;
     assert!(project.y >= app.layout.sidebar_header.y);
     let tabs = app.sidebar_tabs();
-    assert!(tabs[0].0.x > app.layout.sidebar_button.right());
-    assert!(tabs[0].0.bottom() <= app.layout.sidebar_header.y);
+    assert_eq!(tabs[0].0.x, 0.0);
+    assert!(tabs[0].0.right() <= app.layout.sidebar.x);
     app.run_action(Action::FindInFiles);
     paint(&mut app);
     assert_eq!(app.hits.project, project);
@@ -772,8 +772,8 @@ fn switching_modules_off_fades_their_chrome_out() {
     paint(&mut app);
     let tabs = app.sidebar_tabs();
     assert_eq!(tabs.len(), 3);
-    assert!(tabs[2].0.w > 0.0 && tabs[2].0.w < full.w);
-    assert_eq!(tabs[2].0.right(), full.right());
+    assert!(tabs[2].0.h > 0.0 && tabs[2].0.h < full.h);
+    assert_eq!(tabs[2].0.y, full.y);
     assert!(app.motion.module_fx.branch_label.is_some());
     assert!(!hit(&app, StatusItem::Branch) && !hit(&app, StatusItem::Terminal));
 

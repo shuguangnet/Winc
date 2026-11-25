@@ -734,6 +734,8 @@ pub fn branch_small(frame: &mut Frame<'_>, center: (f32, f32), color: Color, cli
 /// 日志中引用徽章上的图标，表明引用的种类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefMark {
+    /// 当前检出的 `HEAD` 分支（VS Code 风格同心圆 `◎`）。
+    Head,
     /// 本地分支。
     Branch,
     /// 远程分支。
@@ -746,8 +748,8 @@ pub enum RefMark {
 
 /// 绘制引用徽章上的图标，约 9×9，笔宽 1 逻辑像素：与徽章中 12 号的文字相称。
 ///
-/// 本地分支用分支图形（`branch_shape`），远程分支是一朵云，标签是尖端朝左的吊牌，直接指向提交
-/// 的 `HEAD` 是提交图中的一个节点。
+/// 当前分支用同心圆（`◎`），本地分支用分支图形（`branch_shape`），远程分支是一朵云，标签是尖端朝左
+/// 的吊牌，直接指向提交的 `HEAD` 是提交图中的一个节点。
 pub fn ref_mark(
     frame: &mut Frame<'_>,
     mark: RefMark,
@@ -755,16 +757,20 @@ pub fn ref_mark(
     color: Color,
     clip: Rect,
 ) {
-    const WIDTH: f32 = 1.0;
+    const WIDTH: f32 = 1.1;
     match mark {
+        RefMark::Head => {
+            let shapes = [Stroke::Circle(cx, cy, 4.0), Stroke::Circle(cx, cy, 1.4)];
+            frame.stroke(&shapes, WIDTH, color, clip);
+        }
         RefMark::Branch => branch_shape(frame, (cx, cy), (0.5, WIDTH), color, None, clip),
         RefMark::Remote => {
-            let base = cy + 3.0;
+            let base = cy + 2.8;
             let shapes = [
-                Stroke::Arc(cx - 2.2, cy + 0.8, 2.2, FRAC_PI_2, 1.5 * PI),
-                Stroke::Arc(cx + 0.2, cy - 0.4, 2.8, -0.9 * PI, -0.1 * PI),
-                Stroke::Arc(cx + 2.7, cy + 1.2, 1.8, -FRAC_PI_2, FRAC_PI_2),
-                Stroke::Line(cx - 2.2, base, cx + 2.7, base),
+                Stroke::Arc(cx - 2.2, cy + 0.7, 2.1, FRAC_PI_2, 1.5 * PI),
+                Stroke::Arc(cx + 0.1, cy - 0.5, 2.6, -0.9 * PI, -0.1 * PI),
+                Stroke::Arc(cx + 2.6, cy + 1.0, 1.8, -FRAC_PI_2, FRAC_PI_2),
+                Stroke::Line(cx - 2.2, base, cx + 2.6, base),
             ];
             frame.stroke(&shapes, WIDTH, color, clip);
         }
@@ -790,6 +796,62 @@ pub fn ref_mark(
             frame.stroke(&shapes, WIDTH, color, clip);
         }
     }
+}
+
+/// 绘制「聚焦 HEAD」同心圆图标（`◎`），约 11×11，用于提交图与日志工具栏。
+pub fn target_head(frame: &mut Frame<'_>, (cx, cy): (f32, f32), color: Color, clip: Rect) {
+    let shapes = [Stroke::Circle(cx, cy, 4.75), Stroke::Circle(cx, cy, 1.75)];
+    frame.stroke(&shapes, 1.2, color, clip);
+}
+
+/// 绘制 VS Code 风格的「获取（Fetch）」图标：向下箭头指向底部的圆点。
+pub fn graph_fetch(frame: &mut Frame<'_>, (cx, cy): (f32, f32), color: Color, clip: Rect) {
+    let shapes = [
+        Stroke::Line(cx, cy - 5.0, cx, cy + 1.0),
+        Stroke::Line(cx - 2.8, cy - 1.6, cx, cy + 1.2),
+        Stroke::Line(cx + 2.8, cy - 1.6, cx, cy + 1.2),
+        Stroke::Circle(cx, cy + 3.8, 1.35),
+    ];
+    frame.stroke(&shapes, 1.2, color, clip);
+}
+
+/// 绘制 VS Code 风格的「拉取（Pull）」图标：向下箭头落到底部横线与圆点。
+pub fn graph_pull(frame: &mut Frame<'_>, (cx, cy): (f32, f32), color: Color, clip: Rect) {
+    let shapes = [
+        Stroke::Line(cx, cy - 5.0, cx, cy + 1.0),
+        Stroke::Line(cx - 2.8, cy - 1.6, cx, cy + 1.2),
+        Stroke::Line(cx + 2.8, cy - 1.6, cx, cy + 1.2),
+        Stroke::Line(cx - 4.5, cy + 3.8, cx - 1.6, cy + 3.8),
+        Stroke::Circle(cx, cy + 3.8, 1.5),
+        Stroke::Line(cx + 1.6, cy + 3.8, cx + 4.5, cy + 3.8),
+    ];
+    frame.stroke(&shapes, 1.2, color, clip);
+}
+
+/// 绘制 VS Code 风格的「推送（Push）」图标：从底部横线与圆点向上伸出的箭头。
+pub fn graph_push(frame: &mut Frame<'_>, (cx, cy): (f32, f32), color: Color, clip: Rect) {
+    let shapes = [
+        Stroke::Line(cx, cy + 1.0, cx, cy - 5.0),
+        Stroke::Line(cx - 2.8, cy - 2.2, cx, cy - 5.0),
+        Stroke::Line(cx + 2.8, cy - 2.2, cx, cy - 5.0),
+        Stroke::Line(cx - 4.5, cy + 3.8, cx - 1.6, cy + 3.8),
+        Stroke::Circle(cx, cy + 3.8, 1.5),
+        Stroke::Line(cx + 1.6, cy + 3.8, cx + 4.5, cy + 3.8),
+    ];
+    frame.stroke(&shapes, 1.2, color, clip);
+}
+
+/// 绘制双向交换箭头图标（`⇄`），用于交换比较两侧的版本。
+pub fn swap(frame: &mut Frame<'_>, (cx, cy): (f32, f32), color: Color, clip: Rect) {
+    let shapes = [
+        Stroke::Line(cx - 4.5, cy - 2.2, cx + 4.5, cy - 2.2),
+        Stroke::Line(cx + 2.0, cy - 4.4, cx + 4.5, cy - 2.2),
+        Stroke::Line(cx + 2.0, cy, cx + 4.5, cy - 2.2),
+        Stroke::Line(cx + 4.5, cy + 2.2, cx - 4.5, cy + 2.2),
+        Stroke::Line(cx - 2.0, cy, cx - 4.5, cy + 2.2),
+        Stroke::Line(cx - 2.0, cy + 4.4, cx - 4.5, cy + 2.2),
+    ];
+    frame.stroke(&shapes, 1.2, color, clip);
 }
 
 /// 绘制小号「拉取」图标，约 10×10，笔宽 1.25：指向左下的箭头，提交从远程落到本地。
@@ -827,6 +889,7 @@ pub fn ref_icon(
 ) {
     const WIDTH: f32 = 1.25;
     match mark {
+        RefMark::Head => target_head(frame, (cx, cy), color, clip),
         RefMark::Branch => branch_small(frame, (cx, cy), color, clip),
         RefMark::Remote => {
             let base = cy + 4.0;

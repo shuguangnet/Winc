@@ -637,7 +637,7 @@ impl App {
     }
 
     /// 删除分支前先确认。
-    fn confirm_delete_branch(&mut self, name: String) {
+    pub(super) fn confirm_delete_branch(&mut self, name: String) {
         let message = t!("git-branch-delete-confirm", name = name.as_str());
         let detail = t!("git-branch-delete-confirm-detail");
         let button = t!("git-branch-delete-confirm-button");

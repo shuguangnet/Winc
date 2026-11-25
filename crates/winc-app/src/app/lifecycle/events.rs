@@ -195,9 +195,16 @@ impl ApplicationHandler<UserEvent> for App {
                 // 红绿灯在顶部全宽标题栏中垂直居中。
                 f64::from(crate::theme::TITLE_BAR),
                 f64::from(crate::theme::TRAFFIC_LIGHT_LEFT),
-                move || {
+                move |event| {
                     if let Some(proxy) = &proxy {
-                        let _ = proxy.send_event(UserEvent::TrafficLightsMoved);
+                        let user = match event {
+                            crate::macos::FullscreenEvent::TrafficLightsMoved => {
+                                UserEvent::TrafficLightsMoved
+                            }
+                            crate::macos::FullscreenEvent::Entered => UserEvent::FullscreenEntered,
+                            crate::macos::FullscreenEvent::Exited => UserEvent::FullscreenExited,
+                        };
+                        let _ = proxy.send_event(user);
                     }
                 },
             );
@@ -568,6 +575,8 @@ impl App {
                 self.relayout();
                 self.request_redraw();
             }
+            UserEvent::FullscreenEntered => self.on_fullscreen_entered(),
+            UserEvent::FullscreenExited => self.on_fullscreen_exited(),
             // `⌘,` 由菜单项接管，不进入按键处理；设置已打开时再次触发则在此处关闭设置。窗口已
             // 关闭时先重新显示窗口。
             UserEvent::OpenSettings if self.settings.open && !self.window.hidden => {

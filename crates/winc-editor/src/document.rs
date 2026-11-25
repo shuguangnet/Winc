@@ -674,6 +674,15 @@ impl Document {
         document
     }
 
+    /// 创建只读、不对应文件的历史快照标签，标签上显示 `title`，按 `file_name` 启用语法高亮。
+    pub fn readonly_file(id: DocumentId, title: &str, file_name: &str, text: &str) -> Self {
+        let mut document = Document::from_text(id, text);
+        document.title = Some(title.to_owned());
+        document.readonly = true;
+        document.set_language(file_name);
+        document
+    }
+
     /// 创建只读、不对应文件的阅读标签，标签上显示 `title`，内容为 `reading`。
     pub fn reading(id: DocumentId, title: &str, reading: Reading) -> Self {
         let mut document = Document::from_text(id, "");

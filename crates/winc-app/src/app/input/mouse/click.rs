@@ -266,19 +266,22 @@ impl App {
             Target::Tree(_) => self.click_tree(x, y),
             Target::Placeholder(action) => self.run_placeholder_action(action),
             Target::Diff(target) => self.press_diff(target),
-            Target::Log(crate::app::git::log::LogTarget::AuthorEdge) => {
-                let double = self.click_count(x, y) == 2;
-                self.press_log_author_edge(x, double);
-            }
             Target::Log(crate::app::git::log::LogTarget::Divider) => {
-                // 双击回到默认宽度。
+                // 双击恢复默认 50% 分栏尺寸。
+                let horizontal = !self.git.log.side_by_side;
                 if self.click_count(x, y) == 2 {
-                    self.git.log.details_w = None;
+                    if horizontal {
+                        self.git.log.details_h = None;
+                    } else {
+                        self.git.log.details_w = None;
+                    }
                     self.request_redraw();
                 } else {
+                    let details = self.log_parts().details;
                     self.pointer.drag = Drag::LogDivider {
-                        start_x: x,
-                        start_width: self.log_parts().details.w,
+                        start_pos: if horizontal { y } else { x },
+                        start_size: if horizontal { details.h } else { details.w },
+                        horizontal,
                     };
                 }
             }

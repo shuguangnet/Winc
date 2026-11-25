@@ -221,6 +221,8 @@ fn the_diff_scrolls_with_the_read_only_cursor() {
     let old: String = (0..300).map(|line| format!("line {line}\n")).collect();
     let new = old.replace("line 150\n", "LINE 150\n");
     let (mut app, dir) = history_diff("vim-diff-scroll", &old, &new);
+    app.press_diff(DiffTarget::Collapse);
+    paint(&mut app);
     let scroll = |app: &App| app.editor.active().unwrap().scroll_line;
     let line = |app: &mut App| {
         let (side, _, head) = read(app).unwrap();

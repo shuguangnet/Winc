@@ -16,7 +16,9 @@ mod time;
 mod tree;
 
 pub(crate) use branches::{BRANCH_ROW, BranchRow, PanelFold};
-pub(crate) use columns::{AUTHOR_DEFAULT, LogColumn, log_author_width};
+#[cfg(test)]
+pub(crate) use columns::AUTHOR_DEFAULT;
+pub(crate) use columns::LogColumn;
 pub(crate) use details::LogFileRow;
 pub(crate) use filter::{LogPill, since_label};
 pub(crate) use time::*;
@@ -48,42 +50,31 @@ use crate::field::TextField;
 pub(crate) fn log_title() -> &'static str {
     t!("git-log-title")
 }
-/// 标题栏的高度（逻辑像素）。
-///
-/// 等于差异视图的标题栏高度，使两类标签的标题栏对齐。
-pub(crate) const LOG_HEADER: f32 = 36.0;
-/// 筛选输入框与分支按钮之间的间距（逻辑像素）。
-pub(crate) const LOG_FILTER_GAP: f32 = 8.0;
-/// 详情一栏的最小宽度与最大宽度（逻辑像素）。
-///
-/// 取自调参：300 可容纳提交说明和文件名；宽于 520 时提交列表过窄。拖动分隔线后不受上限
-/// 限制，只为列表保留 [`LIST_MIN`]。
+/// 标题栏的高度（逻辑像素），1:1 对齐 `gitHistoryVSCode`（`paddingTop: '40px'`）。
+pub(crate) const LOG_HEADER: f32 = 40.0;
+/// 提交列表中每条双行提交卡片的高度（逻辑像素），1:1 对齐 `gitHistoryVSCode` 的 `.log-entry`。
+pub(crate) const LOG_ROW_HEIGHT: f32 = 56.0;
+/// 筛选输入框与按钮之间的间距（逻辑像素）。
+pub(crate) const LOG_FILTER_GAP: f32 = 6.0;
+/// 左右分栏模式下详情一栏的最小宽度与默认最大宽度（逻辑像素）。
 const DETAILS_MIN: f32 = 300.0;
-const DETAILS_MAX: f32 = 520.0;
+const DETAILS_MAX: f32 = 540.0;
 /// 提交列表的最小宽度（逻辑像素）。
-///
-/// 取自调参：可容纳提交图、作者名和时间三栏。
 const LIST_MIN: f32 = 360.0;
+/// 上下分栏模式下列表与详情各自的最小高度（逻辑像素）。
+const HORIZONTAL_MIN: f32 = 150.0;
 /// 继续读取下一批提交时，可见区域底部与已读取的最后一个提交之间的剩余行数（行）。
 ///
 /// 取自调参：约为两屏的滚动距离，滚动到底之前下一批已读取完成。
 const PREFETCH: usize = 100;
-/// 详情中文件行的高度（逻辑像素）。
-///
-/// 由图标按钮的高度决定：容纳 24 像素高的图标按钮，上下各留 1 像素。
-pub(crate) const LOG_FILE_ROW: f32 = 26.0;
+/// 详情中文件行的高度（逻辑像素），1:1 对齐 `gitHistoryVSCode` 的 `.diff-row`。
+pub(crate) const LOG_FILE_ROW: f32 = 28.0;
 /// 提交列表第一行上方的留白（逻辑像素）。
-///
-/// 留白属于滚动内容，使第一行与标题栏的分隔线之间保持间距，滚动时各行仍可移到标题栏下方，
-/// 选中行的底色不与分隔线相接。取值等于侧栏各块之间的间距（`SIDEBAR_GAP`）；详情一栏的
-/// 第一行与之对齐（[`details_top`]）。
-pub(crate) const LOG_LIST_PAD: f32 = crate::theme::SIDEBAR_GAP;
+pub(crate) const LOG_LIST_PAD: f32 = 0.0;
 
-/// 返回详情一栏第一行（高 24 逻辑像素的说明）的上沿到该栏顶部的距离（逻辑像素）。
-///
-/// 该偏移使左侧列表第一行与右侧说明垂直居中对齐，两栏的第一行文字位于同一基线。
-pub(crate) fn details_top(line_height: f32) -> f32 {
-    LOG_LIST_PAD + (line_height - 24.0) / 2.0
+/// 返回详情一栏第一行内容到该栏顶部的距离（逻辑像素）。
+pub(crate) fn details_top(_line_height: f32) -> f32 {
+    10.0
 }
 /// 日志后退历史中最多保留的提交数（个）。
 ///
@@ -105,10 +96,14 @@ pub(crate) struct LogParts {
     pub header: Rect,
     /// 左侧的分支面板；不显示时宽度为 0。
     pub branches: Rect,
-    /// 左侧的提交列表。
+    /// 提交列表上方的表头栏（`gitHistoryVSCode` 模式下高度为 0）。
+    pub list_header: Rect,
+    /// 提交列表区域（上下分栏时位于上方，左右分栏时位于左侧）。
     pub list: Rect,
-    /// 右侧的详情一栏。
+    /// 提交详情区域（上下分栏时位于下方，左右分栏时位于右侧；折叠时高/宽为 0）。
     pub details: Rect,
+    /// 是否为左右分栏模式（`gitHistory.sideBySide`）；`false` 为默认的上下分栏模式。
+    pub side_by_side: bool,
 }
 
 impl LogParts {
@@ -117,46 +112,97 @@ impl LogParts {
         let header = self.header;
         Rect::new(
             header.x + 8.0,
-            header.y + (header.h - 24.0) / 2.0,
-            24.0,
-            24.0,
+            header.y + (header.h - 26.0) / 2.0,
+            26.0,
+            26.0,
         )
     }
 
-    /// 标题栏左侧的提交筛选输入框，在分支面板按钮右边。
+    /// 标题栏左侧的提交筛选输入框（对齐 `gitHistoryVSCode` `.textInput` 宽 250px）。
     pub(crate) fn search(&self) -> Rect {
         let header = self.header;
         let x = self.branches_button().right() + 6.0;
-        Rect::new(x, header.y + 6.0, 220.0, header.h - 12.0)
+        let w = 250.0_f32.min((header.w * 0.30).max(150.0));
+        Rect::new(x, header.y + (header.h - 26.0) / 2.0, w, 26.0)
     }
 }
 
 /// 返回日志标签中各部分的位置。
 ///
-/// 标题栏下方左侧为列表，右侧为详情；详情默认约占 38% 的宽度，拖动分隔线后为 `details_w`。
-/// 最左边是分支面板，露出 `branches`（0 到 1，打开、关闭途中在两者之间）；放不下（列表和
-/// 详情不够最小宽度）时不显示。
-pub(crate) fn log_parts(editor: Rect, details_w: Option<f32>, branches: f32) -> LogParts {
+/// 1:1 对齐 `gitHistoryVSCode` 的 `SplitPane`：
+/// - 默认上下分栏（`side_by_side == false`）：上方为提交列表，下方为提交详情（约占 46% 高度），
+///   关闭详情（`details_open == false`）时列表占 100% 高度。
+/// - 左右分栏（`side_by_side == true`）：左侧为提交列表，右侧为提交详情。
+pub(crate) fn log_parts(
+    editor: Rect,
+    details_w: Option<f32>,
+    details_h: Option<f32>,
+    side_by_side: bool,
+    details_open: bool,
+    branches: f32,
+) -> LogParts {
     let header = Rect::new(editor.x, editor.y, editor.w, LOG_HEADER);
     let body_h = (editor.h - LOG_HEADER).max(0.0);
-    let room = editor.w - BRANCHES_W >= LIST_MIN + DETAILS_MIN;
+    let min_need = if side_by_side && details_open {
+        LIST_MIN + DETAILS_MIN
+    } else {
+        LIST_MIN
+    };
+    let room = editor.w - BRANCHES_W >= min_need;
     let side = if room { BRANCHES_W * branches } else { 0.0 };
-    let branches = Rect::new(editor.x, header.bottom(), side, body_h);
-    let editor = Rect::new(editor.x + side, editor.y, editor.w - side, editor.h);
-    // 窗口较窄时详情最多占一半宽度；较宽时至少为列表保留 `LIST_MIN`。
-    let max = (editor.w - LIST_MIN).max(editor.w * 0.5);
-    let details_w = match details_w {
-        Some(w) => w.max(DETAILS_MIN),
-        None => (editor.w * 0.38).clamp(DETAILS_MIN, DETAILS_MAX),
+    let branches_rect = Rect::new(editor.x, header.bottom(), side, body_h);
+    let area = Rect::new(editor.x + side, header.bottom(), editor.w - side, body_h);
+    let list_header = Rect::new(area.x, area.y, area.w, 0.0);
+    if !details_open {
+        let details = if side_by_side {
+            Rect::new(area.right(), area.y, 0.0, area.h)
+        } else {
+            Rect::new(area.x, area.bottom(), area.w, 0.0)
+        };
+        return LogParts {
+            header,
+            branches: branches_rect,
+            list_header,
+            list: area,
+            details,
+            side_by_side,
+        };
     }
-    .min(max);
-    let list = Rect::new(editor.x, header.bottom(), editor.w - details_w, body_h);
-    let details = Rect::new(list.right(), header.bottom(), details_w, body_h);
-    LogParts {
-        header,
-        branches,
-        list,
-        details,
+    if side_by_side {
+        let max = (area.w - LIST_MIN).max(area.w * 0.5);
+        let dw = match details_w {
+            Some(w) => w.max(DETAILS_MIN),
+            None => (area.w * 0.42).clamp(DETAILS_MIN, DETAILS_MAX),
+        }
+        .min(max);
+        let list = Rect::new(area.x, area.y, (area.w - dw).max(0.0), area.h);
+        let details = Rect::new(list.right(), area.y, dw, area.h);
+        LogParts {
+            header,
+            branches: branches_rect,
+            list_header: Rect::new(list.x, list.y, list.w, 0.0),
+            list,
+            details,
+            side_by_side,
+        }
+    } else {
+        let min_h = HORIZONTAL_MIN.min(area.h * 0.5);
+        let max_h = (area.h - min_h).max(area.h * 0.5);
+        let dh = match details_h {
+            Some(h) => h.max(min_h),
+            None => (area.h * 0.46).max(min_h),
+        }
+        .min(max_h);
+        let list = Rect::new(area.x, area.y, area.w, (area.h - dh).max(0.0));
+        let details = Rect::new(area.x, list.bottom(), area.w, dh);
+        LogParts {
+            header,
+            branches: branches_rect,
+            list_header,
+            list,
+            details,
+            side_by_side,
+        }
     }
 }
 
@@ -178,8 +224,16 @@ pub enum LogTarget {
     CopyOid,
     /// 标题栏的「刷新」。
     Refresh,
+    /// 标题栏的「定位到 HEAD」（`◎`）：跳转到当前 `HEAD` 提交。
+    JumpHead,
     /// 标题栏的筛选输入框。
     Search,
+    /// 标题栏的「Search」按钮（对齐 `gitHistoryVSCode`）。
+    SearchButton,
+    /// 筛选输入框右端的清除按钮（`×`）。
+    ClearSearch,
+    /// 标题栏的布局切换按钮（上下分栏 ↔ 左右分栏，对齐 `gitHistory.sideBySide`）。
+    LayoutToggle,
     /// 标题栏的「分支」下拉，点击时弹出分支菜单。
     Branch,
     /// 标题栏的「作者」下拉，点击时弹出作者菜单。
@@ -190,8 +244,6 @@ pub enum LogTarget {
     Path,
     /// 详情里改动的文件一行右端的按钮：平铺、按目录分组之间切换（与提交视图一起）。
     FilesLayout,
-    /// 详情标题行右端的放大镜：打开、关闭下面的「查找文件」搜索框。
-    FindFiles,
     /// 详情里「查找文件」的搜索框：键入文字按路径筛选改动的文件。
     FileFilter,
     /// 详情里筛选后一个文件也不剩时的那一行：点击清掉键入的文字。
@@ -200,15 +252,11 @@ pub enum LogTarget {
     BranchesToggle,
     /// 分支面板顶部的搜索框：键入文字筛选面板里的分支。
     BranchFilter,
-    /// 标题栏右边的「⋯」：选择显示哪几列。
-    Columns,
-    /// 作者一列的左边缘：左右拖动改宽度，双击恢复默认宽度。
-    AuthorEdge,
     /// 分支面板的第几行（[`App::log_branch_rows`] 的下标）。
     BranchRow(usize),
     /// 标题栏的「清除筛选」。
     ClearFilters,
-    /// 列表与详情之间的分隔线：左右拖动改变详情一栏的宽度，双击恢复默认宽度。
+    /// 列表与详情之间的分隔线：拖动改变详情一栏的尺寸，双击恢复默认尺寸。
     Divider,
     /// 提交图中第 `.0` 行的一段线，属于编号为 `.1` 的线（`GraphRow::line`）。
     ///
@@ -218,12 +266,44 @@ pub enum LogTarget {
     Uncommitted,
     /// 按目录分组时详情栏中的第 `usize` 个目录标题行：点击折叠或展开该目录下的文件。
     FileDir(usize),
-    /// 悬停详情栏文件行时右端的「打开文件」快捷按钮（参数为 `files` 的下标）。
-    FileOpen(usize),
-    /// 悬停详情栏文件行时右端的「与工作区比较」快捷按钮（参数为 `files` 的下标）。
+    /// 详情栏文件列表工具栏的「展开/折叠全部目录」按钮（仅树形视图时显示）。
+    FilesFoldAll,
+    /// 详情文件行的「查看」链接（只读快照，对齐 `gitHistoryVSCode` `View`）。
+    FileView(usize),
+    /// 详情文件行的「工作区」链接（与当前工作区比较，对齐 `gitHistoryVSCode` `Workspace`）。
     FileCompareLocal(usize),
-    /// 悬停详情栏文件行时右端的「查看文件历史」快捷按钮（参数为 `files` 的下标）。
+    /// 详情文件行的「上个版本」链接（与上个提交比较，对齐 `gitHistoryVSCode` `Previous`）。
+    FileComparePrevious(usize),
+    /// 详情文件行的「历史」链接（查看文件历史，对齐 `gitHistoryVSCode` `History`）。
     FileHistory(usize),
+    /// 提交行中的「按此作者筛选」眼睛按钮（对齐 `gitHistoryVSCode` `Author/index.tsx`）。
+    RowFilterAuthor(usize),
+    /// 提交行右侧按钮条：复制提交号（`<short7> ⧉`）。
+    RowCopyHash(usize),
+    /// 提交行右侧按钮条：`Soft`（软重置到此提交）。
+    RowResetSoft(usize),
+    /// 提交行右侧按钮条：`Hard`（硬重置到此提交）。
+    RowResetHard(usize),
+    /// 提交行右侧按钮条：`+Tag`（在此提交创建标签）。
+    RowNewTag(usize),
+    /// 提交行右侧按钮条：`+Branch`（从此提交创建分支）。
+    RowNewBranch(usize),
+    /// 提交行右侧按钮条：`More`（弹出完整提交操作菜单）。
+    RowMore(usize),
+    /// 提交行右侧本地分支徽章：点击签出该分支（`(row, ref_index)`）。
+    RefCheckout(usize, usize),
+    /// 提交行右侧分支/远程分支/标签徽章上的 `×`：点击删除该引用（`(row, ref_index)`）。
+    RefRemove(usize, usize),
+    /// 详情栏说明标题右侧的「复制提交信息」按钮（对齐 `gitHistoryVSCode` `Copy commit text`）。
+    CopyCommitText,
+    /// 详情栏作者前的「按此作者筛选」眼睛按钮。
+    DetailsFilterAuthor,
+    /// 详情栏右上角的「关闭详情视图」按钮（`×`，对齐 `gitHistoryVSCode` `Close the detail view`）。
+    CloseDetails,
+    /// 比较模式详情栏顶部的「交换两侧」按钮（`⇄`）。
+    CompareSwap,
+    /// 比较模式详情栏顶部的「退出比较」按钮（`×`）。
+    CompareExit,
 }
 
 /// 详情一栏中绘制的、可选中复制的一行文字（说明的一行、作者、邮箱、时间）。
@@ -279,8 +359,14 @@ pub enum LogConfirmed {
     Detach(String),
     /// 签出一个标签指向的提交，进入分离的 `HEAD`；参数是标签名。
     CheckoutTag(String),
+    /// 将当前分支软重置到该提交（对齐 `gitHistoryVSCode` 确认弹窗）。
+    ResetSoft(String),
     /// 将当前分支硬重置到该提交。
     ResetHard(String),
+    /// 签出点击的本地分支徽章（对齐 `gitHistoryVSCode` `checkoutBranch` 确认）。
+    CheckoutBranch(String),
+    /// 删除一个远程分支（如 `origin/feature`，对齐 `gitHistoryVSCode` `removeRemote`）。
+    DeleteRemoteBranch(String),
     /// 删除一条储藏；执行时按提交号查找（[`winc_editor::git::Git::stash`]）。
     ///
     /// 使用 `Box`：储藏包含父提交、时间和说明，直接内联会增大发往事件循环的每个事件的大小。
@@ -361,6 +447,12 @@ pub(in crate::app) enum Loaded {
         title: String,
         view: Result<Box<DiffView>, String>,
     },
+    /// 某次提交中某个文件的只读内容快照（`gitHistoryVSCode` 的「查看此提交中的文件」），打开为只读标签。
+    FileSnapshot {
+        title: String,
+        file_name: String,
+        content: Result<String, String>,
+    },
     /// 一个提交的补丁（[`Git::commit_patch`]），复制到剪贴板。
     Patch {
         oid: String,
@@ -396,6 +488,8 @@ pub(in crate::app) enum Loaded {
         /// 文件在 `source.files` 中的下标。
         file: usize,
         title: String,
+        /// 是否在侧栏切换为该提交的文件列表；从侧栏提交图直接点击文件时为 `false`，以保留提交图可见。
+        show_tree: bool,
         view: Result<Box<DiffView>, String>,
     },
 }
@@ -458,8 +552,16 @@ pub(crate) struct LogState {
     ///
     /// 绘制时更新。
     pub long_files: Vec<usize>,
-    /// 拖动分隔线后详情一栏的宽度（逻辑像素）；`None` 表示默认宽度，随窗口宽度变化。
+    /// 拖动分隔线后详情一栏的宽度（左右分栏模式，逻辑像素）；`None` 表示默认宽度。
     pub details_w: Option<f32>,
+    /// 拖动分隔线后详情一栏的高度（上下分栏模式，逻辑像素）；`None` 表示默认 46% 高度。
+    pub details_h: Option<f32>,
+    /// 是否使用左右分栏模式（`gitHistory.sideBySide`）；默认 `false`（1:1 对齐 `gitHistoryVSCode` 上下分栏）。
+    pub side_by_side: bool,
+    /// 详情面板是否展开；点「×」关闭后提交列表占满 100% 区域，点击任意提交时重新展开。
+    pub details_open: bool,
+    /// 通过「选择用于比较」标记的比较基准提交号（对齐 `gitHistoryVSCode` `Select for comparison`）。
+    pub compare_selected: Option<String>,
     /// 拖动左边缘后作者一列的宽度（逻辑像素）；`None` 是默认宽度 [`AUTHOR_DEFAULT`]。
     pub author_w: Option<f32>,
     /// 分支面板里名字截短了的行（[`App::log_branch_rows`] 的下标）；悬停时提示全名。
@@ -598,6 +700,10 @@ impl Default for LogState {
             clipped: None,
             long_files: Vec::new(),
             details_w: None,
+            details_h: None,
+            side_by_side: false,
+            details_open: true,
+            compare_selected: None,
             author_w: None,
             long_branches: Vec::new(),
             branches_scroll: 0.0,
@@ -863,12 +969,13 @@ impl App {
             .active()
             .and_then(|d| d.log.as_deref())
             .is_some_and(|v| self.log_uncommitted(v) > 0);
-        LOG_LIST_PAD + if extra { self.fonts.line_height } else { 0.0 }
+        LOG_LIST_PAD + if extra { LOG_ROW_HEIGHT } else { 0.0 }
     }
 
     /// 选中当前日志标签中的第 `row` 个提交，使其在列表中可见，并在后台读取其详情。
     pub(crate) fn select_log_row(&mut self, row: usize) {
-        let visible = ((self.log_parts().list.h - self.log_list_top()) / self.fonts.line_height)
+        self.git.log.details_open = true;
+        let visible = ((self.log_parts().list.h - self.log_list_top()) / LOG_ROW_HEIGHT)
             .floor()
             .max(1.0) as f64;
         let Some(doc) = self.editor.active_mut() else {
@@ -890,6 +997,9 @@ impl App {
         if !same {
             view.details_scroll = 0.0;
             self.git.log.collapsed_dirs.clear();
+            if !self.git.log.file_filter.text().is_empty() {
+                self.git.log.file_filter.set_text("");
+            }
         }
         if view
             .details
@@ -1005,16 +1115,12 @@ impl App {
                     }
                 }
             }
-            LogTarget::File(i) => self.open_log_file(i),
+            LogTarget::File(i) | LogTarget::FileComparePrevious(i) => self.open_log_file(i),
             LogTarget::FileDir(dir_idx) => self.toggle_log_file_dir(dir_idx),
-            LogTarget::FileOpen(i) => {
+            LogTarget::FilesFoldAll => self.toggle_log_files_fold_all(),
+            LogTarget::FileView(i) => {
                 if let Some(path) = self.log_file(i).map(|f| f.path.clone()) {
-                    if self.may_be_file(&path) {
-                        self.open_path(&path);
-                        self.focus = Focus::Editor;
-                    } else {
-                        self.flash(t!("git-commit-open-deleted"));
-                    }
+                    self.view_log_file_at_commit(path);
                 }
             }
             LogTarget::FileCompareLocal(i) => {
@@ -1027,6 +1133,153 @@ impl App {
                     self.git_file_history(&path);
                 }
             }
+            LogTarget::RowFilterAuthor(row) => {
+                let author = self
+                    .editor
+                    .active()
+                    .and_then(|d| d.log.as_deref()?.commits.get(row).map(|c| c.author.clone()));
+                if let Some(author) = author {
+                    self.change_log_query(|q| {
+                        q.authors = vec![author];
+                    });
+                }
+            }
+            LogTarget::DetailsFilterAuthor => {
+                let author = self.editor.active().and_then(|d| {
+                    let v = d.log.as_deref()?;
+                    v.commits.get(v.selected?).map(|c| c.author.clone())
+                });
+                if let Some(author) = author {
+                    self.change_log_query(|q| {
+                        q.authors = vec![author];
+                    });
+                }
+            }
+            LogTarget::RowCopyHash(row) => {
+                let oid = self
+                    .editor
+                    .active()
+                    .and_then(|d| d.log.as_deref()?.commits.get(row).map(|c| c.oid.clone()));
+                if let Some(oid) = oid {
+                    self.flash(t!("git-log-copied-oid", commit = short(&oid)));
+                    self.set_clipboard(oid, false);
+                }
+            }
+            LogTarget::RowResetSoft(row) => {
+                let oid = self
+                    .editor
+                    .active()
+                    .and_then(|d| d.log.as_deref()?.commits.get(row).map(|c| c.oid.clone()));
+                if let Some(oid) = oid {
+                    self.confirm_log(LogConfirmed::ResetSoft(oid));
+                }
+            }
+            LogTarget::RowResetHard(row) => {
+                let oid = self
+                    .editor
+                    .active()
+                    .and_then(|d| d.log.as_deref()?.commits.get(row).map(|c| c.oid.clone()));
+                if let Some(oid) = oid {
+                    self.confirm_log(LogConfirmed::ResetHard(oid));
+                }
+            }
+            LogTarget::RowNewTag(row) => {
+                let oid = self
+                    .editor
+                    .active()
+                    .and_then(|d| d.log.as_deref()?.commits.get(row).map(|c| c.oid.clone()));
+                if let Some(oid) = oid {
+                    self.open_tag_prompt(oid);
+                }
+            }
+            LogTarget::RowNewBranch(row) => {
+                let oid = self
+                    .editor
+                    .active()
+                    .and_then(|d| d.log.as_deref()?.commits.get(row).map(|c| c.oid.clone()));
+                if let Some(oid) = oid {
+                    self.open_branch_dialog(None, Some(oid));
+                }
+            }
+            LogTarget::RowMore(row) => {
+                let oid = self
+                    .editor
+                    .active()
+                    .and_then(|d| d.log.as_deref()?.commits.get(row).map(|c| c.oid.clone()));
+                let hit = self.hits.log.iter().find(|(_, t)| *t == target).copied();
+                if let (Some(oid), Some((rect, _))) = (oid, hit) {
+                    self.open_context_menu(
+                        MenuTarget::LogCommit(oid),
+                        (rect.x, rect.bottom() + 4.0),
+                    );
+                }
+            }
+            LogTarget::RefCheckout(row, ref_idx) => {
+                let reference = self.editor.active().and_then(|d| {
+                    d.log
+                        .as_deref()?
+                        .commits
+                        .get(row)?
+                        .refs
+                        .get(ref_idx)
+                        .cloned()
+                });
+                if let Some(Ref::Branch(name)) = reference {
+                    self.confirm_log(LogConfirmed::CheckoutBranch(name));
+                }
+            }
+            LogTarget::RefRemove(row, ref_idx) => {
+                let reference = self.editor.active().and_then(|d| {
+                    d.log
+                        .as_deref()?
+                        .commits
+                        .get(row)?
+                        .refs
+                        .get(ref_idx)
+                        .cloned()
+                });
+                match reference {
+                    Some(Ref::Branch(name)) => {
+                        self.confirm_delete_branch(name);
+                    }
+                    Some(Ref::Remote(name)) => {
+                        self.confirm_log(LogConfirmed::DeleteRemoteBranch(name));
+                    }
+                    Some(Ref::Tag(name)) => {
+                        self.confirm_log(LogConfirmed::DeleteTag(
+                            name,
+                            winc_editor::git::TagTarget::Local,
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            LogTarget::CopyCommitText => {
+                let oid = self
+                    .editor
+                    .active()
+                    .and_then(|d| d.log.as_deref()?.selected_oid().map(str::to_owned));
+                if let Some(oid) = oid {
+                    self.run_log_commit_command(MenuCommand::LogCopyMessage, &oid);
+                }
+            }
+            LogTarget::CloseDetails => {
+                self.git.log.details_open = false;
+                self.git.log.file = None;
+                if self.focus == Focus::LogFileFilter {
+                    self.focus = Focus::Editor;
+                }
+                self.clear_log_compare();
+            }
+            LogTarget::LayoutToggle => {
+                self.git.log.side_by_side = !self.git.log.side_by_side;
+            }
+            LogTarget::SearchButton => {
+                self.focus = Focus::Editor;
+                self.log_filter_changed();
+            }
+            LogTarget::CompareSwap => self.swap_log_compare(),
+            LogTarget::CompareExit => self.clear_log_compare(),
             // 拖动由 `mouse.rs` 开始处理。
             LogTarget::Divider => {}
             LogTarget::Line(row, line) => {
@@ -1068,10 +1321,25 @@ impl App {
                 // 列表上方的未提交更改和分支筛选来自仓库状态，因此同时刷新仓库状态。
                 self.git_refresh();
             }
+            LogTarget::JumpHead => {
+                self.clear_log_compare();
+                let head = self
+                    .editor
+                    .active()
+                    .and_then(|d| d.log.as_deref()?.head_row());
+                match head {
+                    Some(row) => self.jump_log_row(row),
+                    None => self.flash(t!("git-log-target-not-loaded")),
+                }
+            }
             LogTarget::Search => {
                 self.focus = Focus::LogFilter;
                 let (x, y) = self.pointer.mouse;
                 self.click_field(x, y);
+            }
+            LogTarget::ClearSearch => {
+                self.git.log.filter.set_text("");
+                self.change_log_query(|q| q.text.clear());
             }
             LogTarget::Branch => self.open_branch_picker(crate::app::GitAnchor::Log),
             LogTarget::Author => {
@@ -1090,18 +1358,8 @@ impl App {
             LogTarget::FilesLayout => self.toggle_commit_layout(),
             LogTarget::BranchesToggle => self.toggle_log_branches(),
             LogTarget::BranchFilter => self.press_log_branch_filter(),
-            LogTarget::FindFiles => self.toggle_log_find_files(),
             LogTarget::FileFilter => self.press_log_file_filter(),
             LogTarget::ClearFileFilter => self.clear_log_file_filter(),
-            // 拖动由 `mouse.rs` 开始处理。
-            LogTarget::AuthorEdge => {}
-            LogTarget::Columns => {
-                let hit = self.hits.log.iter().find(|(_, t)| *t == target);
-                if let Some(&(rect, _)) = hit {
-                    let at = (rect.right(), rect.bottom() + 4.0);
-                    self.open_context_menu(MenuTarget::LogColumns, at);
-                }
-            }
             LogTarget::BranchRow(i) => self.press_log_branch_row(i),
             LogTarget::Date | LogTarget::Path => {
                 let hit = self.hits.log.iter().find(|(_, t)| *t == target);
@@ -1182,11 +1440,39 @@ impl App {
     }
 
     pub(in crate::app) fn load_log_diff(&mut self, source: Arc<LogDiffSource>, i: usize) {
+        self.load_log_diff_with(source, i, true);
+    }
+
+    /// 在后台加载 `source` 中第 `i` 个文件的提交差异；`show_tree` 控制是否在侧栏切换为历史差异文件列表。
+    pub(in crate::app) fn load_log_diff_with(
+        &mut self,
+        source: Arc<LogDiffSource>,
+        i: usize,
+        show_tree: bool,
+    ) {
         let Some(file) = source.files.get(i) else {
             return;
         };
         let name = winc_editor::display_name(&file.path);
-        let title = format!("{name} · {}", source.version);
+        let title = if show_tree {
+            format!("{name} · {}", source.version)
+        } else {
+            match &source.old {
+                Some(old) => {
+                    let old_name = file
+                        .from
+                        .as_deref()
+                        .map(winc_editor::display_name)
+                        .unwrap_or_else(|| name.clone());
+                    format!(
+                        "{old_name} ({}) ↔ {name} ({})",
+                        short(old),
+                        short(&source.new)
+                    )
+                }
+                None => format!("{name} ({})", source.version),
+            }
+        };
         self.git.log.diff_request += 1;
         let request = self.git.log.diff_request;
         let sender = self.git.log.results.0.clone();
@@ -1207,6 +1493,7 @@ impl App {
                 source,
                 file: i,
                 title,
+                show_tree,
                 view,
             });
         });
@@ -1269,6 +1556,9 @@ impl App {
         log_parts(
             self.layout.editor,
             self.git.log.details_w,
+            self.git.log.details_h,
+            self.git.log.side_by_side,
+            self.git.log.details_open,
             self.log_branches_shown(),
         )
     }

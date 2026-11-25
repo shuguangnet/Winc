@@ -87,20 +87,23 @@ fn diff_text_clicks_and_cursors_work_like_the_editor() {
     paint(&mut app);
     // 第 `side` 侧第 `line` 行（从 0 起）第 `col` 列的窗口坐标；`gutter` 为真时取该行行号处的坐标。
     let at = |app: &App, side: usize, line: usize, col: usize, gutter: bool| {
-        let view = app.editor.active().unwrap().diff.as_deref().unwrap();
+        let doc = app.editor.active().unwrap();
+        let view = doc.diff.as_deref().unwrap();
         let parts = crate::app::diff_parts(app.layout.editor, view, app.metrics.cell);
         let row = view.rows[side]
             .iter()
             .position(|r| matches!(r, SideRow::Line { line: l, .. } if *l == line))
             .unwrap();
         let lh = app.fonts.line_height;
+        let visible = f64::from(parts.body.h / lh);
+        let top = view.side_scroll(side, doc.scroll_line, visible) as f32;
         let pane = parts.panes[side];
         let x = if gutter {
             pane.gutter.x + pane.gutter.w / 2.0
         } else {
             pane.text.x + DIFF_TEXT_PAD + (col as f32 + 0.3) * app.metrics.cell
         };
-        (x, parts.body.y + (row as f32 + 0.5) * lh)
+        (x, parts.body.y + (row as f32 - top + 0.5) * lh)
     };
     let source = |app: &App| {
         app.editor

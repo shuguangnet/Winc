@@ -78,11 +78,73 @@ impl App {
 
     /// 隐藏窗口（macOS 上关闭窗口时）：应用留在程序坞中，点击图标时由 [`App::show_window`]
     /// 重新显示。
+    ///
+    /// macOS 原生全屏下不能直接 `set_visible(false)`（`orderOut:`），否则窗口会消失而全屏桌面
+    /// 空间仍然残留为黑屏，必须先退出全屏并在退出完成后隐藏。
     pub(super) fn hide_window(&mut self) {
+        if self.window.hide_after_fullscreen {
+            return;
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(window) = &self.window.handle {
+            let entering = self
+                .link
+                .traffic_lights
+                .as_ref()
+                .is_some_and(|l| l.is_entering_fullscreen());
+            let exiting = self
+                .link
+                .traffic_lights
+                .as_ref()
+                .is_some_and(|l| l.is_exiting_fullscreen());
+            let in_fullscreen =
+                window.fullscreen().is_some() || crate::macos::is_native_fullscreen(window);
+            if entering || exiting || in_fullscreen {
+                self.window.hide_after_fullscreen = true;
+                if in_fullscreen && !entering && !exiting {
+                    if window.fullscreen().is_some() {
+                        window.set_fullscreen(None);
+                    } else {
+                        crate::macos::exit_fullscreen(window);
+                    }
+                }
+                return;
+            }
+        }
+        self.hide_window_now();
+    }
+
+    /// 立即把系统窗口设为不可见并记为已隐藏。
+    pub(super) fn hide_window_now(&mut self) {
+        self.window.hide_after_fullscreen = false;
         if let Some(window) = &self.window.handle {
             window.set_visible(false);
         }
         self.window.hidden = true;
+    }
+
+    /// macOS 上完成进入原生全屏后调用：若过渡期间用户关闭了窗口，现在可以安全退出全屏。
+    pub(super) fn on_fullscreen_entered(&mut self) {
+        if !self.window.hide_after_fullscreen {
+            return;
+        }
+        if let Some(window) = &self.window.handle {
+            if window.fullscreen().is_some() {
+                window.set_fullscreen(None);
+            } else {
+                #[cfg(target_os = "macos")]
+                crate::macos::exit_fullscreen(window);
+            }
+        } else {
+            self.hide_window_now();
+        }
+    }
+
+    /// macOS 上完成退出原生全屏后调用：若关闭窗口正等待退出全屏，此刻立即隐藏窗口。
+    pub(super) fn on_fullscreen_exited(&mut self) {
+        if self.window.hide_after_fullscreen {
+            self.hide_window_now();
+        }
     }
 
     /// 打开 `targets` 里的文件（目录跳过：已经是本窗口的目录），`文件:行:列` 跳到该位置，再把
@@ -194,7 +256,13 @@ impl App {
     /// 窗口是否处于全屏；隐藏的窗口不算。
     pub(crate) fn is_fullscreen(&self) -> bool {
         let window = self.window.handle.as_ref().filter(|_| !self.window.hidden);
-        window.is_some_and(|window| window.fullscreen().is_some())
+        window.is_some_and(|window| {
+            #[cfg(target_os = "macos")]
+            if crate::macos::is_native_fullscreen(window) {
+                return true;
+            }
+            window.fullscreen().is_some()
+        })
     }
 
     /// 让窗口进入全屏；macOS 上窗口独占一个桌面空间。
@@ -208,6 +276,7 @@ impl App {
     ///
     /// 先在隐藏的窗口上画好一帧（开始页）再显示，不会先显示关闭前的画面。
     pub(in crate::app) fn show_window(&mut self) {
+        self.window.hide_after_fullscreen = false;
         if !self.window.hidden {
             return;
         }
@@ -220,7 +289,10 @@ impl App {
         if let Some(window) = &self.window.handle {
             window.set_visible(true);
             window.focus_window();
+            self.place_traffic_lights();
+            window.request_redraw();
         }
+        self.request_redraw();
     }
 
     /// 把窗口左上角的三个控制按钮放进顶栏并垂直居中（见 `crate::macos::TrafficLights`），
@@ -851,6 +923,9 @@ pub struct WindowState {
     ///
     /// macOS 上关闭窗口不退出应用，点击程序坞中的图标时重新显示窗口。
     pub(crate) hidden: bool,
+    /// macOS 原生全屏下关闭窗口时，先退出全屏并在收到 `NSWindowDidExitFullScreenNotification`
+    /// 后再隐藏，避免隐藏全屏窗口留下黑屏桌面空间。
+    pub(crate) hide_after_fullscreen: bool,
     /// 窗口正常显示（未最大化、全屏或最小化）时的大小和位置，关闭时记录。
     ///
     /// 最小化期间不更新；从最小化的窗口打开新窗口时按该位置错开（见 `App::cascade_from`）。
@@ -868,6 +943,7 @@ impl Default for WindowState {
             controls: false,
             focused: true,
             hidden: false,
+            hide_after_fullscreen: false,
             frame: None,
             frame_due: None,
             occluded: false,

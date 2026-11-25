@@ -45,6 +45,30 @@ fn closing_one_of_two_windows_drops_it_and_the_last_one_stays_hidden() {
 }
 
 #[test]
+fn closing_a_fullscreen_window_waits_for_fullscreen_exit_before_hiding() {
+    let (mut winc, a, b, dir) = two_windows("windows-close-fullscreen");
+    // 模拟窗口在原生全屏下请求关闭：退出全屏完成前保持未隐藏，收到 `FullscreenExited` 后隐藏并释放。
+    winc.app(b).window.hide_after_fullscreen = true;
+    winc.app(b).request_close_window();
+    assert!(!winc.app(b).window.hidden);
+    winc.settle_for_test();
+    assert_eq!(winc.keys(), [a, b], "全屏退出完成前不释放窗口");
+
+    winc.app(b).handle_event(UserEvent::FullscreenExited);
+    assert!(winc.app(b).window.hidden && !winc.app(b).window.hide_after_fullscreen);
+    winc.settle_for_test();
+    assert_eq!(winc.keys(), [a], "退出全屏并隐藏后再释放窗口");
+
+    // 退出全屏途中如果重新激活窗口（如点击程序坞图标），取消待隐藏标记。
+    winc.app(a).window.hide_after_fullscreen = true;
+    winc.app(a).handle_event(UserEvent::Reopen);
+    assert!(!winc.app(a).window.hide_after_fullscreen);
+    winc.app(a).handle_event(UserEvent::FullscreenExited);
+    assert!(!winc.app(a).window.hidden);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn closing_a_window_without_a_folder_asks_about_unsaved_files() {
     let (mut winc, a, b, dir) = two_windows("windows-close-untitled");
     let root = super::workspace::session::backup_root("windows-close-untitled");

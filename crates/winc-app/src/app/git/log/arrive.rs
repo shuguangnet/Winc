@@ -99,6 +99,18 @@ impl App {
                     }
                     Err(e) => self.notify(e),
                 },
+                Loaded::FileSnapshot {
+                    title,
+                    file_name,
+                    content,
+                } => match content {
+                    Ok(text) => {
+                        self.editor.show_snapshot(&title, &file_name, &text);
+                        self.focus = Focus::Editor;
+                        self.relayout();
+                    }
+                    Err(e) => self.flash(e),
+                },
                 Loaded::Patch { oid, result } => match result {
                     Ok(patch) => {
                         self.set_clipboard(patch, false);
@@ -178,11 +190,13 @@ impl App {
                     source,
                     file,
                     title,
+                    show_tree,
                     view,
                     ..
                 } => match view {
                     Ok(view) => {
-                        // 只在新建差异标签时打开侧栏的文件树，之后保留用户对侧栏的选择。
+                        // 只在新建差异标签且允许切换到历史文件树时打开侧栏的文件树；
+                        // 从侧栏提交图点击文件时保留原提交视图与提交图可见（与 VS Code 一致）。
                         let new_tab = (self.git.log.preview)
                             .and_then(|id| self.editor.document(id))
                             .is_none();
@@ -190,13 +204,15 @@ impl App {
                             .editor
                             .show_diff_in(self.git.log.preview, &title, *view);
                         self.git.log.preview = Some(self.editor.documents[index].id);
-                        self.select_log_diff(source, file);
-                        if new_tab {
+                        self.select_log_diff(source, file, show_tree);
+                        if new_tab && show_tree {
                             self.set_sidebar_view(crate::layout::SidebarView::Commit);
                             self.set_sidebar(true);
                         }
                         self.relayout();
-                        self.reveal_log_diff_file();
+                        if show_tree {
+                            self.reveal_log_diff_file();
+                        }
                         self.clamp_scroll();
                         self.land_diff_file();
                     }

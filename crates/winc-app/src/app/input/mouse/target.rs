@@ -178,7 +178,6 @@ impl App {
                 | Target::SplitDivider
                 | Target::PaneDivider(_)
                 | Target::Log(crate::app::git::log::LogTarget::Divider)
-                | Target::Log(crate::app::git::log::LogTarget::AuthorEdge)
         )
     }
 
@@ -746,7 +745,7 @@ impl App {
         let editor = self.scroll_track();
         let doc = self.editor.active()?;
         if editor.contains(x, y) && x >= editor.right() - SCROLLBAR_HIT {
-            let scroll = (doc.scroll_line * f64::from(self.fonts.line_height)) as f32;
+            let scroll = (doc.scroll_line * f64::from(self.active_row_height())) as f32;
             let thumb = scrollbar_thumb(editor, scroll, self.content_height())?;
             return Some((Scrollbar::Editor, grab(y, thumb.y, thumb.h)));
         }
@@ -934,8 +933,21 @@ impl App {
             }
         } else if matches!(
             self.pointer.drag,
+            Drag::LogDivider {
+                horizontal: true,
+                ..
+            }
+        ) || (self.pointer.hover == Hover::Log(crate::app::git::log::LogTarget::Divider)
+            && !self.git.log.side_by_side)
+        {
+            CursorIcon::RowResize
+        } else if matches!(
+            self.pointer.drag,
             Drag::Splitter { .. }
-                | Drag::LogDivider { .. }
+                | Drag::LogDivider {
+                    horizontal: false,
+                    ..
+                }
                 | Drag::LogColumn { .. }
                 | Drag::SplitDivider { .. }
         ) || matches!(
@@ -943,13 +955,28 @@ impl App {
             Hover::Splitter
                 | Hover::SplitDivider
                 | Hover::Log(crate::app::git::log::LogTarget::Divider)
-                | Hover::Log(crate::app::git::log::LogTarget::AuthorEdge)
         ) {
             CursorIcon::ColResize
         } else if matches!(
             self.pointer.hover,
-            Hover::Log(crate::app::git::log::LogTarget::Line(..))
-                | Hover::TerminalBlock(_)
+            Hover::Log(
+                crate::app::git::log::LogTarget::Line(..)
+                    | crate::app::git::log::LogTarget::RowCopyHash(_)
+                    | crate::app::git::log::LogTarget::RowResetSoft(_)
+                    | crate::app::git::log::LogTarget::RowResetHard(_)
+                    | crate::app::git::log::LogTarget::RowNewTag(_)
+                    | crate::app::git::log::LogTarget::RowNewBranch(_)
+                    | crate::app::git::log::LogTarget::RowMore(_)
+                    | crate::app::git::log::LogTarget::RowFilterAuthor(_)
+                    | crate::app::git::log::LogTarget::RefCheckout(..)
+                    | crate::app::git::log::LogTarget::RefRemove(..)
+                    | crate::app::git::log::LogTarget::FileView(_)
+                    | crate::app::git::log::LogTarget::FileCompareLocal(_)
+                    | crate::app::git::log::LogTarget::FileComparePrevious(_)
+                    | crate::app::git::log::LogTarget::FileHistory(_)
+                    | crate::app::git::log::LogTarget::CopyCommitText
+                    | crate::app::git::log::LogTarget::DetailsFilterAuthor
+            ) | Hover::TerminalBlock(_)
                 | Hover::Diff(crate::app::DiffTarget::Sticky(..))
                 | Hover::MarkdownLink(_)
                 | Hover::MarkdownToc(

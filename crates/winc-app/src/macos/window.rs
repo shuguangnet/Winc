@@ -111,6 +111,46 @@ pub fn show_without_focus(window: &Window) {
 /// `NSWindowStyleMaskFullScreen`：窗口处于全屏（或正在进入全屏）时 `styleMask` 含这一位。
 const STYLE_FULL_SCREEN: usize = 1 << 14;
 
+/// 窗口当前是否处于 macOS 原生全屏（`NSWindowStyleMaskFullScreen`）。
+pub fn is_native_fullscreen(window: &Window) -> bool {
+    let Some(ns_window) = ns_window(window) else {
+        return false;
+    };
+    // SAFETY: `ns_window` 来自仍然存活的 winit 窗口，调用方在主线程调用；`styleMask` 是
+    // `NSWindow` 的公开只读属性，返回值是整数。
+    unsafe {
+        let style: usize = msg_send![ns_window, styleMask];
+        style & STYLE_FULL_SCREEN != 0
+    }
+}
+
+/// 退出 macOS 原生全屏（窗口处于原生全屏时调用 `toggleFullScreen:`）。
+pub fn exit_fullscreen(window: &Window) {
+    let Some(ns_window) = ns_window(window) else {
+        return;
+    };
+    // SAFETY: `ns_window` 来自仍然存活的 winit 窗口，调用方在主线程调用；`styleMask` 与
+    // `toggleFullScreen:` 都是 `NSWindow` 的公开方法，`sender` 允许为空。
+    unsafe {
+        let style: usize = msg_send![ns_window, styleMask];
+        if style & STYLE_FULL_SCREEN != 0 {
+            let sender: *mut AnyObject = std::ptr::null_mut();
+            let () = msg_send![ns_window, toggleFullScreen: sender];
+        }
+    }
+}
+
+/// 全屏过渡中的关键通知，由 [`TrafficLights`] 转交给应用层。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FullscreenEvent {
+    /// 窗口位置或红绿灯随全屏过渡发生变化，需要重新计算布局并重绘。
+    TrafficLightsMoved,
+    /// 已进入全屏。
+    Entered,
+    /// 已退出全屏（或进入全屏失败，窗口仍在非全屏状态）。
+    Exited,
+}
+
 /// 窗口的红绿灯：窗口模式下放进顶栏并垂直居中，全屏时交还给 `AppKit`。
 ///
 /// 全屏时 `AppKit` 在屏幕顶部显示的标题栏中绘制红绿灯，并按其默认位置排列。因此进入全屏的过渡
@@ -139,19 +179,23 @@ struct Lights {
     native: std::cell::Cell<Option<(CGRect, [CGPoint; 3])>>,
     /// 窗口是否处于全屏或正在进入全屏；在全屏过渡开始时更新，早于 winit 报告的状态。
     fullscreen: std::cell::Cell<bool>,
-    /// 按钮位置改变后调用，由应用重新计算布局并重画。
-    moved: Box<dyn Fn()>,
+    /// 是否正在播放进入全屏的过渡动画。
+    entering: std::cell::Cell<bool>,
+    /// 是否正在播放退出全屏的过渡动画。
+    exiting: std::cell::Cell<bool>,
+    /// 按钮位置或全屏状态改变后调用，由应用重新计算布局、重画或完成延迟隐藏。
+    on_event: Box<dyn Fn(FullscreenEvent)>,
 }
 
 impl TrafficLights {
     /// 管理 `window` 的红绿灯：按钮放进高 `bar_height` 的顶栏并垂直居中，第一个按钮距窗口左
-    /// 边缘 `left`（逻辑像素）；全屏过渡中按钮的位置改变后调用 `moved`。取不到 `NSWindow` 时
-    /// 返回 `None`。
+    /// 边缘 `left`（逻辑像素）；全屏过渡中按钮位置或全屏状态变化后调用 `on_event`。取不到
+    /// `NSWindow` 时返回 `None`。
     pub fn new(
         window: &Window,
         bar_height: f64,
         left: f64,
-        moved: impl Fn() + 'static,
+        on_event: impl Fn(FullscreenEvent) + 'static,
     ) -> Option<TrafficLights> {
         let ns_window = ns_window(window)?;
         // SAFETY: `ns_window` 是主线程上仍然存活的 NSWindow；`retain` 增加一次引用计数，由
@@ -168,13 +212,24 @@ impl TrafficLights {
             zoom: std::cell::Cell::new(1.0),
             native: std::cell::Cell::new(None),
             fullscreen: std::cell::Cell::new(style & STYLE_FULL_SCREEN != 0),
-            moved: Box::new(moved),
+            entering: std::cell::Cell::new(false),
+            exiting: std::cell::Cell::new(false),
+            on_event: Box::new(on_event),
         });
         let mut tokens = Vec::new();
         for (name, step) in [
             ("NSWindowWillEnterFullScreenNotification", Step::WillEnter),
+            ("NSWindowDidEnterFullScreenNotification", Step::DidEnter),
+            (
+                "NSWindowDidFailToEnterFullScreenNotification",
+                Step::DidFailToEnter,
+            ),
             ("NSWindowWillExitFullScreenNotification", Step::WillExit),
             ("NSWindowDidExitFullScreenNotification", Step::DidExit),
+            (
+                "NSWindowDidFailToExitFullScreenNotification",
+                Step::DidFailToExit,
+            ),
         ] {
             let name = ns_string(name)?;
             let lights = std::rc::Rc::clone(&shared);
@@ -208,6 +263,16 @@ impl TrafficLights {
     pub fn set_zoom(&self, zoom: f64) {
         self.shared.zoom.set(zoom);
     }
+
+    /// 是否正在进入全屏动画中。
+    pub fn is_entering_fullscreen(&self) -> bool {
+        self.shared.entering.get()
+    }
+
+    /// 是否正在退出全屏动画中。
+    pub fn is_exiting_fullscreen(&self) -> bool {
+        self.shared.exiting.get()
+    }
 }
 
 impl Drop for TrafficLights {
@@ -229,38 +294,78 @@ impl Drop for TrafficLights {
 enum Step {
     /// 开始进入全屏。
     WillEnter,
+    /// 已进入全屏。
+    DidEnter,
+    /// 进入全屏失败。
+    DidFailToEnter,
     /// 开始退出全屏。
     WillExit,
     /// 已退出全屏。
     DidExit,
+    /// 退出全屏失败。
+    DidFailToExit,
 }
 
 impl Lights {
-    /// 处理全屏过渡中的一个时刻（见 [`TrafficLights`]），之后通知应用重新布局。
+    /// 处理全屏过渡中的一个时刻（见 [`TrafficLights`]），之后通知应用重新布局或完成延迟操作。
     fn transition(&self, step: Step) {
-        let end = match step {
+        match step {
             Step::WillEnter => {
                 self.fullscreen.set(true);
+                self.entering.set(true);
+                self.exiting.set(false);
                 self.set_hidden(false);
                 self.restore();
-                Some(0.0)
+                crate::layout::set_traffic_lights_end(0.0);
+                (self.on_event)(FullscreenEvent::TrafficLightsMoved);
+            }
+            Step::DidEnter => {
+                self.fullscreen.set(true);
+                self.entering.set(false);
+                self.exiting.set(false);
+                (self.on_event)(FullscreenEvent::Entered);
+            }
+            Step::DidFailToEnter => {
+                self.fullscreen.set(false);
+                self.entering.set(false);
+                self.exiting.set(false);
+                if let Some(end) = self.place() {
+                    crate::layout::set_traffic_lights_end(end as f32);
+                }
+                self.set_hidden(false);
+                (self.on_event)(FullscreenEvent::TrafficLightsMoved);
+                (self.on_event)(FullscreenEvent::Exited);
             }
             Step::WillExit => {
                 self.fullscreen.set(false);
+                self.entering.set(false);
+                self.exiting.set(true);
                 self.set_hidden(true);
-                self.place()
+                if let Some(end) = self.place() {
+                    crate::layout::set_traffic_lights_end(end as f32);
+                }
+                (self.on_event)(FullscreenEvent::TrafficLightsMoved);
             }
             Step::DidExit => {
                 self.fullscreen.set(false);
-                let end = self.place();
+                self.entering.set(false);
+                self.exiting.set(false);
+                if let Some(end) = self.place() {
+                    crate::layout::set_traffic_lights_end(end as f32);
+                }
                 self.set_hidden(false);
-                end
+                (self.on_event)(FullscreenEvent::TrafficLightsMoved);
+                (self.on_event)(FullscreenEvent::Exited);
             }
-        };
-        if let Some(end) = end {
-            crate::layout::set_traffic_lights_end(end as f32);
+            Step::DidFailToExit => {
+                self.fullscreen.set(true);
+                self.entering.set(false);
+                self.exiting.set(false);
+                self.set_hidden(false);
+                crate::layout::set_traffic_lights_end(0.0);
+                (self.on_event)(FullscreenEvent::TrafficLightsMoved);
+            }
         }
-        (self.moved)();
     }
 
     /// 窗口模式下把红绿灯移入顶栏并垂直居中，返回最后一个按钮右边缘距窗口左边缘的距离（逻辑

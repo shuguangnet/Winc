@@ -36,14 +36,17 @@ fn log_commit_menu_checks_out_branches_picks_reverts_and_resets() {
     };
     let right_click_row = |app: &mut App, subject: &str| {
         let row = row_of(app, subject);
+        app.select_log_row(row);
+        paint(app);
         let rect = app
             .hits
             .log
             .iter()
-            .find(|(_, t)| *t == LogTarget::Row(row))
+            .filter(|(_, t)| *t == LogTarget::Row(row))
+            .max_by(|a, b| a.0.w.total_cmp(&b.0.w))
             .unwrap()
             .0;
-        right_click(app, (rect.x + 200.0, rect.y + rect.h / 2.0));
+        right_click(app, (rect.x + 120.0, rect.y + 12.0));
     };
     let refresh = |app: &mut App| {
         app.git_refresh();

@@ -687,7 +687,24 @@ impl App {
                         .status
                         .as_ref()
                         .is_some_and(|s| s.operation.is_some());
-                log_commit_menu(!busy, &self.current_branch_label(), &tags)
+                let mut menu = log_commit_menu(!busy, &self.current_branch_label(), &tags);
+                // 已选择比较基准且当前不是同一个提交时，紧随「选择用于比较」插入「与 <hash> 比较」。
+                if self
+                    .git
+                    .log
+                    .compare_selected
+                    .as_deref()
+                    .is_some_and(|base| base != oid)
+                    && let Some(pos) = menu.iter().position(|e| {
+                        matches!(e, MenuEntry::Item(MenuCommand::LogSelectForCompare, _))
+                    })
+                {
+                    menu.insert(
+                        pos + 1,
+                        MenuEntry::Item(MenuCommand::LogCompareSelected, true),
+                    );
+                }
+                menu
             }
             MenuTarget::GraphCommit(oid) => {
                 let commit = self.graph_commit(oid);

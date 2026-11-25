@@ -206,12 +206,19 @@ impl App {
                 start_width,
             } => self.drag_log_author_edge(x, (start_x, start_width)),
             Drag::LogDivider {
-                start_x,
-                start_width,
+                start_pos,
+                start_size,
+                horizontal,
             } => {
-                // 向左拖动使详情变宽；按排版允许的范围限制后再保存，使保存的宽度等于绘制的宽度。
-                self.git.log.details_w = Some(start_width - (x - start_x));
-                self.git.log.details_w = Some(self.log_parts().details.w);
+                if horizontal {
+                    // 向上拖动使底部详情变高；按排版允许的范围限制后再保存。
+                    self.git.log.details_h = Some(start_size - (y - start_pos));
+                    self.git.log.details_h = Some(self.log_parts().details.h);
+                } else {
+                    // 向左拖动使右侧详情变宽；按排版允许的范围限制后再保存。
+                    self.git.log.details_w = Some(start_size - (x - start_pos));
+                    self.git.log.details_w = Some(self.log_parts().details.w);
+                }
                 self.request_redraw();
             }
             Drag::Scrollbar {

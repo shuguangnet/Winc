@@ -33,9 +33,13 @@ impl App {
                 CommitTarget::File(i) => self.browse_commit_file(i),
                 CommitTarget::Group(_) | CommitTarget::Dir(_) | CommitTarget::Sticky(..) => {}
                 // 提交图标题行上的按钮和对比只看仓库，不碰工作区，浏览历史时照样能用。
-                CommitTarget::GraphFetch
+                CommitTarget::GraphToggle
+                | CommitTarget::GraphFocusHead
+                | CommitTarget::GraphFetch
                 | CommitTarget::GraphPull
                 | CommitTarget::GraphPush
+                | CommitTarget::GraphRefresh
+                | CommitTarget::GraphMore
                 | CommitTarget::GraphCompare
                 | CommitTarget::GraphOpenLog(_)
                 | CommitTarget::GraphCopyOid(_) => {}
@@ -46,12 +50,13 @@ impl App {
             }
         }
         match target {
+            CommitTarget::GraphToggle => self.toggle_graph_collapsed(),
             CommitTarget::GraphRow(index) => self.begin_graph_pan(Some(index)),
             CommitTarget::GraphOpenLog(index) => self.open_graph_commit_in_log(index),
             CommitTarget::GraphCopyOid(index) => self.copy_graph_commit_oid(index),
-            // 展开的文件列表点一下就打开，不参与拖动。
+            // 展开的文件列表点一下直接打开该提交下该文件的差异，不参与拖动。
             CommitTarget::GraphFile(index) => self.press_graph_file(index),
-            CommitTarget::GraphFileDiff(index) => self.open_graph_file_diff(index),
+            CommitTarget::GraphFileOpen(index) => self.open_graph_file_workspace(index),
             // 空白处按下也能拖：不用先找一行才开始滚。
             CommitTarget::GraphBlank => self.begin_graph_pan(None),
             CommitTarget::GraphDivider => self.begin_graph_resize(),
@@ -133,9 +138,12 @@ impl App {
                 );
             }
             // 与「⋯」菜单、命令面板里的同名命令走同一条路：确认、进度、出错提示都一样。
+            CommitTarget::GraphFocusHead => self.focus_graph_head(),
             CommitTarget::GraphFetch => self.run_branch_command(MenuCommand::GitFetch),
             CommitTarget::GraphPull => self.run_branch_command(MenuCommand::GitPull),
             CommitTarget::GraphPush => self.run_branch_command(MenuCommand::GitPush),
+            CommitTarget::GraphRefresh => self.reload_graph(),
+            CommitTarget::GraphMore => self.git_show_log(),
             CommitTarget::GraphCompare => {
                 let Some(graph) = self.commit_parts().graph else {
                     return;

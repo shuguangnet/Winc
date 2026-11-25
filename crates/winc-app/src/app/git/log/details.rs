@@ -244,7 +244,12 @@ impl App {
         if !self.log_active() {
             return None;
         }
-        let LogTarget::File(i) = crate::layout::hit(&self.hits.log, x, y)? else {
+        let (LogTarget::File(i)
+        | LogTarget::FileView(i)
+        | LogTarget::FileCompareLocal(i)
+        | LogTarget::FileComparePrevious(i)
+        | LogTarget::FileHistory(i)) = crate::layout::hit(&self.hits.log, x, y)?
+        else {
             return None;
         };
         let path = self.log_file(i)?.path.clone();
@@ -340,8 +345,8 @@ impl App {
     }
 
     /// 详情标题行的放大镜：打开、关闭「查找文件」的搜索框。
-    ///
-    /// 打开时焦点移进搜索框，可以直接键入；关掉时清掉键入的文字，文件列表恢复成全部文件。
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(super) fn toggle_log_find_files(&mut self) {
         self.git.log.find_files = !self.git.log.find_files;
         match self.git.log.find_files {
@@ -395,7 +400,8 @@ impl App {
         self.request_redraw();
     }
 
-    /// 「查找文件」搜索框的按键：`Esc` 先清掉键入的文字、再关掉搜索框，`↩` `↓` 回到列表。
+    /// 「查找文件」搜索框的按键：`Esc` 先清掉键入的文字、再关闭详情视图（对齐 `gitHistoryVSCode` `Commit/index.tsx`），
+    /// `↩` `↓` 回到列表。
     pub(in crate::app) fn on_key_log_file_filter(
         &mut self,
         event: &winit::event::KeyEvent,
@@ -411,6 +417,7 @@ impl App {
             }
             Key::Named(NamedKey::Escape) => {
                 self.git.log.find_files = false;
+                self.git.log.details_open = false;
                 self.focus = Focus::Editor;
                 self.request_redraw();
             }
@@ -456,6 +463,28 @@ impl App {
             }
             self.request_redraw();
         }
+    }
+
+    /// 树形模式下展开全部目录（存在已折叠目录时）或折叠全部目录。
+    pub(super) fn toggle_log_files_fold_all(&mut self) {
+        let dirs: Vec<String> = self
+            .log_file_layout()
+            .into_iter()
+            .filter_map(|r| match r {
+                LogFileRow::Dir(d) => Some(d),
+                LogFileRow::File(_) => None,
+            })
+            .collect();
+        if dirs.is_empty() {
+            return;
+        }
+        let any_collapsed = dirs.iter().any(|d| self.git.log.collapsed_dirs.contains(d));
+        if any_collapsed {
+            self.git.log.collapsed_dirs.clear();
+        } else {
+            self.git.log.collapsed_dirs.extend(dirs);
+        }
+        self.request_redraw();
     }
 
     /// 让详情里第 `i` 个文件露出来：按上一帧画出来的文件行推算它在哪，在详情一栏外面就滚。

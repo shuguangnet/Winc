@@ -406,14 +406,14 @@ fn uncommitted_changes_sit_above_head_in_the_log() {
     std::fs::write(root.join("README.md"), "changed\n").unwrap();
     app.git_refresh();
     paint(&mut app);
-    let lh = app.fonts.line_height;
+    let rh = crate::app::git::log::LOG_ROW_HEIGHT;
     assert_eq!(
         row_y(&app, LogTarget::Uncommitted),
         Some(list.y + LOG_LIST_PAD)
     );
     assert_eq!(
         row_y(&app, LogTarget::Row(0)),
-        Some(list.y + LOG_LIST_PAD + lh)
+        Some(list.y + LOG_LIST_PAD + rh)
     );
     app.change_log_query(|q| q.text = "登录".into());
     paint(&mut app);
@@ -524,12 +524,12 @@ fn log_spills_long_subjects_on_hover_and_drags_the_divider() {
     history_repo(&root, 10);
     let long = long_subject_row(&mut app, &root);
 
-    // 悬停在说明无法完整显示的行上：作者、时间两列让出位置，说明向右展开后仍显示不全时记入
-    // `clipped`，悬停提示显示整句。
+    // 悬停在说明无法完整显示的行上：超长说明截短并记入 `clipped`，悬停提示显示整句；
+    // 双行提交卡片中头像位于第二行，始终可见。
     hover_log_row(&mut app, long);
     assert_eq!(app.git.log.clipped, Some(long));
     assert!(
-        !app.hits
+        app.hits
             .log
             .iter()
             .any(|(_, t)| *t == LogTarget::Avatar(long))
@@ -539,7 +539,42 @@ fn log_spills_long_subjects_on_hover_and_drags_the_divider() {
     hover_log_row(&mut app, long + 1);
     assert_eq!(app.git.log.clipped, None);
 
-    // 向左拖动分隔线：详情一栏随之变宽；双击恢复默认宽度。
+    // 默认上下分栏模式下向上拖动分隔线：底部详情变高；双击恢复默认高度。
+    let before_h = app.log_parts().details.h;
+    let (divider, _) = *app
+        .hits
+        .log
+        .iter()
+        .find(|(_, t)| *t == LogTarget::Divider)
+        .unwrap();
+    let (dx, dy) = (divider.x + 120.0, divider.y + divider.h / 2.0);
+    app.on_mouse_move(dx, dy);
+    assert_eq!(app.pointer.hover, Hover::Log(LogTarget::Divider));
+    app.on_mouse_down(MouseButton::Left);
+    app.on_mouse_move(dx, dy - 60.0);
+    app.on_mouse_up(MouseButton::Left);
+    assert_eq!(app.log_parts().details.h, before_h + 60.0);
+    assert_eq!(app.git.log.details_h, Some(before_h + 60.0));
+    paint(&mut app);
+    let (divider, _) = *app
+        .hits
+        .log
+        .iter()
+        .find(|(_, t)| *t == LogTarget::Divider)
+        .unwrap();
+    let dy = divider.y + divider.h / 2.0;
+    app.on_mouse_move(dx, dy);
+    app.on_mouse_down(MouseButton::Left);
+    app.on_mouse_up(MouseButton::Left);
+    app.on_mouse_down(MouseButton::Left);
+    app.on_mouse_up(MouseButton::Left);
+    assert_eq!(app.git.log.details_h, None);
+    assert_eq!(app.log_parts().details.h, before_h);
+
+    // 切换为左右分栏（`gitHistory.sideBySide`）：向左拖动分隔线，详情变宽；双击恢复默认宽度。
+    app.press_log(LogTarget::LayoutToggle);
+    assert!(app.git.log.side_by_side);
+    paint(&mut app);
     let before = app.log_parts().details.w;
     let (divider, _) = *app
         .hits
@@ -551,12 +586,12 @@ fn log_spills_long_subjects_on_hover_and_drags_the_divider() {
     app.on_mouse_move(x, y);
     assert_eq!(app.pointer.hover, Hover::Log(LogTarget::Divider));
     app.on_mouse_down(MouseButton::Left);
-    app.on_mouse_move(x - 80.0, y);
+    app.on_mouse_move(x - 60.0, y);
     app.on_mouse_up(MouseButton::Left);
-    assert_eq!(app.log_parts().details.w, before + 80.0);
-    assert_eq!(app.git.log.details_w, Some(before + 80.0));
+    assert_eq!(app.log_parts().details.w, before + 60.0);
+    assert_eq!(app.git.log.details_w, Some(before + 60.0));
     // 拖动距离再大，列表也保留最小宽度。
-    app.on_mouse_move(x - 80.0, y);
+    app.on_mouse_move(x - 60.0, y);
     app.on_mouse_down(MouseButton::Left);
     app.on_mouse_move(-5000.0, y);
     app.on_mouse_up(MouseButton::Left);
@@ -1065,9 +1100,8 @@ fn the_log_list_has_room_on_top_and_the_author_column_eases_in() {
     app.git_refresh();
     app.run_action(Action::GitShowLog);
     paint(&mut app);
-    // 第一行上方留出间距，不紧贴标题栏的分隔线。
+    // 第一行紧接标题栏下沿开始，双行提交卡片高 `LOG_ROW_HEIGHT`；关闭详情后提交列表占满 100%。
     let list = app.log_parts().list;
-    // 该行的底边（取最宽的 `Row(0)`，圆点同样记为 `Row(0)`）。
     let (first, _) = *app
         .hits
         .log
@@ -1076,35 +1110,53 @@ fn the_log_list_has_room_on_top_and_the_author_column_eases_in() {
         .max_by(|a, b| a.0.w.total_cmp(&b.0.w))
         .unwrap();
     assert_eq!(first.y, list.y + LOG_LIST_PAD);
-    // 详情的第一行（说明）和列表的第一行在同一条线上：两边垂直居中对齐。
-    let subject = &app.git.log.runs[0].row;
-    let center = |r: &Rect| r.y + r.h / 2.0;
-    assert!((center(subject) - center(&first)).abs() < 0.01);
-
-    // 拖动分隔线使列表逐渐变窄：作者一列（头像左边缘到时间之间）连续变窄，不发生跳变。
-    let avatar_x = |app: &App| {
+    assert_eq!(first.h, crate::app::git::log::LOG_ROW_HEIGHT);
+    assert!(app.hits.log.iter().any(|(_, t)| *t == LogTarget::Avatar(0)));
+    assert!(
         app.hits
             .log
             .iter()
-            .find(|(_, t)| *t == LogTarget::Avatar(0))
-            .map(|(r, _)| r.x)
-            .unwrap()
-    };
-    let mut last: Option<(f32, f32)> = None;
-    for details in (300..=900).step_by(20) {
-        app.git.log.details_w = Some(details as f32);
-        paint(&mut app);
-        let list = app.log_parts().list;
-        let gap = list.right() - avatar_x(&app);
-        if let Some((w, g)) = last
-            && list.w < w
-        {
-            assert!(gap <= g + 0.01, "列表变窄时作者一列不会变宽");
-            // 每一步的宽度变化小于 25 像素，作者一列不会突然消失。
-            assert!(g - gap < 25.0, "作者一列一下子窄了一大截：{g} → {gap}");
-        }
-        last = Some((list.w, gap));
-    }
+            .any(|(_, t)| *t == LogTarget::RowCopyHash(0))
+    );
+    assert!(
+        app.hits
+            .log
+            .iter()
+            .any(|(_, t)| *t == LogTarget::RowResetSoft(0))
+    );
+    assert!(
+        app.hits
+            .log
+            .iter()
+            .any(|(_, t)| *t == LogTarget::RowResetHard(0))
+    );
+    assert!(
+        app.hits
+            .log
+            .iter()
+            .any(|(_, t)| *t == LogTarget::RowNewTag(0))
+    );
+    assert!(
+        app.hits
+            .log
+            .iter()
+            .any(|(_, t)| *t == LogTarget::RowNewBranch(0))
+    );
+    assert!(
+        app.hits
+            .log
+            .iter()
+            .any(|(_, t)| *t == LogTarget::RowMore(0))
+    );
+    // 点击详情右上角 `×` 关闭详情，提交列表扩展到 100% 高度；再点击任意提交重新展开。
+    app.press_log(LogTarget::CloseDetails);
+    paint(&mut app);
+    assert!(!app.git.log.details_open);
+    assert_eq!(app.log_parts().details.h, 0.0);
+    app.press_log(LogTarget::Row(0));
+    paint(&mut app);
+    assert!(app.git.log.details_open);
+    assert!(app.log_parts().details.h > 0.0);
     let _ = std::fs::remove_dir_all(&root);
 }
 

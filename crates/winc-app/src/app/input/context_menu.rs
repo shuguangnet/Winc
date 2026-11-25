@@ -412,6 +412,14 @@ pub enum MenuCommand {
     LogGoTo,
     /// 日志里的提交：与输入的提交号、分支或标签比较。
     LogCompareRevision,
+    /// 日志里的提交：选为比较基准（对齐 `gitHistoryVSCode` 的 `Select for comparison`）。
+    LogSelectForCompare,
+    /// 日志里的提交：与已选为比较基准的提交进行比较（对齐 `gitHistoryVSCode` 的 `Compare against previously selected Commit`）。
+    LogCompareSelected,
+    /// 日志里的提交：合并此提交到当前分支（`git merge <oid>`）。
+    LogMerge,
+    /// 日志里的提交：将当前分支变基到此提交（`git rebase <oid>`）。
+    LogRebase,
     /// 提交图里的提交：在 Git 日志标签里查看。
     GraphShowInLog,
     /// 提交图里的提交：就地展开它改动的文件。
@@ -649,6 +657,10 @@ impl MenuCommand {
             MenuCommand::LogCopyShortOid => t!("menu-log-copy-short-oid"),
             MenuCommand::LogGoTo => t!("menu-log-go-to"),
             MenuCommand::LogCompareRevision => t!("menu-log-compare-revision"),
+            MenuCommand::LogSelectForCompare => t!("menu-log-select-for-compare"),
+            MenuCommand::LogCompareSelected => t!("menu-log-compare-selected"),
+            MenuCommand::LogMerge => t!("menu-log-merge"),
+            MenuCommand::LogRebase => t!("menu-log-rebase"),
             MenuCommand::GraphShowInLog => t!("menu-graph-show-in-log"),
             MenuCommand::GraphOpenFiles => t!("menu-graph-open-files"),
             MenuCommand::GraphHideFiles => t!("menu-graph-hide-files"),
@@ -1016,6 +1028,7 @@ pub enum MenuTarget {
     /// 日志标题栏的「作者」下拉。
     LogAuthor,
     /// 日志标题栏的「⋯」：显示哪几列。
+    #[allow(dead_code)]
     LogColumns,
     /// 日志标题栏的「日期」下拉。
     LogDate,

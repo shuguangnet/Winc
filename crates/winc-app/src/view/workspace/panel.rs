@@ -922,15 +922,16 @@ pub(in crate::view) fn tooltip(app: &App) -> Option<(Rect, String)> {
             | CommitTarget::RevertFile(_)
             | CommitTarget::GroupRevert(_)
             | CommitTarget::DirRevert(_)
-            | CommitTarget::GraphFileDiff(_)),
+            | CommitTarget::GraphFileOpen(_)),
         ) => {
             let rect = app.hits.commit.iter().find(|(_, t)| *t == target)?.0;
             let label = match target {
-                CommitTarget::OpenFile(_) => t!("workspace-tip-open-file"),
+                CommitTarget::OpenFile(_) | CommitTarget::GraphFileOpen(_) => {
+                    t!("workspace-tip-open-file")
+                }
                 CommitTarget::GroupRevert(_) | CommitTarget::DirRevert(_) => {
                     t!("menu-commit-roll-back")
                 }
-                CommitTarget::GraphFileDiff(_) => t!("workspace-tip-open-diff"),
                 _ => t!("workspace-tip-revert-change"),
             };
             Some((rect, label.to_owned()))
@@ -998,11 +999,14 @@ pub(in crate::view) fn tooltip(app: &App) -> Option<(Rect, String)> {
             };
             Some((rect, label.to_owned()))
         }
-        // 提交图标题行的三个按钮和对比控件：图标上没有文字，要做的事写在这里。
+        // 提交图标题行的工具按钮和对比控件：图标上没有文字，要做的事写在这里。
         Hover::Commit(
-            target @ (CommitTarget::GraphFetch
+            target @ (CommitTarget::GraphFocusHead
+            | CommitTarget::GraphFetch
             | CommitTarget::GraphPull
             | CommitTarget::GraphPush
+            | CommitTarget::GraphRefresh
+            | CommitTarget::GraphMore
             | CommitTarget::GraphCompare),
         ) => {
             let rect = app.hits.commit.iter().find(|(_, t)| *t == target)?.0;

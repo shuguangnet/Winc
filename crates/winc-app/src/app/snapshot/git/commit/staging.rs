@@ -55,7 +55,16 @@ fn only_the_staged_hunks_are_committed() {
     let file = root.join("src/main.rs");
     app.git_preview_changes(&file);
     paint(&mut app);
-    // 两处改动各有一个勾选框，都没有暂存；勾上第一处（`value_5` 改成 500），文件变成「部分」。
+    // 两处改动各有一个勾选框，都没有暂存；滚到第二处确认其勾选框可见，再勾上第一处（`value_5` 改成 500）。
+    assert!(
+        app.hits
+            .diff
+            .iter()
+            .any(|(_, t)| *t == DiffTarget::Include(0))
+    );
+    app.press_diff(DiffTarget::Next);
+    app.press_diff(DiffTarget::Next);
+    paint(&mut app);
     assert!(
         app.hits
             .diff

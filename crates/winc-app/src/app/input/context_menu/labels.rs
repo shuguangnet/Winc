@@ -103,9 +103,10 @@ impl App {
                 }
             }
             MenuCommand::ToolAuto | MenuCommand::ToolPreset(_) => self.tool_label(command),
-            MenuCommand::LogCheckout | MenuCommand::LogCherryPick | MenuCommand::LogNewWorktree => {
-                self.log_commit_label(command)
-            }
+            MenuCommand::LogCheckout
+            | MenuCommand::LogCherryPick
+            | MenuCommand::LogNewWorktree
+            | MenuCommand::LogCompareSelected => self.log_commit_label(command),
             // 三种重置：名字是标题，各自对改动做什么写在下面一行小字里。
             MenuCommand::LogResetSoft | MenuCommand::LogResetMixed | MenuCommand::LogResetHard => {
                 let detail = match command {
@@ -181,6 +182,13 @@ impl App {
                     tooltip: None,
                 }
             }
+            MenuCommand::LogCompareSelected => match self.git.log.compare_selected.as_deref() {
+                Some(base) => MenuLabel::plain(&t!(
+                    "menu-log-compare-selected-with",
+                    commit = crate::app::git::log::short(base)
+                )),
+                None => MenuLabel::plain(command.label()),
+            },
             _ => {
                 let branch = self.current_branch_label();
                 MenuLabel::plain(&t!("menu-log-cherry-pick-onto", branch = branch))

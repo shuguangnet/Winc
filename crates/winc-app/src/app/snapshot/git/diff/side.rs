@@ -28,13 +28,14 @@ fn show_changes_opens_a_side_by_side_diff_and_walks_it() {
     assert_eq!(view.hunks.len(), 3);
     assert!(!view.old.missing && !view.new.missing);
     assert_eq!(view.stats(), (2, 2));
+    assert!(!view.collapses(), "差异默认展示完整文件内容");
     assert!(
-        view.rows[RIGHT]
+        !view.rows[RIGHT]
             .iter()
             .any(|r| matches!(r, SideRow::Fold { .. }))
     );
 
-    // 绘制一帧后，标题栏的按钮和折叠的行都可以点击。
+    // 绘制一帧后，标题栏的按钮都可以点击。
     paint(&mut app);
     // 「第几处」按跳转到的改动计算：整个差异能在一屏内显示、无需滚动时，同样逐处向下跳转。
     let current = |app: &App| {
@@ -70,6 +71,15 @@ fn show_changes_opens_a_side_by_side_diff_and_walks_it() {
     assert!(app.run_action(Action::PreviousDifference));
     assert_eq!(current(&app), Some(1));
 
+    // 手动开启折叠后，未改动的长段折叠，可点击折叠行展开，再次切换回到完整内容。
+    app.press_diff(DiffTarget::Collapse);
+    let view = app.editor.active().unwrap().diff.as_deref().unwrap();
+    assert!(view.collapses());
+    assert!(
+        view.rows[RIGHT]
+            .iter()
+            .any(|r| matches!(r, SideRow::Fold { .. }))
+    );
     paint(&mut app);
     let fold = app
         .hits

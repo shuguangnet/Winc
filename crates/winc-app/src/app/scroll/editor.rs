@@ -77,7 +77,7 @@ impl App {
         crate::layout::editor_max_scroll(
             self.row_count(),
             self.scroll_track().h,
-            self.fonts.line_height,
+            self.active_row_height(),
         )
     }
 
@@ -93,7 +93,7 @@ impl App {
     /// 按滚轮或触控板的增量 `dx`、`dy`（逻辑像素，向右、向下滚动为负）滚动文档 `id`；`id` 不是
     /// 当前文档时不滚动。
     pub(in crate::app) fn scroll_editor_by_pixels(&mut self, id: DocumentId, dx: f32, dy: f32) {
-        let lh = self.fonts.line_height;
+        let lh = self.active_row_height();
         let Some(doc) = self.editor.active_mut().filter(|d| d.id == id) else {
             return;
         };

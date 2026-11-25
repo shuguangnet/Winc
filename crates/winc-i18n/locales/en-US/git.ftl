@@ -291,8 +291,6 @@ git-compare-swap = Swap compared revisions
 git-compare-no-differences = No differences between the two versions
 git-compare-comparing = Comparing…
 git-compare-bad-base = Cannot compare with “{ $base }”
-git-log-col-description = Description
-git-log-action-new-tag = New Tag
 git-log-file-view-at-commit = View File Content
 git-log-files-fold-all-tip = Collapse or Expand All Folders
 git-log-search-button = Search
@@ -331,7 +329,6 @@ git-log-file-btn-previous-tip = Compare file with previous commit
 git-log-file-btn-history = History
 git-log-compare-base-badge = Compare Base
 git-log-selected-for-compare = Selected { $commit } for comparison
-git-log-diff-stats-tip = added { $added } & deleted { $deleted }
 git-log-hint-select-file = Select File
 git-log-hint-open-diff = Open Diff
 git-log-hint-return = Back
@@ -839,7 +836,6 @@ git-log-files-changed = { $count ->
 git-log-files-changed-of = { $shown } of { $total } files
 git-log-files-no-match = No matching files
 git-log-find-file = Find file
-git-log-file-binary = Binary
 
 ## Blame
 

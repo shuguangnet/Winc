@@ -76,7 +76,7 @@ impl App {
     }
 
     /// 作者名字的显示程度（0 到 1），列表宽 `list_w`（逻辑像素）。
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn log_author_show(&self, list_w: f32) -> f32 {
         if self.git.log.author_w.is_some() {
             return 1.0;
@@ -85,7 +85,7 @@ impl App {
     }
 
     /// 按下作者一列的左边缘：双击恢复默认宽度，否则从画着的宽度开始拖动。
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(in crate::app) fn press_log_author_edge(&mut self, x: f32, double: bool) {
         if double {
             self.git.log.author_w = None;
@@ -110,20 +110,20 @@ impl App {
 }
 
 /// 作者一列默认的宽度（逻辑像素）。
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) const AUTHOR_DEFAULT: f32 = 150.0;
 /// 作者一列完整显示头像和名字所需的最小列表宽度（逻辑像素）。
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) const AUTHOR_MIN_LIST: f32 = 620.0;
 /// 作者一列从仅头像过渡到头像加名字的列表宽度范围（逻辑像素）。
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) const AUTHOR_BLEND: f32 = 120.0;
 /// 仅显示头像时作者一列的宽度（逻辑像素）。
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) const AVATAR_W: f32 = 26.0;
 
 /// 作者一列完全展开时宽 `full`、名字显示程度为 `show` 时画出来的宽度（逻辑像素）。
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn log_author_width(full: f32, show: f32) -> f32 {
     AVATAR_W + (full - AVATAR_W) * show
 }

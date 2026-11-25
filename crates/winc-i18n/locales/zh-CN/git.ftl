@@ -273,8 +273,6 @@ git-compare-swap = 交换比较两侧
 git-compare-no-differences = 两个版本无差异
 git-compare-comparing = 正在比较…
 git-compare-bad-base = 不能与「{ $base }」比较
-git-log-col-description = 提交说明
-git-log-action-new-tag = 新建标签
 git-log-file-view-at-commit = 查看此提交中的文件
 git-log-files-fold-all-tip = 折叠或展开全部目录
 git-log-search-button = 搜索
@@ -313,7 +311,6 @@ git-log-file-btn-previous-tip = 与上一个提交中的版本比较
 git-log-file-btn-history = 历史
 git-log-compare-base-badge = 对比基准
 git-log-selected-for-compare = 已选择 { $commit } 作为比较基准
-git-log-diff-stats-tip = 新增 { $added } 行，删除 { $deleted } 行
 git-log-hint-select-file = 选择文件
 git-log-hint-open-diff = 打开差异
 git-log-hint-return = 返回
@@ -678,7 +675,6 @@ git-log-files-changed = 更改了 { $count } 个文件
 git-log-files-changed-of = { $total } 个文件中的 { $shown } 个
 git-log-files-no-match = 没有匹配的文件
 git-log-find-file = 查找文件
-git-log-file-binary = 二进制
 
 ## 逐行追溯
 

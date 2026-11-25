@@ -593,7 +593,7 @@ fn refreshing_the_log_updates_the_repository_state_and_reports_it() {
 
     // 比较模式支持「交换两侧（⇄）」与「退出比较（×）」按钮。
     app.press_log(LogTarget::Row(0));
-    app.pointer.modifiers = ModifiersState::SUPER;
+    app.pointer.modifiers = command_modifiers();
     app.press_log(LogTarget::Row(1));
     app.pointer.modifiers = ModifiersState::empty();
     paint(&mut app);

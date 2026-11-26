@@ -94,7 +94,7 @@ jobs:
       matrix:
         include:
           - name: macOS
-            os: macos-26
+            os: macos-15
           - name: Linux
             os: ubuntu-24.04
           - name: Windows
@@ -134,7 +134,7 @@ jobs:
       matrix:
         include:
           - name: macOS
-            os: macos-26
+            os: macos-15
           - name: Linux
             os: ubuntu-24.04
           - name: Windows

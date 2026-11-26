@@ -1101,7 +1101,11 @@ fn the_git_page_is_listed_only_when_the_module_is_on() {
     assert!(app.switch_on(Setting::GitTree));
     app.settings_toggle(Setting::GitTree);
     assert!(app.git.commit.flat() && !app.state.commit_tree);
-    // 配置文件中打开「显示暂存区」：提交视图随之换成暂存区视图。
+    // 默认开启「显示暂存区」；配置文件中关闭后提交视图随之换成勾选式变更列表，再打开恢复暂存区视图。
+    assert!(app.git.commit.staging());
+    let mut config = app.config.clone();
+    config.git_staging_area = Some(false);
+    app.adopt_config(config);
     assert!(!app.git.commit.staging());
     let mut config = app.config.clone();
     config.git_staging_area = Some(true);

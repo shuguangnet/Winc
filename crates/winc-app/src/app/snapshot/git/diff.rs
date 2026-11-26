@@ -696,6 +696,8 @@ fn diff_navigation_keys_work_with_focus_in_the_commit_list() {
     std::fs::remove_file(dir.join("src/new.rs")).unwrap();
     std::fs::write(dir.join("src/zeta.rs"), "a\n").unwrap();
     git_in(&dir, &["add", "src/zeta.rs"]);
+    git_in(&dir, &["commit", "-m", "add zeta"]);
+    std::fs::write(dir.join("src/zeta.rs"), "b\n").unwrap();
     let main = winc_editor::canonical_path(&dir.join("src/main.rs"));
     let mut app = app_with(&dir, false);
     app.settings_toggle(Setting::GitModule);

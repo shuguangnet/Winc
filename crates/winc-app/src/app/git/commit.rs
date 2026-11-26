@@ -463,7 +463,7 @@ impl Default for CommitState {
             amend: false,
             draft: None,
             drafts: HashMap::new(),
-            staging: false,
+            staging: true,
             excluded: HashSet::new(),
             included: HashSet::new(),
             other_checked: HashSet::new(),

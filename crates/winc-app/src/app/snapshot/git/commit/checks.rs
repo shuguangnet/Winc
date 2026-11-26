@@ -9,6 +9,7 @@ fn commit_only_the_checked_hunks() {
         return;
     }
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
@@ -78,6 +79,7 @@ fn commit_view_commits_only_the_checked_files() {
     }
     git_in(&dir, &["add", "src/new.rs"]);
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     // 默认显示为列表；本测试检查按目录排列的树形视图。
     app.git.commit.set_flat(false);
     // 模块关闭时：侧栏没有 Git 按钮，⌃⇧G 不响应。
@@ -233,6 +235,7 @@ fn untracked_files_stay_out_of_the_commit_until_checked() {
     let Some((mut app, root)) = git_app("git-commit-untracked", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     app.run_action(Action::ShowCommit);
     paint(&mut app);
     let (main, new) = (root.join("src/main.rs"), root.join("src/new.rs"));
@@ -293,6 +296,7 @@ fn commit_only_the_checked_lines() {
         return;
     }
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
@@ -361,6 +365,7 @@ fn line_checks_keep_their_state_until_the_change_is_edited() {
         return;
     }
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
@@ -424,6 +429,7 @@ fn identical_changes_are_checked_one_by_one() {
         return;
     }
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;

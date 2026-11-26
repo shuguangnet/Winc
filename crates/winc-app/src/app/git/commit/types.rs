@@ -250,12 +250,16 @@ pub(crate) struct CommitSticky {
     pub rect: Rect,
 }
 
-/// 刷新前后的状态 `old`、`new` 里改动的文件或者它们的状态（改了、新增、删除……）是否不同：只是
-/// 文件内容变了（保存）时相同。
+/// 刷新前后的状态 `old`、`new` 里改动的文件或者它们的暂存/工作区状态是否不同：只是文件内容变了
+/// （保存）时相同。
 pub(crate) fn entries_changed(old: &Status, new: &Status) -> bool {
     old.entries.len() != new.entries.len()
-        || (old.entries.iter().zip(&new.entries))
-            .any(|(a, b)| a.path != b.path || a.shown() != b.shown())
+        || (old.entries.iter().zip(&new.entries)).any(|(a, b)| {
+            a.path != b.path
+                || a.staged != b.staged
+                || a.unstaged != b.unstaged
+                || a.shown() != b.shown()
+        })
 }
 
 /// 刷新以后改动列表的过渡：离开的行（提交了、回滚了）原地淡出，新出现的行淡入，留下的行从原来

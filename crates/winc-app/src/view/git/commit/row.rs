@@ -452,18 +452,25 @@ fn draw_file_row(
     } = *r;
     let cy = y + COMMIT_ROW / 2.0;
     let entry = &status.entries[index];
+    let group = r.cx.rows.group_of(i);
     let is_selected = app.commit_is_selected(&entry.path);
     let hovered = matches!(
         app.pointer.hover,
-        Hover::Commit(
-            CommitTarget::File(i)
-                | CommitTarget::Check(i)
-                | CommitTarget::OpenFile(i)
-                | CommitTarget::RevertFile(i)
-                | CommitTarget::StageFile(i, _)
-        ) if i == index
+        Hover::Commit(CommitTarget::File(i) | CommitTarget::Check(i)) if i == index
+    ) || matches!(
+        app.pointer.hover,
+        Hover::Commit(CommitTarget::OpenFile(i))
+            if i == index && (!r.staging || group == Some(CommitGroup::Staged))
+    ) || matches!(
+        app.pointer.hover,
+        Hover::Commit(CommitTarget::RevertFile(i))
+            if i == index && (!r.staging || group != Some(CommitGroup::Staged))
+    ) || matches!(
+        app.pointer.hover,
+        Hover::Commit(CommitTarget::StageFile(i, on))
+            if i == index && (group == Some(CommitGroup::Staged)) == !on
     );
-    let targets = file_action_targets(app, r.cx.rows.group_of(i), index);
+    let targets = file_action_targets(app, group, index);
     // 悬停时右端的状态字母替换为「打开文件」「回滚」两个按钮；文件名放不下而显示全名时，
     // 按钮跟在全名之后（见 `commit_overflow`）。
     let actions = match full {
@@ -486,8 +493,8 @@ fn draw_file_row(
         .filter(|p| !p.as_os_str().is_empty())
         .map(|p| p.to_string_lossy());
     // 名字用正文色（删除的文件用次要色），状态是右端一个上色的字母（M、U、D 等）；
-    // 整行名字上色后颜色过多，不易分辨。
-    let change = entry.shown();
+    // 暂存区视图中按所在分组分别取暂存态或工作区态，区分同一文件在暂存区与工作区的不同状态。
+    let change = row_change(entry, group, r.staging);
     let letter = change.letter().to_string();
     let letter_w = frame.measure(FontKind::Ui, app.fonts.ui_small, &letter);
     let letter_x = band.right() - END_CENTER - letter_w / 2.0;

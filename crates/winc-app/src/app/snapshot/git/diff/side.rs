@@ -9,6 +9,8 @@ fn show_changes_opens_a_side_by_side_diff_and_walks_it() {
         return;
     }
     git_in(&dir, &["add", "src/new.rs"]);
+    git_in(&dir, &["commit", "-m", "add new"]);
+    std::fs::write(dir.join("src/new.rs"), "changed\n").unwrap();
     let mut app = app_with(&dir.join("src/main.rs"), false);
     // 模块关闭时该命令不可用。
     assert!(!app.run_action(Action::GitShowChanges));

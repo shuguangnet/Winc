@@ -573,10 +573,10 @@ fn draw_shift(
     };
     let t = shift.clock.progress();
     let after: HashMap<RowId<'_>, usize> = (0..rows.len())
-        .map(|j| (row_id(status, &rows[j]), j))
+        .map(|j| (row_id(status, &rows, j), j))
         .collect();
     let before: HashMap<RowId<'_>, usize> = (0..shift.rows.len())
-        .map(|i| (row_id(&shift.status, &shift.rows[i]), i))
+        .map(|i| (row_id(&shift.status, &shift.rows, i), i))
         .collect();
 
     // 两个列表为空时空状态一个淡出、一个淡入，另一边的行同时出现或离开。
@@ -595,7 +595,7 @@ fn draw_shift(
     let mut next_old = 0;
     let mut leave_until = |slots: &mut Vec<(Slot, f32)>, until: usize| {
         while next_old < until.min(shift.rows.len()) {
-            let id = row_id(&shift.status, &shift.rows[next_old]);
+            let id = row_id(&shift.status, &shift.rows, next_old);
             if !after.contains_key(&id) {
                 slots.push((Slot::Old(next_old), 1.0 - t));
             }
@@ -603,7 +603,7 @@ fn draw_shift(
         }
     };
     for j in 0..rows.len() {
-        match before.get(&row_id(status, &rows[j])) {
+        match before.get(&row_id(status, &rows, j)) {
             Some(&i) => {
                 leave_until(&mut slots, i);
                 slots.push((Slot::New(j), 1.0));
@@ -639,21 +639,22 @@ enum Slot {
     New(usize),
 }
 
-/// 改动列表里一行是谁，刷新前后用它对上同一行：组、目录（连同所在的组）、文件。文件换了组
-/// （暂存以后）还算同一行，从原来的位置移过去。
+/// 改动列表里一行是谁，刷新前后用它对上同一行：组、目录（连同所在的组）、文件（连同所在的组，
+/// 避免部分暂存的文件在「已暂存的更改」与「更改」之间发生键冲突）。
 #[derive(PartialEq, Eq, Hash)]
 enum RowId<'a> {
     Group(CommitGroup),
     Dir(CommitGroup, &'a Path),
-    File(&'a Path),
+    File(Option<CommitGroup>, &'a Path),
 }
 
-/// 状态 `status` 下第 `row` 行的 [`RowId`]。
-fn row_id<'a>(status: &'a Status, row: &'a CommitRow) -> RowId<'a> {
-    match row {
+/// 状态 `status` 下第 `i` 行的 [`RowId`]。
+fn row_id<'a>(status: &'a Status, rows: &'a CommitRows, i: usize) -> RowId<'a> {
+    match &rows[i] {
         CommitRow::Group(group) => RowId::Group(*group),
         CommitRow::Dir { group, dir, .. } => RowId::Dir(*group, dir),
         CommitRow::File { index, .. } => RowId::File(
+            rows.group_of(i),
             status
                 .entries
                 .get(*index)
@@ -1111,6 +1112,22 @@ fn commit_button_text(app: &App) -> String {
     }
 }
 
+/// 按所在分组与视图模式返回文件行应显示的更改类型：暂存区视图中「已暂存的更改」显示暂存态，
+/// 「更改」「未跟踪的文件」显示工作区态。
+fn row_change(
+    entry: &winc_editor::git::Entry,
+    group: Option<CommitGroup>,
+    staging: bool,
+) -> Change {
+    match group {
+        Some(CommitGroup::Staged) => entry.staged.unwrap_or_else(|| entry.shown()),
+        Some(CommitGroup::Changes | CommitGroup::Untracked) if staging => {
+            entry.unstaged.unwrap_or_else(|| entry.shown())
+        }
+        _ => entry.shown(),
+    }
+}
+
 /// 文件名的颜色：正文色，删掉的用次要色。
 fn file_color(change: Change, p: &Palette) -> Color {
     if change == Change::Deleted {
@@ -1153,7 +1170,14 @@ fn file_column(app: &App, depth: usize) -> usize {
 }
 
 /// 返回第 `row` 行名字的排法（组标题行返回 `None`）；列位置与 [`draw_row`] 使用同一组常量。
-fn row_text(app: &App, status: &Status, root: &Path, row: &CommitRow) -> Option<RowText> {
+fn row_text(
+    app: &App,
+    status: &Status,
+    root: &Path,
+    rows: &CommitRows,
+    row_index: usize,
+) -> Option<RowText> {
+    let row = rows.get(row_index)?;
     let p = app.palette;
     // 箭头、勾选框、图标、图标那一列宽、间隔（见 `draw_row` 和 `ARROW` 那一组常量）。
     let base = app.commit_base_level();
@@ -1184,7 +1208,7 @@ fn row_text(app: &App, status: &Status, root: &Path, row: &CommitRow) -> Option<
                 .and_then(|p| p.strip_prefix(root).ok())
                 .filter(|p| app.git.commit.flat() && !p.as_os_str().is_empty())
                 .map(|p| p.to_string_lossy().into_owned());
-            let change = entry.shown();
+            let change = row_change(entry, rows.group_of(row_index), app.git.commit.staging());
             let selected = app.commit_is_selected(&entry.path);
             Some(RowText {
                 offset: offset(file_column(app, *depth)),

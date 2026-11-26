@@ -61,6 +61,7 @@ fn right_clicking_a_changed_file_offers_diff_open_and_rollback() {
     let Some((mut app, root)) = git_app("git-commit-menu", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     app.run_action(Action::ShowCommit);
     paint(&mut app);
     // `make_repo` 修改过 `src/main.rs`：右键该文件所在的行。
@@ -121,6 +122,7 @@ fn hovering_a_change_offers_open_and_revert() {
     let Some((mut app, root)) = git_app("git-commit-row-actions", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     app.run_action(Action::ShowCommit);
     paint(&mut app);
     let main = root.join("src/main.rs");
@@ -391,6 +393,7 @@ fn the_commit_more_menu_greys_out_what_does_not_apply() {
     let Some((mut app, root)) = git_app("git-commit-more", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     std::fs::write(root.join("new.txt"), "x").unwrap();
     git_in(&root, &["add", "-A"]);
     app.git_refresh();
@@ -944,6 +947,7 @@ fn the_commit_more_menu_follows_the_chosen_view() {
     let Some((mut app, root)) = git_app("git-commit-more-views", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     app.run_action(Action::ShowCommit);
     paint(&mut app);
     let submenu = |app: &App, command: MenuCommand| -> Vec<MenuCommand> {

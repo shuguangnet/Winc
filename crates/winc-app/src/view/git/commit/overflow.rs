@@ -20,15 +20,21 @@ pub(in crate::view) fn commit_overflow(app: &App, frame: &mut Frame<'_>) -> Opti
             CommitTarget::Dir(r) | CommitTarget::DirCheck(r) | CommitTarget::Sticky(r, _),
         ) => r,
         // 鼠标移到跟在全名后面的按钮上时，仍保持全名显示。
-        Hover::Commit(
-            CommitTarget::File(f)
-            | CommitTarget::Check(f)
-            | CommitTarget::OpenFile(f)
-            | CommitTarget::RevertFile(f)
-            | CommitTarget::StageFile(f, _),
-        ) => rows
+        Hover::Commit(CommitTarget::File(f) | CommitTarget::Check(f)) => rows
             .iter()
             .position(|r| matches!(r, CommitRow::File { index, .. } if *index == f))?,
+        Hover::Commit(CommitTarget::OpenFile(f)) => (0..rows.len()).find(|&idx| {
+            matches!(rows[idx], CommitRow::File { index, .. } if index == f)
+                && (!app.git.commit.staging() || rows.group_of(idx) == Some(CommitGroup::Staged))
+        })?,
+        Hover::Commit(CommitTarget::RevertFile(f)) => (0..rows.len()).find(|&idx| {
+            matches!(rows[idx], CommitRow::File { index, .. } if index == f)
+                && (!app.git.commit.staging() || rows.group_of(idx) != Some(CommitGroup::Staged))
+        })?,
+        Hover::Commit(CommitTarget::StageFile(f, on)) => (0..rows.len()).find(|&idx| {
+            matches!(rows[idx], CommitRow::File { index, .. } if index == f)
+                && (rows.group_of(idx) == Some(CommitGroup::Staged)) == !on
+        })?,
         _ => return None,
     };
     if app
@@ -42,7 +48,7 @@ pub(in crate::view) fn commit_overflow(app: &App, frame: &mut Frame<'_>) -> Opti
     }
     let list = app.commit_parts().list;
     let y = row_top(app, &rows, row, list);
-    let text = row_text(app, status, root, rows.get(row)?)?;
+    let text = row_text(app, status, root, &rows, row)?;
     let band = Rect::new(list.x + 8.0, y, list.w - 16.0, COMMIT_ROW);
     let end = name_end(app, frame, &text, band);
     let window = app.layout.window.right() - 8.0;
@@ -140,7 +146,7 @@ pub(in crate::view) fn draw_commit_overflow(app: &App, frame: &mut Frame<'_>) {
         return;
     };
     let rows = app.commit_rows();
-    let Some(text) = rows.get(row).and_then(|r| row_text(app, status, root, r)) else {
+    let Some(text) = row_text(app, status, root, &rows, row) else {
         return;
     };
     let Some(view) = app.git.commit.names.peek(&name_key(status, &rows[row])) else {
@@ -223,7 +229,7 @@ pub(in crate::view) fn draw_commit_overflow_closing(app: &App, frame: &mut Frame
         {
             continue;
         }
-        let Some(text) = row_text(app, status, root, &rows[row]) else {
+        let Some(text) = row_text(app, status, root, &rows, row) else {
             continue;
         };
         let y = row_top(app, &rows, row, list);

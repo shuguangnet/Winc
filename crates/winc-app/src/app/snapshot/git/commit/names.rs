@@ -7,6 +7,7 @@ fn commit_list_groups_changes_by_directory() {
     let Some((mut app, root)) = git_app("git-commit-tree", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     // 默认显示为列表；本测试检查按目录排列的树形视图。
     app.git.commit.set_flat(false);
     // 几层目录：`pkg` 与 `model` 之间没有其他文件，`core/model` 并成一行；`pkg` 下另有 `z.rs`。
@@ -113,6 +114,7 @@ fn scrolled_changes_keep_their_group_and_folders_pinned_on_top() {
     }
     git_in(&dir, &["add", "-A"]);
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     // 默认显示为列表；本测试检查按目录排列的树形视图。
     app.git.commit.set_flat(false);
     app.settings_toggle(Setting::GitModule);
@@ -229,6 +231,7 @@ fn showing_as_tree_switches_the_changes_between_a_tree_and_a_flat_list() {
         return;
     };
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
     app.settings_toggle(Setting::GitModule);
@@ -330,6 +333,7 @@ fn folding_a_changes_folder_slides_its_rows_like_the_file_tree() {
         return;
     };
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     // 默认显示为列表；本测试检查按目录排列的树形视图。
     app.git.commit.set_flat(false);
     app.settings_toggle(Setting::GitModule);
@@ -386,6 +390,7 @@ fn hovering_a_long_change_name_shows_it_in_full_with_its_buttons_after_it() {
         return;
     };
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
     app.settings_toggle(Setting::GitModule);
@@ -478,6 +483,7 @@ fn a_long_change_name_slides_out_and_back_like_the_file_tree() {
         return;
     };
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
     app.settings_toggle(Setting::GitModule);
@@ -556,6 +562,7 @@ fn names_that_only_make_room_for_the_buttons_slide_the_buttons_out() {
     }
     git_in(&dir, &["add", "-A"]);
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
     app.settings_toggle(Setting::GitModule);
@@ -742,6 +749,7 @@ fn files_staged_in_the_terminal_commit_what_is_in_the_working_tree() {
     let Some((mut app, root)) = git_app("git-commit-partly-staged", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     let main = root.join("src/main.rs");
     std::fs::write(&main, "staged\n").unwrap();
     git_in(&root, &["add", "src/main.rs"]);
@@ -799,6 +807,7 @@ fn the_commit_button_names_its_scope_only_for_a_plain_commit() {
     let Some((mut app, root)) = git_app("git-commit-scope", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     app.run_action(Action::ShowCommit);
     paint(&mut app);
     assert_eq!(app.commit_scope(), Some(CommitScope::Staged(1)));
@@ -881,6 +890,7 @@ fn the_full_name_row_covers_the_scrollbar_like_the_file_tree() {
         return;
     };
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
     app.settings_toggle(Setting::GitModule);
@@ -934,6 +944,7 @@ fn the_full_name_row_covers_the_splitter_like_the_file_tree() {
         return;
     };
     let mut app = app_with(&dir, false);
+    app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
     app.settings_toggle(Setting::GitModule);

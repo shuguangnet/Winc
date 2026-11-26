@@ -571,19 +571,16 @@ fn shoot_staging_view() {
 /// 变化，提交视图立即换成对应的方式。
 #[test]
 fn the_staging_area_setting_and_the_menu_item_are_one_switch() {
-    use crate::app::input::context_menu::MenuCommand::CommitStagingArea;
+    use crate::app::input::context_menu::MenuCommand::{CommitChangeList, CommitStagingArea};
     use crate::layout::{Setting, SettingsPage};
     let Some((mut app, root)) = git_app("git-staging-setting", false) else {
         return;
     };
     app.run_action(Action::ShowCommit);
     assert_eq!(Setting::GitStagingArea.page(), SettingsPage::Git);
-    assert!(!app.switch_on(Setting::GitStagingArea));
-    assert!(!app.git.commit.staging() && !app.menu_checked(CommitStagingArea));
-
-    app.run_commit_more_command(CommitStagingArea);
+    // 默认开启暂存区视图：可以直观区分「已暂存的更改」与「更改」。
+    assert!(app.switch_on(Setting::GitStagingArea));
     assert!(app.git.commit.staging() && app.menu_checked(CommitStagingArea));
-    assert_eq!(app.config.git_staging_area, Some(true));
     let groups = |app: &App| -> Vec<CommitRow> {
         let rows = app.commit_rows();
         let titles = rows.iter().filter(|r| matches!(r, CommitRow::Group(_)));
@@ -593,10 +590,28 @@ fn the_staging_area_setting_and_the_menu_item_are_one_switch() {
     assert_eq!(app.commit_scope(), Some(CommitScope::All(1)));
     assert!(!groups(&app).contains(&CommitRow::Group(CommitGroup::Staged)));
 
-    app.settings_toggle(Setting::GitStagingArea);
+    // 暂存文件后立刻显示「已暂存的更改」，并且状态变更能被 `entries_changed` 识别。
+    paint(&mut app);
+    let before_status = app.git.status.clone().unwrap();
+    app.press_commit(CommitTarget::StageFile(0, true));
+    let after_status = app.git.status.clone().unwrap();
+    assert!(crate::app::git::commit::entries_changed(
+        &before_status,
+        &after_status
+    ));
+    assert!(groups(&app).contains(&CommitRow::Group(CommitGroup::Staged)));
+    assert!(!groups(&app).contains(&CommitRow::Group(CommitGroup::Changes)));
+
+    // 可通过菜单切回「变更列表」勾选式，也可通过设置重新切回暂存区视图。
+    app.run_commit_more_command(CommitChangeList);
     assert!(!app.git.commit.staging() && !app.menu_checked(CommitStagingArea));
     assert_eq!(app.config.git_staging_area, Some(false));
     assert_eq!(app.commit_scope(), Some(CommitScope::Staged(1)));
+
+    app.settings_toggle(Setting::GitStagingArea);
+    assert!(app.git.commit.staging() && app.menu_checked(CommitStagingArea));
+    assert_eq!(app.config.git_staging_area, Some(true));
+    assert!(groups(&app).contains(&CommitRow::Group(CommitGroup::Staged)));
     let _ = std::fs::remove_dir_all(&root);
 }
 

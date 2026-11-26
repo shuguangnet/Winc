@@ -207,6 +207,7 @@ fn switching_repositories_keeps_checks_and_the_message() {
     let Some((mut app, a, b)) = two_repositories("git-commit-switch-keeps", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     app.run_action(Action::ShowCommit);
     paint(&mut app);
     // 当前仓库 `a`：改过的文件默认勾上，未跟踪的不勾；`b` 的文件默认都不勾，这里只勾一个。
@@ -257,6 +258,7 @@ fn checked_files_of_other_repositories_are_committed_alongside() {
     let Some((mut app, a, b)) = two_repositories("git-commit-other-repositories", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     app.run_action(Action::ShowCommit);
     paint(&mut app);
     assert_eq!(app.other_group_state(1, None), None);
@@ -319,7 +321,7 @@ fn staged_files_of_other_repositories_are_committed_alongside() {
     let Some((mut app, a, b)) = two_repositories("git-stage-other-repositories", false) else {
         return;
     };
-    app.settings_toggle(Setting::GitStagingArea);
+    app.git.commit.set_staging(true);
     app.run_action(Action::ShowCommit);
     app.run_commit_more_command(MenuCommand::CommitAllRepositories);
     app.poll_git();
@@ -412,6 +414,7 @@ fn a_clean_current_repository_commits_the_checked_files_of_others() {
     let Some((mut app, a, b)) = two_repositories("git-clean-current-commit", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     git_in(&a, &["add", "-A"]);
     git_in(&a, &["commit", "-q", "-m", "clean"]);
     app.run_action(Action::ShowCommit);
@@ -447,6 +450,7 @@ fn the_branch_on_another_repository_opens_its_branch_picker() {
     let Some((mut app, a, b)) = two_repositories("git-other-branch", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     git_in(&b, &["branch", "-q", "topic"]);
     app.run_action(Action::ShowCommit);
     paint(&mut app);
@@ -560,6 +564,7 @@ fn switching_from_a_scrolled_list_keeps_the_clicked_row_in_place() {
     let Some((mut app, a, b)) = two_repositories("git-switch-scrolled", false) else {
         return;
     };
+    app.git.commit.set_staging(false);
     for repo in [&a, &b] {
         for n in 0..40 {
             std::fs::write(repo.join(format!("src/new{n}.rs")), "fn x() {}\n").unwrap();

@@ -784,6 +784,8 @@ git-change-deleted-after = { $count ->
    *[other] Deleted { $count } lines · After line { $line }
 }
 git-change-reverted = Rolled back the change
+git-change-staged = Staged the change
+git-change-unstaged = Unstaged the change
 git-change-no-next = Already at the last change
 git-no-next-file = Already at the last file
 git-no-previous-file = Already at the first file

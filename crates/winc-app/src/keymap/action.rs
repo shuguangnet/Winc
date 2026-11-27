@@ -244,6 +244,10 @@ pub enum Action {
     GitUnstageAll,
     /// 把当前文件的更改加入暂存区。
     GitStageFile,
+    /// 暂存差异视图中光标处的更改块。
+    GitStageHunk,
+    /// 取消暂存差异视图中光标处的更改块。
+    GitUnstageHunk,
     GitFileHistory,
     /// 当前文件中选中的几行的历史。
     GitSelectionHistory,
@@ -534,6 +538,8 @@ impl Action {
             GitStageAll => t!("cmd-git-stage-all"),
             GitUnstageAll => t!("cmd-git-unstage-all"),
             GitStageFile => t!("cmd-git-stage-file"),
+            GitStageHunk => t!("cmd-git-stage-hunk"),
+            GitUnstageHunk => t!("cmd-git-unstage-hunk"),
             GitFileHistory => t!("cmd-git-file-history"),
             GitSelectionHistory => t!("cmd-git-selection-history"),
             GitBlame => t!("cmd-git-blame"),
@@ -794,6 +800,8 @@ impl Action {
             GitStageAll => "Git: Stage All Changes",
             GitUnstageAll => "Git: Unstage All Changes",
             GitStageFile => "Git: Stage Current File",
+            GitStageHunk => "Git: Stage Change at Cursor",
+            GitUnstageHunk => "Git: Unstage Change at Cursor",
             GitFileHistory => "Git: Show File History",
             GitSelectionHistory => "Git: Show History for Selection",
             GitBlame => "Git: Toggle Blame",
@@ -1002,6 +1010,8 @@ impl Action {
             | GitStageAll
             | GitUnstageAll
             | GitStageFile
+            | GitStageHunk
+            | GitUnstageHunk
             | GitFileHistory
             | GitSelectionHistory
             | GitBlame
@@ -1141,6 +1151,8 @@ impl Action {
             | Action::GitStageAll
             | Action::GitUnstageAll
             | Action::GitStageFile
+            | Action::GitStageHunk
+            | Action::GitUnstageHunk
             | Action::GitFileHistory
             | Action::GitSelectionHistory
             | Action::GitBlame
@@ -1424,6 +1436,8 @@ pub const ACTIONS: &[Action] = {
         GitStageAll,
         GitUnstageAll,
         GitStageFile,
+        GitStageHunk,
+        GitUnstageHunk,
         GitFileHistory,
         GitSelectionHistory,
         GitBlame,

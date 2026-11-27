@@ -386,7 +386,6 @@ fn the_project_name_stays_the_folder_with_several_repositories() {
     );
     let mut app = app_with(&dir, false);
     app.config.repository_scan_depth = Some(1);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }

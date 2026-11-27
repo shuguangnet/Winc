@@ -663,7 +663,9 @@ impl Hover {
                         | CommitTarget::Refresh
                         | CommitTarget::More
                         | CommitTarget::Commit
+                        | CommitTarget::CommitPush
                         | CommitTarget::CommitMenu
+                        | CommitTarget::History
                         | CommitTarget::OpenFile(_)
                         | CommitTarget::RevertFile(_)
                         | CommitTarget::GroupRevert(_)

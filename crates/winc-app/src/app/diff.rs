@@ -511,10 +511,15 @@ impl App {
     }
 
     /// 暂存或取消暂存当前差异标签中的第 `hunk` 处改动；`line` 不为 `None` 时只操作其中这一行。
+    fn toggle_diff_part(&mut self, hunk: usize, line: Option<StageLine>) {
+        self.set_diff_part(hunk, line, None);
+    }
+
+    /// 按目标状态 `wanted`（`None` 表示取反）暂存或取消暂存第 `hunk` 处改动（或其中的 `line`）。
     ///
     /// 暂存区按磁盘上的内容写入：右侧的文档有未保存的修改时先保存。保存改动了文档（保存时
     /// 格式化）时各处改动已经不同，不再继续。
-    fn toggle_diff_part(&mut self, hunk: usize, line: Option<StageLine>) {
+    fn set_diff_part(&mut self, hunk: usize, line: Option<StageLine>, wanted: Option<bool>) {
         let Some(doc) = self.editor.active() else {
             return;
         };
@@ -559,7 +564,108 @@ impl App {
                 !left.new.contains(&(at - target.new.start))
             }
         };
-        self.stage_part(&entry, [&head, &index, &work], (target, line), !staged);
+        let next_on = wanted.unwrap_or(!staged);
+        if next_on == staged {
+            return;
+        }
+        self.stage_part(&entry, [&head, &index, &work], (target, line), next_on);
+        self.flash(if next_on {
+            t!("git-change-staged")
+        } else {
+            t!("git-change-unstaged")
+        });
+    }
+
+    /// 暂存区视图下返回当前差异标签中第 `hunk` 处改动是否已完全暂存；不可按块暂存时为 `None`。
+    pub(crate) fn diff_hunk_staged(&self, hunk: usize) -> Option<bool> {
+        if !self.git.commit.staging() {
+            return None;
+        }
+        let view = self.editor.active()?.diff.as_deref()?;
+        let entry = self.diff_entry(view)?;
+        if !stages_by_hunk(entry) {
+            return None;
+        }
+        let picks = self.git.commit.hunk_inclusions(entry, view);
+        Some(matches!(picks.get(hunk)?, Pick::Apply))
+    }
+
+    /// 暂存区视图下返回 `side` 侧第 `line` 行是否已暂存；不可按块暂存时为 `None`。
+    pub(crate) fn diff_line_staged(&self, side: usize, line: usize) -> Option<bool> {
+        if !self.git.commit.staging() {
+            return None;
+        }
+        let view = self.editor.active()?.diff.as_deref()?;
+        let entry = self.diff_entry(view)?;
+        if !stages_by_hunk(entry) {
+            return None;
+        }
+        let range = |h: &winc_core::diff::LineHunk| {
+            if side == LEFT {
+                h.old.clone()
+            } else {
+                h.new.clone()
+            }
+        };
+        let hunk = view.hunks.iter().position(|h| range(h).contains(&line))?;
+        let target = &view.hunks[hunk];
+        let picks = self.git.commit.hunk_inclusions(entry, view);
+        match picks.get(hunk)? {
+            Pick::Apply => Some(true),
+            Pick::Skip => Some(false),
+            Pick::Lines(left) => Some(if side == LEFT {
+                !left.old.contains(&(line - target.old.start))
+            } else {
+                !left.new.contains(&(line - target.new.start))
+            }),
+        }
+    }
+
+    /// 返回右侧光标所在改动在暂存区视图中的暂存状态；不在改动上或不可按块暂存时为 `None`。
+    pub(in crate::app) fn diff_caret_stage_hunk(&self) -> Option<bool> {
+        self.diff_caret_hunk()
+            .and_then(|hunk| self.diff_hunk_staged(hunk))
+    }
+
+    /// 在差异标签中执行「暂存 / 取消暂存光标处的改动」。
+    pub(in crate::app) fn stage_diff_hunk_here(&mut self, on: bool) {
+        let Some(index) = self.editor.active else {
+            return;
+        };
+        if self.editor.documents[index].diff.is_none() {
+            return;
+        }
+        self.sync_diff_source(index);
+        let hunk = match self.diff_caret_line(index) {
+            Some(_) => self.diff_caret_hunk(),
+            None => {
+                let doc = &self.editor.documents[index];
+                doc.diff
+                    .as_deref()
+                    .and_then(|v| v.hunk_at_pos(doc.scroll_line.max(0.0) + 3.0))
+            }
+        };
+        let Some(hunk) = hunk else {
+            self.flash(t!("git-diff-none-at-caret"));
+            return;
+        };
+        if self.git.commit.staging() {
+            self.set_diff_part(hunk, None, Some(on));
+        } else {
+            let currently = self
+                .editor
+                .active()
+                .and_then(|d| d.diff.as_deref())
+                .and_then(|v| {
+                    let entry = self.diff_entry(v)?;
+                    let picks = self.git.commit.hunk_inclusions(entry, v);
+                    Some(matches!(picks.get(hunk)?, Pick::Apply))
+                });
+            if currently != Some(on) {
+                self.toggle_diff_hunk(hunk);
+            }
+        }
+        self.request_redraw();
     }
 
     /// 返回右侧对应的文档下标；未打开且 `open` 为 `true` 时就地打开，但不切换当前标签。

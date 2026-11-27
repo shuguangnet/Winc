@@ -197,7 +197,7 @@ impl QuestionView {
         }
     }
 
-    /// 返回连接远端主机的对话框内容：主机、端口和密钥文件。
+    /// 返回连接远端主机的对话框内容：主机、用户名、端口和密钥文件。
     pub(crate) fn connect() -> QuestionView {
         let input = |label, placeholder| QuestionInput { label, placeholder };
         QuestionView {
@@ -209,6 +209,10 @@ impl QuestionView {
                 input(
                     t!("workspace-remote-dialog-host"),
                     t!("workspace-remote-dialog-host-placeholder"),
+                ),
+                input(
+                    t!("workspace-remote-dialog-user"),
+                    t!("workspace-remote-dialog-user-placeholder"),
                 ),
                 input(t!("workspace-remote-dialog-port"), "22"),
                 input(

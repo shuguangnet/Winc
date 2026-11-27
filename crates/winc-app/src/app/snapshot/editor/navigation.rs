@@ -278,6 +278,9 @@ fn find_references_is_a_whole_word_project_search() {
 fn command_palette_runs_commands_and_remembers_them() {
     let dir = navigation_folder("palette");
     let mut app = app_with(&dir, false);
+    app.config.git_enabled = Some(false);
+    app.config.terminal_enabled = Some(false);
+    app.config.remote_enabled = Some(false);
     app.open_path(&dir.join("main.py"));
 
     // ⇧⌘P：复用快速打开的卡片，输入框预填 `>`，列出的是命令。

@@ -79,7 +79,6 @@ fn diff_text_clicks_and_cursors_work_like_the_editor() {
     }
     let file = winc_editor::canonical_path(&dir.join("src/main.rs"));
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -182,7 +181,7 @@ fn diff_text_clicks_and_cursors_work_like_the_editor() {
     assert_eq!(app.editor.documents[source(&app)].selections().0.len(), 2);
     assert!(app.run_action(Action::RemoveSecondaryCursors));
 
-    // 右键：右侧有剪切、复制、粘贴，光标在改动上时可以回滚该处。
+    // 右键：右侧有剪切、复制、粘贴，光标在改动上时可以暂存/取消暂存或回滚该处。
     let point = at(&app, RIGHT, 5, 2, false);
     right_click(&mut app, point);
     assert!(matches!(
@@ -191,10 +190,19 @@ fn diff_text_clicks_and_cursors_work_like_the_editor() {
     ));
     let commands = menu_commands(&app);
     assert!(commands.contains(&(MenuCommand::Paste, true)));
+    assert!(commands.contains(&(MenuCommand::GitStageHunk, true)));
     assert!(commands.contains(&(MenuCommand::GitRevertHunk, true)));
+    app.run_menu_command(MenuCommand::GitStageHunk);
+    assert_eq!(app.diff_hunk_staged(0), Some(true));
+    assert_eq!(app.diff_hunk_staged(1), Some(false));
+    right_click(&mut app, point);
+    assert!(menu_commands(&app).contains(&(MenuCommand::GitUnstageHunk, true)));
+    app.run_menu_command(MenuCommand::GitUnstageHunk);
+    assert_eq!(app.diff_hunk_staged(0), Some(false));
     let point = at(&app, RIGHT, 8, 2, false);
     right_click(&mut app, point);
     assert!(menu_commands(&app).contains(&(MenuCommand::GitRevertHunk, false)));
+    assert!(!menu_commands(&app).contains(&(MenuCommand::GitStageHunk, true)));
 
     // 左侧：双击选词，点击行号选中整行，右键菜单只有复制。先关闭已打开的菜单：菜单打开时，
     // 点击菜单外只关闭菜单。
@@ -323,7 +331,6 @@ fn the_inline_layout_can_be_toggled_and_edits_only_new_lines() {
     std::fs::remove_file(dir.join("src/new.rs")).unwrap();
     let main = winc_editor::canonical_path(&dir.join("src/main.rs"));
     let mut app = app_with(&main, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -443,7 +450,6 @@ fn typing_at_the_read_caret_opens_the_file_and_edits_there() {
     }
     let main = winc_editor::canonical_path(&dir.join("src/main.rs"));
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -492,7 +498,6 @@ fn diffs_render_whitespace_like_the_editor() {
         return;
     }
     let mut app = app_with(&dir.join("src/main.rs"), false);
-    app.settings_toggle(Setting::GitModule);
     app.run(winc_editor::Command::Insert("use std::fs;\n".into()));
     app.run_action(Action::GitShowChanges);
     paint(&mut app);

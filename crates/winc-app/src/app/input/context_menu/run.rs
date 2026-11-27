@@ -399,7 +399,9 @@ impl App {
                 MenuCommand::CopyRelativePath => self.copy_path(&path, true),
                 _ => {}
             },
-            MenuTarget::CommitButton => self.run_commit_button_command(command),
+            MenuTarget::CommitButton | MenuTarget::CommitHistory => {
+                self.run_commit_button_command(command)
+            }
             MenuTarget::LastCommit => self.run_last_commit_command(command),
             MenuTarget::TabList => {
                 if let MenuCommand::ShowTab(i) = command {

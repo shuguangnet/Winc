@@ -1053,6 +1053,27 @@ pub(in crate::view) fn tooltip(app: &App) -> Option<(Rect, String)> {
             app.commit_parts().commit_menu,
             t!("workspace-tip-commit-menu").to_owned(),
         )),
+        Hover::Commit(CommitTarget::History) => {
+            let rect = app.commit_parts().history?;
+            let key = if cfg!(target_os = "macos") {
+                "⌥↑ / ⌥↓"
+            } else {
+                "Alt+↑ / Alt+↓"
+            };
+            Some((
+                rect,
+                format!("{}  {key}", t!("workspace-tip-commit-history")),
+            ))
+        }
+        Hover::Commit(CommitTarget::CommitPush) => {
+            let rect = app.commit_parts().push?;
+            let key = if cfg!(target_os = "macos") {
+                "⇧⌘↩"
+            } else {
+                "Ctrl+Shift+Enter"
+            };
+            Some((rect, format!("{}  {key}", t!("workspace-tip-commit-push"))))
+        }
         Hover::Commit(target) => {
             let rect = app
                 .commit_parts()
@@ -1146,8 +1167,21 @@ pub(in crate::view) fn tooltip(app: &App) -> Option<(Rect, String)> {
                     t!("workspace-tip-revert-to-left"),
                     Some(Action::GitRevertChange),
                 ),
-                DiffTarget::Include(_) => t!("workspace-tip-include-change").to_owned(),
-                DiffTarget::IncludeLine(..) => t!("workspace-tip-include-line").to_owned(),
+                DiffTarget::Include(hunk) => match app.diff_hunk_staged(hunk) {
+                    Some(true) => with_key(
+                        t!("workspace-tip-unstage-change"),
+                        Some(Action::GitUnstageHunk),
+                    ),
+                    Some(false) => {
+                        with_key(t!("workspace-tip-stage-change"), Some(Action::GitStageHunk))
+                    }
+                    None => t!("workspace-tip-include-change").to_owned(),
+                },
+                DiffTarget::IncludeLine(side, line) => match app.diff_line_staged(side, line) {
+                    Some(true) => t!("workspace-tip-unstage-line").to_owned(),
+                    Some(false) => t!("workspace-tip-stage-line").to_owned(),
+                    None => t!("workspace-tip-include-line").to_owned(),
+                },
                 _ if app.editor.active()?.diff.as_deref()?.collapses() => {
                     t!("workspace-tip-expand-unchanged").to_owned()
                 }

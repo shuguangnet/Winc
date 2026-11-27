@@ -171,8 +171,7 @@ fn git_app_in(name: &str, long: bool, dark: bool) -> Option<(App, PathBuf)> {
     if !made {
         return None;
     }
-    let mut app = app_with(&dir, dark);
-    app.settings_toggle(Setting::GitModule);
+    let app = app_with(&dir, dark);
     if git_unusable(&app) {
         return None;
     }

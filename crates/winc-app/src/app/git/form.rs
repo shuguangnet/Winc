@@ -124,8 +124,10 @@ pub(crate) struct FormDialog {
     pub name: TextField,
     /// 询问对话框的第二个输入框：登录的密码（遮盖）、远程仓库的地址；其他表单不显示。
     pub second: TextField,
-    /// 连接对话框的第三个输入框：密钥文件；其他表单不显示。
+    /// 连接对话框的第三个输入框：端口；其他表单不显示。
     pub third: TextField,
+    /// 连接对话框的第四个输入框：密钥文件；其他表单不显示。
+    pub fourth: TextField,
     /// 新分支从哪个分支开始；`None` 是当前分支（游离时是当前提交）。
     pub base: Option<String>,
     /// 用「位置」右端的目录按钮选的目录，工作树建在它下面；`None` 是默认位置（见
@@ -272,6 +274,7 @@ impl App {
             name,
             second: TextField::masked(),
             third: TextField::default(),
+            fourth: TextField::default(),
             base: None,
             folder: None,
             copy: true,
@@ -734,6 +737,9 @@ impl App {
         if layout.third.w > 0.0 {
             order.push(DialogPart::Third);
         }
+        if layout.fourth.w > 0.0 {
+            order.push(DialogPart::Fourth);
+        }
         if plan.base_enabled && !pushing {
             order.push(DialogPart::Base);
         }
@@ -864,7 +870,12 @@ impl App {
             return;
         }
         match self.dialog_part_at(x, y) {
-            Some(part @ (DialogPart::Branch | DialogPart::Second | DialogPart::Third)) => {
+            Some(
+                part @ (DialogPart::Branch
+                | DialogPart::Second
+                | DialogPart::Third
+                | DialogPart::Fourth),
+            ) => {
                 self.focus = Focus::Dialog;
                 if let Some(dialog) = &mut self.overlays.form_dialog {
                     dialog.focus = part;
@@ -888,7 +899,7 @@ impl App {
         match part {
             DialogPart::Close | DialogPart::Cancel => self.close_form_dialog(),
             DialogPart::Confirm => self.submit_form_dialog(),
-            DialogPart::Branch | DialogPart::Second | DialogPart::Third => {
+            DialogPart::Branch | DialogPart::Second | DialogPart::Third | DialogPart::Fourth => {
                 self.submit_form_dialog();
             }
             DialogPart::Base => {

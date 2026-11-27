@@ -652,6 +652,7 @@ impl App {
                 crate::layout::DialogPart::Branch
                     | crate::layout::DialogPart::Second
                     | crate::layout::DialogPart::Third
+                    | crate::layout::DialogPart::Fourth
             )
         });
         // 交互式变基的信息框是多行的：回车换行，⌘回车开始变基。

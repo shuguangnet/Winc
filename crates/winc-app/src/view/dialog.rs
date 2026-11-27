@@ -328,12 +328,19 @@ fn draw_question(app: &mut App, frame: &mut Frame<'_>, layout: &DialogLayout) {
         (layout.branch, DialogPart::Branch),
         (layout.second, DialogPart::Second),
         (layout.third, DialogPart::Third),
+        (layout.fourth, DialogPart::Fourth),
     ];
+    let connecting = matches!(dialog.kind, FormKind::Connect);
     for (input, (rect, part)) in view.inputs.iter().zip(fields) {
         draw_field(app, frame, rect, part, &plan, input.placeholder);
     }
+    let check_label = if connecting {
+        t!("workspace-remote-dialog-save-config")
+    } else {
+        t!("git-question-remember")
+    };
     for &(_, row) in &layout.options {
-        draw_check_option(app, frame, row, t!("git-question-remember"), remember);
+        draw_check_option(app, frame, row, check_label, remember);
     }
     // 密钥文件右端选文件的按钮，样子同「位置」右端的目录按钮。
     if let Some(choose) = layout.choose {
@@ -759,7 +766,7 @@ fn draw_field(
         focused && part == DialogPart::Branch && plan.problem.is_some(),
     );
     // 右端有选择按钮的输入框，文字让出按钮的位置。
-    let button = (app.dialog_layout().choose).filter(|_| part == DialogPart::Third);
+    let button = (app.dialog_layout().choose).filter(|_| part == DialogPart::Fourth);
     let Some(mut dialog) = app.overlays.form_dialog.take() else {
         return;
     };
@@ -778,6 +785,7 @@ fn draw_field(
     let field = match part {
         DialogPart::Second => &mut dialog.second,
         DialogPart::Third => &mut dialog.third,
+        DialogPart::Fourth => &mut dialog.fourth,
         _ => &mut dialog.name,
     };
     let caret = draw_bar_field(app, frame, area, field, placeholder, focused);

@@ -935,7 +935,6 @@ fn shoot_commit_graph() {
         git_in(&dir, &["fetch", "-q", "origin"]);
         std::fs::write(dir.join("notes.md"), "# notes\n").unwrap();
         let mut app = app_with(&dir, dark);
-        app.settings_toggle(Setting::GitModule);
         app.run_action(Action::ShowCommit);
         paint(&mut app);
         // 滚动一段并停一会儿：滚动条淡入之后才画得出来，截图里能看到。

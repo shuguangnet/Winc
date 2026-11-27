@@ -594,6 +594,7 @@ fn the_wheel_moves_rows_by_pixels_and_clicks_follow_them() {
 #[test]
 fn the_tab_bar_keeps_even_gaps_around_tabs_and_buttons() {
     let dir = sample_folder("terminal-tab-bar-gaps");
+    std::fs::remove_file(dir.join("Cargo.toml")).unwrap();
     let mut app = app_with(&dir.join("short.rs"), false);
     show_terminal(&mut app, "");
     for _ in 0..20 {

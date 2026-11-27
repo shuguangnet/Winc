@@ -117,7 +117,6 @@ fn scrolled_changes_keep_their_group_and_folders_pinned_on_top() {
     app.git.commit.set_staging(false);
     // 默认显示为列表；本测试检查按目录排列的树形视图。
     app.git.commit.set_flat(false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -174,7 +173,6 @@ fn option_clicking_a_changed_folder_collapses_and_expands_it_all_the_way() {
     };
     let mut app = app_with(&dir, false);
     app.git.commit.set_flat(false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -234,7 +232,6 @@ fn showing_as_tree_switches_the_changes_between_a_tree_and_a_flat_list() {
     app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -336,7 +333,6 @@ fn folding_a_changes_folder_slides_its_rows_like_the_file_tree() {
     app.git.commit.set_staging(false);
     // 默认显示为列表；本测试检查按目录排列的树形视图。
     app.git.commit.set_flat(false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -393,7 +389,6 @@ fn hovering_a_long_change_name_shows_it_in_full_with_its_buttons_after_it() {
     app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -486,7 +481,6 @@ fn a_long_change_name_slides_out_and_back_like_the_file_tree() {
     app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -565,7 +559,6 @@ fn names_that_only_make_room_for_the_buttons_slide_the_buttons_out() {
     app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -640,7 +633,6 @@ fn shoot_commit_overflow() {
             return;
         };
         let mut app = app_with(&dir, dark);
-        app.settings_toggle(Setting::GitModule);
         app.run_action(Action::ShowCommit);
         paint(&mut app);
         let rows = app.commit_rows();
@@ -673,7 +665,6 @@ fn switching_folders_keeps_the_commit_view_while_there_is_a_repository() {
         return;
     }
     let mut app = app_with(&first, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -893,7 +884,6 @@ fn the_full_name_row_covers_the_scrollbar_like_the_file_tree() {
     app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -947,7 +937,6 @@ fn the_full_name_row_covers_the_splitter_like_the_file_tree() {
     app.git.commit.set_staging(false);
     app.panels.sidebar.width = 300.0;
     app.relayout();
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }

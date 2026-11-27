@@ -160,7 +160,7 @@ pub struct Config {
     pub vim_leader: Option<String>,
     /// Vim 模式下的映射，按配置文件中的顺序。
     pub vim_keys: Vec<VimMapping>,
-    /// 是否启用终端模块（编辑区下方的终端面板），默认为否。
+    /// 是否启用终端模块（编辑区下方的终端面板），默认为是。
     pub terminal_enabled: Option<bool>,
     /// 终端的等宽字体，写法同 [`Config::editor_font`]；未设置时与编辑区相同。
     pub terminal_font: Option<String>,
@@ -199,7 +199,7 @@ pub struct Config {
     pub terminal_vertical_tabs: Option<bool>,
     /// 暂停终端内容增强的快捷键，保留终端管理和复制、粘贴；默认关闭。
     pub terminal_application_priority: Option<bool>,
-    /// 是否启用远程模块（经 `ssh` 打开其他主机上的目录），默认为否。
+    /// 是否启用远程模块（经 `ssh` 打开其他主机上的目录），默认为是。
     pub remote_enabled: Option<bool>,
     /// 远端目录挂载在本机的位置（SSHFS、Samba 映射的盘符等）：键是远端目录的显示写法
     /// `目标:/路径`（如 `devbox:/home/me`），值是本机上对应的目录（如 `Z:\`）。
@@ -211,7 +211,7 @@ pub struct Config {
     pub keymap: Option<String>,
     /// 改过的快捷键：命令名 → 按键写法的数组，空数组表示不设快捷键。
     pub shortcuts: BTreeMap<String, Vec<String>>,
-    /// 是否启用 Git 模块（文件状态、分支、变更视图），默认为否。
+    /// 是否启用 Git 模块（文件状态、分支、变更视图），默认为是。
     pub git_enabled: Option<bool>,
     /// 发布、推送或同步分支前是否先确认目标远程仓库，默认为是。
     ///

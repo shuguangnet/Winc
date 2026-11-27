@@ -215,7 +215,6 @@ fn shoot_diff_replace_fade() {
         return;
     }
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     let file = app.git.root.clone().unwrap().join("src/main.rs");
     app.fetch_changes(&file, Target::Open);
     paint(&mut app);
@@ -244,7 +243,6 @@ fn shoot_diff_search() {
         return;
     }
     let mut app = app_with(&dir.join("src/main.rs"), false);
-    app.settings_toggle(Setting::GitModule);
     app.run_action(Action::GitShowChanges);
     paint(&mut app);
     app.run_action(Action::Find);
@@ -269,7 +267,6 @@ fn shoot_git_diff() {
             return;
         }
         let mut app = app_with(&dir.join("src/main.rs"), dark);
-        app.settings_toggle(Setting::GitModule);
         // 在开头再添加两行且不保存：三种改动（新增、修改、删除）都有。
         app.run(winc_editor::Command::Insert(
             "use std::fs;\nuse std::io;\n".into(),
@@ -524,7 +521,6 @@ fn stepping_through_changes_marks_each_one_and_walks_the_files() {
     std::fs::remove_file(dir.join("src/new.rs")).unwrap();
     let main = winc_editor::canonical_path(&dir.join("src/main.rs"));
     let mut app = app_with(&main, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -643,7 +639,6 @@ fn moving_to_a_change_clears_the_message_about_having_none() {
     std::fs::remove_file(dir.join("src/new.rs")).unwrap();
     let main = winc_editor::canonical_path(&dir.join("src/main.rs"));
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -700,7 +695,6 @@ fn diff_navigation_keys_work_with_focus_in_the_commit_list() {
     std::fs::write(dir.join("src/zeta.rs"), "b\n").unwrap();
     let main = winc_editor::canonical_path(&dir.join("src/main.rs"));
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -889,7 +883,6 @@ fn measure_diff_scroll() {
     }
     std::fs::write(dir.join("src/main.rs"), changed).unwrap();
     let mut app = app_with(&dir.join("src/main.rs"), false);
-    app.settings_toggle(Setting::GitModule);
     let frames = |app: &mut App, label: &str| {
         paint(app);
         let start = Instant::now();
@@ -934,7 +927,6 @@ fn shoot_diff_long_deletion() {
         let kept: String = kept.iter().map(|l| format!("{l}\n")).collect();
         std::fs::write(dir.join("long.rs"), kept).unwrap();
         let mut app = app_with(&dir.join("long.rs"), dark);
-        app.settings_toggle(Setting::GitModule);
         app.run_action(Action::GitShowChanges);
         paint(&mut app);
         let doc = app.editor.active_mut().unwrap();
@@ -976,7 +968,6 @@ fn word_wrap_applies_to_the_diff_view() {
         return;
     };
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -1072,7 +1063,6 @@ fn toggling_word_wrap_keeps_the_top_line_of_the_diff_in_place() {
         return;
     };
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -1144,7 +1134,6 @@ fn shoot_diff_whitespace() {
             return;
         }
         let mut app = app_with(&dir.join("src/main.rs"), dark);
-        app.settings_toggle(Setting::GitModule);
         app.run(winc_editor::Command::Insert("use std::fs;  \n".into()));
         app.run_action(Action::GitShowChanges);
         app.config.render_whitespace = Some(winc_config::RenderWhitespace::All);
@@ -1162,7 +1151,6 @@ fn a_diff_tab_is_located_in_the_file_tree_by_its_worktree_file() {
         return;
     }
     let mut app = app_with(&dir.join("src/main.rs"), false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -1208,7 +1196,6 @@ fn fold_commands_and_the_gutter_mark_refold_unchanged_runs_in_a_diff() {
         return;
     }
     let mut app = app_with(&dir.join("src/main.rs"), false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -1257,7 +1244,6 @@ fn folding_an_unchanged_run_in_a_diff_is_applied_when_its_transition_ends() {
         return;
     }
     let mut app = app_with(&dir.join("src/main.rs"), false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }

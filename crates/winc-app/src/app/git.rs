@@ -127,7 +127,7 @@ pub(super) fn diff_title(path: &Path) -> String {
 impl App {
     /// Git 模块是否已开启。
     pub(crate) fn git_enabled(&self) -> bool {
-        self.config.git_enabled.unwrap_or(false)
+        self.config.git_enabled != Some(false)
     }
 
     /// 设置的 `git` 程序（`git.path`）变化后重新查找 `git`，并刷新一次。
@@ -339,7 +339,9 @@ impl App {
         let carrying = carried.is_some() && self.git.root.is_some();
         self.carry_checks_out();
         if let Some(old) = self.git.root.clone().filter(|_| carried.is_none()) {
-            self.git.commit.keep_draft(old);
+            let draft = self.git.commit.draft_text();
+            self.git.commit.keep_draft(old.clone());
+            self.update_state(|state| state.set_commit_draft(&old, &draft));
         }
         // 保存即将离开的仓库的状态，切换回来时可立即显示。
         if let Some(old) = self.git.root.clone() {
@@ -384,8 +386,11 @@ impl App {
         match carried {
             Some(text) => self.git.commit.message.set_text(&text),
             None => {
-                if let Some(root) = self.git.root.clone() {
-                    self.git.commit.restore_draft(&root);
+                if let Some(root) = self.git.root.clone()
+                    && !self.git.commit.restore_draft(&root)
+                    && let Some(saved) = self.state.commit_draft(&root).map(str::to_owned)
+                {
+                    self.git.commit.message.set_text(&saved);
                 }
             }
         }

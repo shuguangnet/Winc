@@ -443,6 +443,8 @@ pub enum CommitTarget {
     CommitMenu,
     /// 提交卡片底行左边的「修改上次提交」勾选框和文字。
     Amend,
+    /// 提交卡片顶行右端的「最近的提交信息」历史按钮。
+    History,
     /// 没有更改时空状态下面的按钮：推送、拉取或发布，见 [`crate::app::App::git_sync`]。
     NextStep,
     /// 「上一次提交」那一栏的「撤销」。
@@ -538,6 +540,8 @@ pub(crate) struct CommitParts {
     pub message_settled: Rect,
     /// 卡片底行左边的「修改上次提交」勾选框和文字；卡片太窄时收进按钮的菜单，为 `None`。
     pub amend: Option<Rect>,
+    /// 卡片顶行右端的「最近的提交信息」快捷按钮；没有历史记录或放不下时为 `None`。
+    pub history: Option<Rect>,
     /// 拆分按钮左边的「提交」。
     pub commit: Rect,
     /// 拆分按钮右边的下拉箭头。

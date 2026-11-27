@@ -32,7 +32,6 @@ fn rebasing(name: &str) -> Option<(App, PathBuf)> {
         return None;
     }
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return None;
     }

@@ -42,8 +42,10 @@ pub enum DialogPart {
     Branch,
     /// 询问对话框的第二个输入框：登录的密码、远程仓库的地址。
     Second,
-    /// 连接对话框的第三个输入框：密钥文件。
+    /// 连接对话框的第三个输入框：端口。
     Third,
+    /// 连接对话框的第四个输入框：密钥文件。
+    Fourth,
     /// 交互式变基的列表（键盘焦点）。
     RebaseList,
     /// 交互式变基列表的第几行。
@@ -81,7 +83,9 @@ pub struct DialogLayout {
     pub second: Rect,
     /// 连接对话框的第三个输入框；其他对话框为空矩形。
     pub third: Rect,
-    /// 连接对话框第三个输入框右端选文件的按钮。
+    /// 连接对话框的第四个输入框；其他对话框为空矩形。
+    pub fourth: Rect,
+    /// 连接对话框第四个输入框右端选文件的按钮。
     pub choose: Option<Rect>,
     /// 顶部的标题行。
     pub header: Rect,
@@ -213,6 +217,7 @@ impl DialogLayout {
             values: Vec::new(),
             second: Rect::default(),
             third: Rect::default(),
+            fourth: Rect::default(),
             choose: None,
             header: at(header),
             close: at(close),
@@ -298,6 +303,7 @@ impl DialogLayout {
             values: rows.iter().map(|&r| at(r)).collect(),
             second: field(1),
             third: field(2),
+            fourth: field(3),
             header: at(header),
             close: at(close),
             labels: labels.into_iter().map(at).collect(),
@@ -385,11 +391,11 @@ impl DialogLayout {
         layout
     }
 
-    /// 计算连接远端主机对话框的几何：主机、端口和密钥文件三行，版式与克隆仓库相同；密钥
-    /// 文件一行的右端有选文件的按钮，位置同「位置」一行的目录按钮。
+    /// 计算连接远端主机对话框的几何：主机、用户名、端口、密钥文件四行及「保存到 ~/.ssh/config」
+    /// 选项；密钥文件一行的右端有选文件的按钮，位置同「位置」一行的目录按钮。
     pub fn connect_form(window: Rect) -> Self {
-        let mut layout = Self::question(window, 0, 0, 3, false);
-        let rect = layout.third;
+        let mut layout = Self::question(window, 0, 0, 4, true);
+        let rect = layout.fourth;
         layout.choose = Some(Rect::new(
             rect.right() - 2.0 - DIALOG_CHANGE_W,
             rect.y + 2.0,
@@ -415,6 +421,7 @@ impl DialogLayout {
             (self.branch, DialogPart::Branch),
             (self.second, DialogPart::Second),
             (self.third, DialogPart::Third),
+            (self.fourth, DialogPart::Fourth),
             (self.base, DialogPart::Base),
         ];
         // 选择按钮叠在输入框里面，先匹配这一项。

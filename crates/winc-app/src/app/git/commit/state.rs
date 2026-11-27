@@ -73,11 +73,13 @@ impl CommitState {
         }
     }
 
-    /// 填回位置 `root` 名下记着的提交信息。
-    pub(in crate::app) fn restore_draft(&mut self, root: &Path) {
+    /// 填回位置 `root` 名下记着的提交信息；找到并填回时返回 `true`。
+    pub(in crate::app) fn restore_draft(&mut self, root: &Path) -> bool {
         if let Some(text) = self.drafts.remove(root) {
             self.message.set_text(&text);
+            return true;
         }
+        false
     }
 
     /// 文件 `entry` 是否进入提交：勾选式下是它是否勾上，暂存区视图中是暂存区里是否有它的内容

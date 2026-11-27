@@ -49,7 +49,6 @@ fn conflicts_resolve_in_the_file_and_finish_the_merge() {
         return;
     }
     let mut app = app_with(&dir.join("src/main.rs"), false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -131,7 +130,6 @@ fn files_with_conflict_markers_are_not_committed() {
         return;
     }
     let mut app = app_with(&dir.join("src/main.rs"), false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -189,7 +187,6 @@ fn shoot_merge_conflict() {
             return;
         }
         let mut app = app_with(&dir.join("src/main.rs"), dark);
-        app.settings_toggle(Setting::GitModule);
         app.run_action(Action::NextDifference);
         shoot(&mut app, if dark { "merge-dark" } else { "merge-light" });
         app.run_action(Action::ShowCommit);
@@ -245,7 +242,6 @@ fn three_way_app_with(name: &str, base: &str, side: &str, main: &str) -> Option<
     // 合并必然产生冲突，退出码不为 0。
     let _ = run(&["merge", "--no-edit", "side"]);
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return None;
     }
@@ -656,7 +652,6 @@ fn a_stopped_rebase_shows_its_progress_and_can_skip_the_commit() {
         return;
     }
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }

@@ -19,7 +19,7 @@ fn repositories_and_worktrees_are_picked_separately() {
     git_in(&a, &["worktree", "add", "-q", "-b", "side", &side_arg]);
     let mut app = app_with(&dir, false);
     app.config.repository_scan_depth = Some(1);
-    app.settings_toggle(Setting::GitModule);
+    app.git_folder_changed();
     if git_unusable(&app) {
         return;
     }
@@ -90,7 +90,7 @@ fn a_folder_of_repositories_can_switch_between_them() {
     }
     let mut app = app_with(&dir, false);
     app.config.repository_scan_depth = Some(1);
-    app.settings_toggle(Setting::GitModule);
+    app.git_folder_changed();
     if git_unusable(&app) {
         return;
     }
@@ -184,8 +184,7 @@ fn a_single_repository_lists_only_itself() {
     if !make_repo(&dir) {
         return;
     }
-    let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
+    let app = app_with(&dir, false);
     assert_eq!(app.git.repositories.len(), 1);
     assert_eq!(app.git.repositories.first(), app.git.root.as_ref());
     std::fs::remove_dir_all(&dir).unwrap();
@@ -198,6 +197,8 @@ fn git_module_is_off_until_switched_on_and_clears_when_off() {
         return;
     }
     let mut app = app_with(&dir, false);
+    assert!(app.git_enabled());
+    app.settings_toggle(Setting::GitModule);
     assert!(!app.git_enabled());
     assert!(app.git.root.is_none() && app.git.status.is_none());
 
@@ -240,7 +241,6 @@ fn ignored_files_are_known_to_the_tree() {
     std::fs::write(dir.join("target/debug/app"), "x").unwrap();
     std::fs::write(dir.join("src/run.log"), "x").unwrap();
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -275,7 +275,6 @@ fn outside_changes_refresh_the_status_unless_git_ignores_them() {
     git_in(&dir, &["commit", "-q", "-m", "log"]);
     std::fs::create_dir_all(dir.join("target/debug")).unwrap();
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -317,7 +316,6 @@ fn shoot_git_decorations() {
             return;
         }
         let mut app = app_with(&dir.join("src/main.rs"), dark);
-        app.settings_toggle(Setting::GitModule);
         shoot(&mut app, if dark { "git-dark" } else { "git-light" });
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -363,7 +361,6 @@ fn shoot_themes() {
             } else {
                 winit::window::Theme::Light
             });
-            app.settings_toggle(Setting::GitModule);
             app.run_action(Action::ShowCommit);
             app.edit_field(|f| f.insert("缓存记下没命中的次数"));
             let main = app.editor.root().unwrap().join("src/main.rs");
@@ -416,7 +413,6 @@ fn shoot_context_bar() {
             return;
         }
         let mut app = app_with(&dir, dark);
-        app.settings_toggle(Setting::GitModule);
         paint(&mut app);
         let project = app.hits.project;
         app.on_mouse_move(project.x + 4.0, project.y + 4.0);
@@ -446,7 +442,6 @@ fn shoot_search_header() {
         }
         git_in(&dir, &["checkout", "-q", "-b", "grok_build_1.0.40"]);
         let mut app = app_with(&dir, dark);
-        app.settings_toggle(Setting::GitModule);
         app.panels.sidebar.width = 270.0;
         app.run_action(Action::FindInFiles);
         shoot(&mut app, name);
@@ -463,7 +458,6 @@ fn the_first_git_job_to_find_git_shares_it() {
         return;
     }
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -758,7 +752,6 @@ fn switching_modules_off_fades_their_chrome_out() {
     let Some((mut app, root)) = git_app("module-fade", false) else {
         return;
     };
-    app.settings_toggle(Setting::TerminalModule);
     paint(&mut app);
     assert!(app.motion.module_fx.branch_label.is_some());
     let full = app.sidebar_tabs()[2].0;
@@ -797,7 +790,6 @@ fn shoot_module_fade() {
         let Some((mut app, root)) = git_app_in(&format!("module-fade-{theme}"), false, dark) else {
             return;
         };
-        app.settings_toggle(Setting::TerminalModule);
         freeze_modules(&mut app, true, MODULE_FADE / 4);
         shoot(&mut app, &format!("module-fade-in-{theme}"));
         app.settings_toggle(Setting::GitModule);
@@ -820,7 +812,6 @@ fn nested_repositories(name: &str) -> Option<(App, PathBuf)> {
         }
     }
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while app.git.repositories.len() < 3 && std::time::Instant::now() < deadline {
         app.poll_git();

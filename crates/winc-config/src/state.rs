@@ -121,6 +121,12 @@ pub struct State {
     ///
     /// 只记路径，不读取也不保存密钥的内容；路径原样交给 `ssh`。
     remote_keys: Vec<(String, String)>,
+    /// 各远端主机上次打开过的目录：（连接目标的文字，远端目录绝对路径），最近的在前。
+    remote_last_dirs: Vec<(String, String)>,
+    /// 置顶的常用远端目录（虚拟路径），最新的在前，不重复。
+    remote_pinned: Vec<PathBuf>,
+    /// 各仓库尚未提交的信息草稿：（仓库根目录，草稿正文），最近的在前。
+    commit_drafts: Vec<(PathBuf, String)>,
     /// Vim 模式的大写标记：名字、文件路径、行号与列号（都从 0 起），按名字排序。
     pub vim_marks: Vec<(char, PathBuf, usize, usize)>,
     /// Vim 模式命令行的历史，从旧到新，最多 `MAX_VIM_HISTORY` 条。
@@ -489,6 +495,45 @@ impl State {
                     .collect()
             })
             .unwrap_or_default();
+        let remote_last_dirs = root
+            .get("remoteLastDirs")
+            .and_then(Json::as_object)
+            .map(|items| {
+                (items.iter())
+                    .filter_map(|(target, dir)| Some((target.clone(), dir.as_str()?.to_owned())))
+                    .filter(|(target, dir)| !target.is_empty() && !dir.is_empty())
+                    .take(MAX_RECENT)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let remote_pinned = root
+            .get("remotePinned")
+            .and_then(Json::as_array)
+            .map(|items| {
+                let mut out = Vec::new();
+                for item in items.iter().filter_map(Json::as_str) {
+                    let path = PathBuf::from(item);
+                    if !item.is_empty() && !out.contains(&path) && out.len() < MAX_RECENT {
+                        out.push(path);
+                    }
+                }
+                out
+            })
+            .unwrap_or_default();
+        let commit_drafts = root
+            .get("commitDrafts")
+            .and_then(Json::as_object)
+            .map(|items| {
+                (items.iter())
+                    .filter_map(|(repo, text)| {
+                        let text = text.as_str()?;
+                        (!repo.is_empty() && !text.trim().is_empty())
+                            .then(|| (PathBuf::from(repo), text.to_owned()))
+                    })
+                    .take(MAX_TOOL_CHOICES)
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let vim_marks = vim_marks(root);
         let vim_commands = vim_history(root, "vimCommands");
@@ -500,6 +545,9 @@ impl State {
             tool_choices,
             trusted_repos,
             remote_keys,
+            remote_last_dirs,
+            remote_pinned,
+            commit_drafts,
             vim_marks,
             vim_commands,
             vim_searches,
@@ -833,6 +881,24 @@ impl State {
                 .map(|(target, key)| (target.clone(), Json::String(key.clone())));
             fields.push(("remoteKeys", Json::object(keys)));
         }
+        if !self.remote_last_dirs.is_empty() {
+            let dirs = (self.remote_last_dirs.iter())
+                .map(|(target, dir)| (target.clone(), Json::String(dir.clone())));
+            fields.push(("remoteLastDirs", Json::object(dirs)));
+        }
+        if !self.remote_pinned.is_empty() {
+            let pinned = self.remote_pinned.iter().map(&path).collect();
+            fields.push(("remotePinned", Json::Array(pinned)));
+        }
+        if !self.commit_drafts.is_empty() {
+            let drafts = (self.commit_drafts.iter()).map(|(repo, text)| {
+                (
+                    repo.to_string_lossy().into_owned(),
+                    Json::String(text.clone()),
+                )
+            });
+            fields.push(("commitDrafts", Json::object(drafts)));
+        }
         if !self.tool_choices.is_empty() {
             let choices = self.tool_choices.iter().map(|(folder, run)| {
                 Json::object(vec![("folder", path(folder)), ("run", Json::Bool(*run))])
@@ -931,6 +997,67 @@ impl State {
         if !key.is_empty() {
             self.remote_keys.push((target.to_owned(), key.to_owned()));
             self.remote_keys.sort();
+        }
+    }
+
+    /// 返回远端主机 `target` 上次打开过的目录；没有记录时为 `None`。
+    pub fn remote_last_dir(&self, target: &str) -> Option<&str> {
+        (self.remote_last_dirs.iter())
+            .find(|(known, _)| known == target)
+            .map(|(_, dir)| dir.as_str())
+    }
+
+    /// 记下远端主机 `target` 上次打开过的目录 `dir`；`dir` 为空时清除记录。
+    pub fn set_remote_last_dir(&mut self, target: &str, dir: &str) {
+        self.remote_last_dirs.retain(|(known, _)| known != target);
+        if !target.is_empty() && !dir.is_empty() {
+            self.remote_last_dirs
+                .insert(0, (target.to_owned(), dir.to_owned()));
+            self.remote_last_dirs.truncate(MAX_RECENT);
+        }
+    }
+
+    /// 返回置顶的远端目录列表（最新的在前）。
+    pub fn remote_pinned(&self) -> &[PathBuf] {
+        &self.remote_pinned
+    }
+
+    /// 远端目录 `folder` 是否已置顶。
+    pub fn is_remote_pinned(&self, folder: &Path) -> bool {
+        self.remote_pinned.iter().any(|p| p == folder)
+    }
+
+    /// 切换远端目录 `folder` 的置顶状态，返回切换后是否已置顶。
+    pub fn toggle_remote_pin(&mut self, folder: &Path) -> bool {
+        if let Some(pos) = self.remote_pinned.iter().position(|p| p == folder) {
+            self.remote_pinned.remove(pos);
+            false
+        } else {
+            self.remote_pinned.insert(0, folder.to_path_buf());
+            self.remote_pinned.truncate(MAX_RECENT);
+            true
+        }
+    }
+
+    /// 取消远端目录 `folder` 的置顶。
+    pub fn unpin_remote(&mut self, folder: &Path) {
+        self.remote_pinned.retain(|p| p != folder);
+    }
+
+    /// 返回仓库 `root` 尚未提交的信息草稿；没有记录时为 `None`。
+    pub fn commit_draft(&self, root: &Path) -> Option<&str> {
+        (self.commit_drafts.iter())
+            .find(|(known, _)| known == root)
+            .map(|(_, text)| text.as_str())
+    }
+
+    /// 保存仓库 `root` 的提交信息草稿 `text`；为空或全空白时清除记录。
+    pub fn set_commit_draft(&mut self, root: &Path, text: &str) {
+        self.commit_drafts.retain(|(known, _)| known != root);
+        if !text.trim().is_empty() {
+            self.commit_drafts
+                .insert(0, (root.to_path_buf(), text.to_owned()));
+            self.commit_drafts.truncate(MAX_TOOL_CHOICES);
         }
     }
 

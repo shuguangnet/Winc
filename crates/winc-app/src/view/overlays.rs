@@ -595,6 +595,7 @@ fn draw_remote_rows(
         match item.icon {
             RowIcon::Host => icons::server(frame, (middle, cy), p.text_muted, clip),
             RowIcon::Config => icons::gear(frame, (middle, cy), p.text_muted, clip),
+            RowIcon::Pin => icons::pin(frame, (middle, cy), p.accent, clip),
             RowIcon::Folder | RowIcon::Open => {
                 let x = middle - icons::FOLDER_WIDTH / 2.0;
                 let open = item.icon == RowIcon::Open;

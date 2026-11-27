@@ -35,6 +35,7 @@ impl App {
                 message: Rect::default(),
                 message_settled: Rect::default(),
                 amend: None,
+                history: None,
                 commit: Rect::default(),
                 commit_menu: Rect::default(),
                 push: None,
@@ -113,6 +114,11 @@ impl App {
             list_end = rect.y;
         }
         let list = Rect::new(panel.x, list_y, panel.w, (list_end - list_y).max(0.0));
+        let history = amend.and_then(|amend| {
+            let right = commit_menu.right();
+            let rect = Rect::new(right - AMEND_H, amend.y, AMEND_H, AMEND_H);
+            (self.has_recent_messages() && rect.x >= amend.right() + 6.0).then_some(rect)
+        });
         CommitParts {
             header,
             tools,
@@ -123,6 +129,7 @@ impl App {
             message,
             message_settled,
             amend,
+            history,
             commit,
             commit_menu,
             push,

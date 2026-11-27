@@ -25,6 +25,7 @@ fn no_history_starts_on_the_start_page() {
     if !cfg!(target_os = "macos") {
         expected.push(StartAction::OpenFolder);
     }
+    expected.push(StartAction::Remote);
     assert_eq!(actions, expected);
 
     // 点「应用设置」打开设置。

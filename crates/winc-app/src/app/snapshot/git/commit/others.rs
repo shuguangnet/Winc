@@ -17,7 +17,6 @@ fn two_repositories(name: &str, dark: bool) -> Option<(App, PathBuf, PathBuf)> {
     }
     let mut app = app_with(&dir, dark);
     app.config.repository_scan_depth = Some(1);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return None;
     }

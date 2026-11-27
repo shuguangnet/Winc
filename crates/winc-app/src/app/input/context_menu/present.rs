@@ -533,7 +533,11 @@ impl App {
                 if self.editor.active().map(|d| d.id) != Some(id) {
                     return;
                 }
-                diff_menu(right, self.diff_caret_hunk().is_some())
+                diff_menu(
+                    right,
+                    self.diff_caret_hunk().is_some(),
+                    self.diff_caret_stage_hunk(),
+                )
             }
             MenuTarget::Tab(id) => {
                 let Some(index) = self.editor.index_of(*id) else {
@@ -648,6 +652,7 @@ impl App {
                 self.git.branch.running.is_some(),
             ),
             MenuTarget::CommitButton => self.commit_button_menu(),
+            MenuTarget::CommitHistory => self.commit_history_menu(),
             MenuTarget::LastCommit => self.last_commit_menu(),
             MenuTarget::TreeTools => self.tree_tools_menu(),
             MenuTarget::TabList => (0..self.editor.tab_count())
@@ -773,6 +778,7 @@ impl App {
         let right_aligned = matches!(
             target,
             MenuTarget::CommitButton
+                | MenuTarget::CommitHistory
                 | MenuTarget::TabList
                 | MenuTarget::Locale
                 | MenuTarget::NamedTheme(_)

@@ -12,7 +12,6 @@ use std::time::Duration;
 fn the_settings_button_stays_at_the_right_end_of_the_status_bar() {
     let dir = sample_folder("status-settings");
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::TerminalModule);
     paint(&mut app);
     fn pill(app: &App, wanted: StatusItem) -> Option<Rect> {
         let hit = app.hits.status.iter().find(|(_, item)| *item == wanted);

@@ -239,9 +239,9 @@ fn the_terminal_page_is_listed_only_when_the_module_is_on() {
     app.adopt_config(config);
     assert!(!listed(&app));
     assert_eq!(app.settings_layout().page, SettingsPage::Modules);
-    // 键盘移动同样跳过该页：模块页第一项的上一项在格式化页。
+    // 键盘移动同样跳过终端页：模块页第一项的上一项在 Git 页。
     app.settings_move(false);
-    assert_eq!(app.settings.selected.page(), SettingsPage::Format);
+    assert_eq!(app.settings.selected.page(), SettingsPage::Git);
 
     // 在模块页重新开启后立即列出。
     app.settings_toggle(Setting::TerminalModule);
@@ -267,6 +267,7 @@ fn the_terminal_page_slides_in_and_out_with_the_module() {
 
     let dir = search_folder("settings-terminal-slide");
     let mut app = app_with(&dir, false);
+    app.config.terminal_enabled = Some(false);
     app.open_settings();
     app.settings_show_page(SettingsPage::Modules);
     let row = |app: &App, page: SettingsPage| {

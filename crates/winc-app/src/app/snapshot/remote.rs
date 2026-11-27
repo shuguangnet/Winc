@@ -56,7 +56,9 @@ fn a_folder_on_a_connected_host_opens_as_the_workspace() {
     clipboard_images_pasted_into_a_remote_terminal_are_sent_there_first();
     ssh_arguments_open_the_project_and_file();
 
-    // 模块默认关闭：状态栏上没有连接的按钮，命令不可用，按下也不打开面板。
+    // 模块默认开启，关闭时状态栏上没有连接的按钮，命令不可用，按下也不打开面板。
+    assert!(app.remote_enabled());
+    app.config.remote_enabled = Some(false);
     paint(&mut app);
     let listed = |app: &App| {
         (app.hits.status.iter()).any(|(_, item)| *item == crate::app::StatusItem::Remote)
@@ -177,7 +179,7 @@ fn a_folder_on_a_connected_host_opens_as_the_workspace() {
     // 输入路径：到 `/` 为止的部分是要进入的目录，之后的用来筛选。
     typed(&mut app, &format!("{}/", link.display()));
     assert_eq!(app.overlays.picker.input.text(), "");
-    assert_eq!(titles(&app), ["打开此目录", "..", "src"]);
+    assert_eq!(titles(&app), ["打开此目录", "置顶此目录", "..", "src"]);
     typed(&mut app, "sr");
     assert_eq!(titles(&app), ["src"]);
     typed(&mut app, "x");
@@ -190,9 +192,9 @@ fn a_folder_on_a_connected_host_opens_as_the_workspace() {
     // `⇥` 进入选中的目录；输入为空时 `⌫` 回到上级。以 `.` 开头的目录输入 `.` 才列出。
     use winit::keyboard::{Key, NamedKey};
     assert!(app.remote_picker_key(&Key::Named(NamedKey::Tab)));
-    assert_eq!(titles(&app), ["打开此目录", ".."]);
+    assert_eq!(titles(&app), ["打开此目录", "置顶此目录", ".."]);
     assert!(app.remote_picker_key(&Key::Named(NamedKey::Backspace)));
-    assert_eq!(titles(&app), ["打开此目录", "..", "src"]);
+    assert_eq!(titles(&app), ["打开此目录", "置顶此目录", "..", "src"]);
     if repository {
         typed(&mut app, ".");
         assert_eq!(titles(&app), [".git"]);
@@ -474,8 +476,8 @@ fn a_folder_on_a_connected_host_opens_as_the_workspace() {
     let key = dir.join("id_test");
     let fill = |app: &mut App, text: &str| {
         let dialog = app.overlays.form_dialog.as_mut().unwrap();
-        dialog.third.set_text("");
-        dialog.third.insert(text);
+        dialog.fourth.set_text("");
+        dialog.fourth.insert(text);
     };
     fill(&mut app, "/winc/no/such/key");
     let plan = app.form_plan(app.overlays.form_dialog.as_ref().unwrap());
@@ -488,12 +490,12 @@ fn a_folder_on_a_connected_host_opens_as_the_workspace() {
         layout.part_at(choose.x + 1.0, choose.y + 1.0),
         Some(crate::layout::DialogPart::Change)
     );
-    assert!(layout.third.contains(choose.x, choose.y));
+    assert!(layout.fourth.contains(choose.x, choose.y));
     std::fs::write(&key, "").unwrap();
     app.key_file_picked(&key);
     let dialog = app.overlays.form_dialog.as_ref().unwrap();
-    assert_eq!(dialog.third.text(), key.to_str().unwrap());
-    assert_eq!(dialog.focus, crate::layout::DialogPart::Third);
+    assert_eq!(dialog.fourth.text(), key.to_str().unwrap());
+    assert_eq!(dialog.focus, crate::layout::DialogPart::Fourth);
     assert!(
         app.form_plan(app.overlays.form_dialog.as_ref().unwrap())
             .enabled
@@ -503,7 +505,7 @@ fn a_folder_on_a_connected_host_opens_as_the_workspace() {
     assert_eq!(remote::identity(&target).as_deref(), key.to_str());
     let dialog = app.overlays.form_dialog.as_ref().unwrap();
     assert!(dialog.error.is_some());
-    assert_eq!(dialog.third.text(), key.to_str().unwrap());
+    assert_eq!(dialog.fourth.text(), key.to_str().unwrap());
     app.close_form_dialog();
     assert!(app.overlays.picker.open);
     // 最近的目录和只来自最近目录的主机在行尾有「✕」，「新主机」和配置文件两行没有。移除主机
@@ -776,6 +778,7 @@ fn ssh_arguments_open_the_project_and_file() {
     let root = winc_backend::virtual_path(&target, dir.as_os_str().as_bytes());
 
     let mut app = blank_app(false);
+    app.config.remote_enabled = Some(false);
     app.open_remote(open.clone());
     let notice = app.notice.text.take().unwrap();
     assert!(notice.contains("远程模块未启用"), "{notice}");
@@ -815,6 +818,7 @@ fn folders_on_a_remote_host_are_not_taken_for_files() {
     let root = winc_backend::virtual_path(&target, dir.as_os_str().as_bytes());
     let mut app = blank_app(false);
     app.config.remote_enabled = Some(true);
+    app.config.terminal_enabled = Some(false);
     remote::forbid_blocking();
     app.open_folder(&root);
     let src = row_of(&app, "src");
@@ -1417,4 +1421,80 @@ fn files_copied_in_a_remote_tree_are_pasted_there() {
     remote::disconnect(&target);
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(stale.parent().unwrap());
+}
+
+#[test]
+fn connect_dialog_parses_ssh_paste_and_remote_picker_pins_and_remembers_last_folder() {
+    let mut app = blank_app(false);
+    // 打开连接对话框预填 `user@host` 时自动拆到主机与用户名两个独立栏位。
+    app.open_connect_dialog("shuguang@192.168.1.10", "2222", false);
+    let dialog = app.overlays.form_dialog.as_ref().unwrap();
+    assert_eq!(dialog.name.text(), "192.168.1.10");
+    assert_eq!(dialog.second.text(), "shuguang");
+    assert_eq!(dialog.third.text(), "2222");
+    assert!(!dialog.checkout);
+
+    // 在主机框粘贴完整 `ssh` 命令时自动拆分填入四个栏位。
+    app.open_connect_dialog("", "", false);
+    app.edit_field(|f| f.insert("ssh alice@macmini.local -p 2200 -i ~/.ssh/id_test"));
+    let dialog = app.overlays.form_dialog.as_ref().unwrap();
+    assert_eq!(dialog.name.text(), "macmini.local");
+    assert_eq!(dialog.second.text(), "alice");
+    assert_eq!(dialog.third.text(), "2200");
+    assert_eq!(dialog.fourth.text(), "~/.ssh/id_test");
+    app.close_form_dialog();
+
+    // 记忆上次打开的远端目录，并支持在目录面板中置顶/取消置顶，置顶项排在主机面板最前。
+    let dir = search_folder("remote-pin-last").canonicalize().unwrap();
+    let project = dir.join("Winc");
+    std::fs::create_dir_all(&project).unwrap();
+    let target = loopback("app-remote-pin");
+    let home = dir.to_str().unwrap().to_owned();
+    let project_str = project.to_str().unwrap().to_owned();
+    app.state.set_remote_last_dir(target.as_str(), &project_str);
+    app.open_remote_browser(target.clone(), home.clone());
+    let titles = |app: &App| -> Vec<String> {
+        app.overlays
+            .picker
+            .remote
+            .as_ref()
+            .unwrap()
+            .rows
+            .iter()
+            .map(|r| r.title.clone())
+            .collect()
+    };
+    assert_eq!(titles(&app)[0], "打开此目录");
+    assert_eq!(
+        app.overlays.picker.remote.as_ref().unwrap().rows[0].detail,
+        "~/Winc"
+    );
+    assert_eq!(titles(&app)[1], "置顶此目录");
+    app.overlays.picker.selected = 1;
+    app.picker_accept();
+    assert_eq!(titles(&app)[1], "取消置顶此目录");
+
+    // 回到主机面板：置顶的远端目录排在「新主机…」之后第一位。
+    app.open_remote_picker();
+    assert_eq!(titles(&app)[1], "Winc");
+    assert!(
+        app.overlays.picker.remote.as_ref().unwrap().rows[1]
+            .detail
+            .contains("已置顶")
+    );
+    app.forget_remote_row(1);
+    assert!(app.state.remote_pinned().is_empty());
+
+    // 若记住的上次目录已被删除，自动回退到主目录。
+    let missing = dir.join("removed-dir");
+    app.state
+        .set_remote_last_dir(target.as_str(), missing.to_str().unwrap());
+    app.open_remote_browser(target.clone(), home);
+    assert_eq!(
+        app.overlays.picker.remote.as_ref().unwrap().rows[0].detail,
+        "~"
+    );
+
+    remote::disconnect(&target);
+    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -290,7 +290,6 @@ fn commit_and_sync_pulls_then_pushes() {
     }
     std::fs::write(work.join("a.txt"), "a\n").unwrap();
     let mut app = app_with(&work, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -359,5 +358,53 @@ fn shoot_commit_compose() {
     let menu = app.commit_parts().commit_menu;
     app.open_context_menu(MenuTarget::CommitButton, (menu.x, menu.bottom()));
     shoot(&mut app, "commit-button-menu");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn commit_history_button_alt_recall_and_persisted_drafts_work() {
+    let Some((mut app, root)) = git_app("git-commit-history-draft", false) else {
+        return;
+    };
+    app.run_action(Action::ShowCommit);
+    app.state.remember_commit_message("feat: first message");
+    app.state.remember_commit_message("fix: second message");
+    app.git.commit.message_history_changed();
+    paint(&mut app);
+
+    // 点击卡片顶行右端的历史按钮，直接列出最近的提交信息，选中后填入输入框。
+    assert!(app.commit_parts().history.is_some());
+    app.press_commit(CommitTarget::History);
+    assert_eq!(
+        app.overlays.context_menu.as_ref().map(|m| &m.target),
+        Some(&MenuTarget::CommitHistory)
+    );
+    app.run_menu_command(MenuCommand::CommitMessage(0));
+    assert_eq!(app.git.commit.message.text(), "fix: second message");
+
+    // 即使已有未写完的文字，按住 Alt/Option 加 ↑ 也能立即翻阅历史提交说明。
+    app.git.commit.message.set_text("half typed");
+    app.pointer.modifiers = winit::keyboard::ModifiersState::ALT;
+    assert!(app.commit_message_key(&Key::Named(NamedKey::ArrowUp), false, false));
+    assert_eq!(app.git.commit.message.text(), "fix: second message");
+    app.pointer.modifiers = winit::keyboard::ModifiersState::empty();
+
+    // 保存会话时把未提交的草稿持久化到 state.json，重新打开同一仓库时自动恢复。
+    app.git.commit.message.set_text("wip: keep across restart");
+    let repo = app.git.root.clone().unwrap();
+    app.save_session();
+    assert_eq!(
+        app.state.commit_draft(&repo),
+        Some("wip: keep across restart")
+    );
+    let saved_state = app.state.clone();
+    let mut reopened = blank_app(false);
+    reopened.state = saved_state;
+    reopened.open_path(&root);
+    assert_eq!(
+        reopened.git.commit.message.text(),
+        "wip: keep across restart"
+    );
+
     let _ = std::fs::remove_dir_all(&root);
 }

@@ -34,6 +34,7 @@ impl App {
             Focus::Dialog => self.overlays.form_dialog.as_mut().map(|d| match d.focus {
                 crate::layout::DialogPart::Second => &mut d.second,
                 crate::layout::DialogPart::Third => &mut d.third,
+                crate::layout::DialogPart::Fourth => &mut d.fourth,
                 _ => &mut d.name,
             }),
             Focus::TerminalFind => self.terminal.find.as_mut().map(|f| &mut f.field),
@@ -73,7 +74,10 @@ impl App {
                 Focus::LogFileFilter => self.log_file_filter_changed(),
                 Focus::TerminalFind => self.terminal_find_changed(),
                 Focus::SettingsSearch => self.settings_search_changed(),
-                Focus::Dialog => self.refresh_push_list(),
+                Focus::Dialog => {
+                    self.try_split_connect_paste();
+                    self.refresh_push_list();
+                }
                 // 筛选后列表变短，滚动位置回到顶部。
                 Focus::KeySearch => {
                     self.settings.scroll = 0.0;

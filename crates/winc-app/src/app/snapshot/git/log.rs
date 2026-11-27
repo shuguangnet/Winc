@@ -999,7 +999,6 @@ fn shoot_log_repo() {
     for dark in [false, true] {
         let theme = if dark { "dark" } else { "light" };
         let mut app = app_with(Path::new(&repo), dark);
-        app.settings_toggle(Setting::GitModule);
         if git_unusable(&app) {
             return;
         }

@@ -159,6 +159,17 @@ impl App {
             CommitTarget::Commit if self.commit_pushes() => self.confirm_commit_and_push(),
             CommitTarget::Commit => self.git_commit(),
             CommitTarget::Amend => self.toggle_amend(),
+            CommitTarget::History => {
+                let Some(rect) = self.commit_parts().history else {
+                    return;
+                };
+                let (_, y) = menu_below(rect);
+                self.open_button_menu(
+                    MenuButton::CommitHistory,
+                    MenuTarget::CommitHistory,
+                    (rect.right(), y),
+                );
+            }
             CommitTarget::NextStep => self.git_sync(),
             CommitTarget::InitRepository => self.git_init(),
             CommitTarget::CloneRepository => self.open_clone_dialog(),

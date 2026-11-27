@@ -105,7 +105,6 @@ fn build_window(
     assert_eq!(app.editor.root(), Some(root), "目录没有打开");
     steps.mark("打开仓库和 app.rs（文件树、文档）");
 
-    app.settings_toggle(Setting::GitModule);
     assert!(
         app.git.status.is_some(),
         "Git 状态没有取到：{:?}",

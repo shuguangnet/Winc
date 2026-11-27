@@ -81,6 +81,8 @@ pub enum MenuButton {
     GraphCompare,
     /// 提交视图「提交 ⌄」拆分按钮的箭头。
     CommitButton,
+    /// 提交卡片顶行右端的「最近的提交信息」快捷按钮。
+    CommitHistory,
     /// 提交视图底部「上一次提交」那一栏的「⋯」。
     LastCommit,
     /// 文件树工具栏收起按钮以后的「⋯」。
@@ -350,6 +352,10 @@ pub enum MenuCommand {
     CommitCheck(bool),
     /// 差异里的文字：把光标处的一处改动换回 `HEAD` 的样子。
     GitRevertHunk,
+    /// 差异里的文字：暂存光标处的一处改动。
+    GitStageHunk,
+    /// 差异里的文字：取消暂存光标处的一处改动。
+    GitUnstageHunk,
     /// 文件树、标签上的文件：打开它的 Git 历史。
     FileHistory,
     /// 状态栏的位置菜单：切换到第几个位置。
@@ -640,6 +646,8 @@ impl MenuCommand {
             MenuCommand::GitStashFiles => t!("menu-git-stash-files"),
             MenuCommand::GitIgnore(kind) => kind.label(),
             MenuCommand::GitRevertHunk => t!("menu-git-roll-back-change"),
+            MenuCommand::GitStageHunk => t!("menu-git-stage-hunk"),
+            MenuCommand::GitUnstageHunk => t!("menu-git-unstage-hunk"),
             MenuCommand::FileHistory => t!("menu-git-file-history"),
             MenuCommand::LogCheckout => t!("menu-log-checkout"),
             MenuCommand::LogNewBranch => t!("git-branch-new-from"),
@@ -876,6 +884,8 @@ impl MenuCommand {
             MenuCommand::RenameTerminal => Action::RenameTerminal,
             MenuCommand::CloseTerminal => Action::CloseTerminal,
             MenuCommand::GitRevertHunk => Action::GitRevertChange,
+            MenuCommand::GitStageHunk => Action::GitStageHunk,
+            MenuCommand::GitUnstageHunk => Action::GitUnstageHunk,
             MenuCommand::GitShowDiff => Action::ChangesShowDiff,
             MenuCommand::GitOpenFile => Action::ChangesOpenSource,
             MenuCommand::GitRollbackFile => Action::ChangesRollback,
@@ -994,6 +1004,8 @@ pub enum MenuTarget {
     GraphCompare,
     /// 提交视图「提交 ⌄」拆分按钮的箭头。
     CommitButton,
+    /// 提交卡片顶行右端的「最近的提交信息」快捷按钮。
+    CommitHistory,
     /// 提交视图底部「上一次提交」那一栏的「⋯」。
     LastCommit,
     /// 文件树工具栏的「⋯」：收起的各个工具。

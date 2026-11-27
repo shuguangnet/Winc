@@ -22,8 +22,18 @@ impl App {
 
     /// 提交信息里自己处理的键；不是这些键时返回 `false`，交给输入框的通用处理。
     pub(in crate::app) fn commit_message_key(&mut self, key: &Key, cmd: bool, shift: bool) -> bool {
+        let alt = self.pointer.modifiers.alt_key();
         match key {
-            Key::Named(NamedKey::Enter) if cmd && self.commit_pushes() => {
+            Key::Named(NamedKey::Enter)
+                if cmd
+                    && (shift || self.commit_pushes())
+                    && !self.git.commit.amend
+                    && self
+                        .git
+                        .status
+                        .as_ref()
+                        .is_none_or(|s| s.operation.is_none()) =>
+            {
                 self.confirm_commit_and_push();
             }
             Key::Named(NamedKey::Enter) if cmd => self.git_commit(),
@@ -44,12 +54,12 @@ impl App {
                     self.focus = Focus::Editor;
                 }
             }
-            // ↑ ↓ 在行之间移动。信息为空、或者正在翻阅此前的信息时，↑ ↓ 翻阅提交过的信息；
+            // ↑ ↓ 在行之间移动。信息为空、正在翻阅此前的信息、或按住 ⌥/Alt 时翻阅提交历史；
             // 写了一半的信息不会因为在第一行按了 ↑ 就被换掉。
             Key::Named(NamedKey::ArrowUp | NamedKey::ArrowDown) if !cmd => {
                 let down = *key == Key::Named(NamedKey::ArrowDown);
                 let message = &self.git.commit.message;
-                let browse = !shift && (message.text().is_empty() || message.recalling());
+                let browse = !shift && (alt || message.text().is_empty() || message.recalling());
                 if browse {
                     self.seed_message_history();
                     self.edit_field(|f| f.recall(!down));

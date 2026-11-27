@@ -7,6 +7,7 @@
 //!
 //! 模块关闭时命令不可用，不启动 `ssh`；关闭模块会断开已有的连接。
 
+mod connect;
 pub(crate) mod mounts;
 pub(crate) mod picker;
 
@@ -460,13 +461,18 @@ fn config_hosts(text: &str) -> Vec<String> {
 /// 按钮暂不可用。
 const CONNECTING: u64 = u64::MAX;
 
-/// 把用户输入的 `主机`、`主机:端口`、`主机:目录` 或 `主机:端口:目录` 拆成连接目标和目录；没有
-/// 目录时目录为空。主机之后全是数字的一段是端口。主机或端口不符合 [`Target`] 的要求时返回
-/// `None`。
-fn parse_destination(input: &str) -> Option<(Target, &str)> {
+/// 把用户输入的 `主机`、`主机:端口`、`主机:目录`、`主机:端口:目录` 或 `ssh …` / `ssh://…`
+/// 拆成连接目标和目录；没有目录时目录为空。主机或端口不符合 [`Target`] 的要求时返回 `None`。
+fn parse_destination(input: &str) -> Option<(Target, String)> {
     let input = input.trim();
+    if let Some(parsed) = connect::parse_ssh_input(input) {
+        let host = connect::combine_user_host(parsed.user.as_deref().unwrap_or(""), &parsed.host);
+        let port = parsed.port.as_deref().and_then(|p| p.parse().ok());
+        let target = Target::with_port(&host, port)?;
+        return Some((target, parsed.folder.unwrap_or_default()));
+    }
     let Some((host, rest)) = input.split_once(':') else {
-        return Some((Target::new(input)?, ""));
+        return Some((Target::new(input)?, String::new()));
     };
     let (port, folder) = match rest.split_once(':') {
         Some((port, folder)) if is_port(port) => (Some(port), folder),
@@ -477,7 +483,7 @@ fn parse_destination(input: &str) -> Option<(Target, &str)> {
         Some(port) => Target::new(&format!("{host}:{port}"))?,
         None => Target::new(host)?,
     };
-    Some((target, folder.trim()))
+    Some((target, folder.trim().to_owned()))
 }
 
 /// `text` 是否像端口：非空，全是数字。数值是否有效由 [`Target`] 判断。
@@ -684,7 +690,7 @@ fn open(
 impl App {
     /// 远程模块是否启用。
     pub(crate) fn remote_enabled(&self) -> bool {
-        self.config.remote_enabled.unwrap_or(false)
+        self.config.remote_enabled != Some(false)
     }
 
     /// 连接主机 `host`（项目名菜单中列出的主机），连接后在面板中浏览其上的目录。
@@ -707,8 +713,9 @@ impl App {
             self.remote.stepping = true;
             self.close_form_dialog();
         }
+        let (user, bare_host) = connect::split_user_host(host);
         let mut name = TextField::default();
-        name.insert(host);
+        name.insert(bare_host);
         self.show_form_dialog(FormKind::Connect, name, DialogPart::Branch);
         // 为这台主机指定过的密钥文件。
         let key = (Target::with_port(host, port.parse().ok()))
@@ -716,20 +723,54 @@ impl App {
             .unwrap_or_default()
             .to_owned();
         if let Some(dialog) = &mut self.overlays.form_dialog {
-            dialog.second = TextField::with_filter(|c| c.is_ascii_digit());
-            dialog.second.insert(port);
-            dialog.third.insert(&key);
+            dialog.second = TextField::default();
+            if let Some(user) = user {
+                dialog.second.insert(user);
+            }
+            dialog.third = TextField::with_filter(|c| c.is_ascii_digit());
+            dialog.third.insert(port);
+            dialog.fourth = TextField::default();
+            dialog.fourth.insert(&key);
+            // 默认不修改 `~/.ssh/config`，由用户按需勾选。
+            dialog.checkout = false;
         }
         if start {
             self.submit_form_dialog();
         }
     }
 
+    /// 在连接对话框的主机框中粘贴了完整的 `ssh` 命令、`ssh://` 链接或 `主机:端口` 时自动拆到各栏。
+    pub(in crate::app) fn try_split_connect_paste(&mut self) {
+        let Some(dialog) = &mut self.overlays.form_dialog else {
+            return;
+        };
+        if !matches!(dialog.kind, FormKind::Connect) || dialog.focus != DialogPart::Branch {
+            return;
+        }
+        let Some(parsed) = connect::parse_ssh_input(dialog.name.text()) else {
+            return;
+        };
+        dialog.name.set_text(&parsed.host);
+        if let Some(user) = parsed.user {
+            dialog.second.set_text(&user);
+        }
+        if let Some(port) = parsed.port {
+            dialog.third.set_text(&port);
+        }
+        if let Some(key) = parsed.key {
+            dialog.fourth.set_text(&key);
+        }
+        dialog.error = None;
+    }
+
     /// 连接对话框按当前填写的内容能不能连接，以及主按钮上的字。
     pub(in crate::app) fn connect_plan(&self, dialog: &FormDialog) -> FormPlan {
-        let (host, port) = (dialog.name.text().trim(), dialog.second.text().trim());
-        let key = dialog.third.text().trim();
-        let problem = if !host.is_empty() && Target::with_port(host, None).is_none() {
+        let (host, user) = (dialog.name.text().trim(), dialog.second.text().trim());
+        let (port, key) = (dialog.third.text().trim(), dialog.fourth.text().trim());
+        let combined = connect::combine_user_host(user, host);
+        let problem = if !user.is_empty() && !connect::valid_user(user) {
+            Some(t!("workspace-remote-dialog-invalid-user"))
+        } else if !host.is_empty() && Target::with_port(&combined, None).is_none() {
             Some(t!("workspace-remote-dialog-invalid-host"))
         } else if !port.is_empty() && Target::with_port("host", port.parse().ok()).is_none() {
             Some(t!("workspace-remote-dialog-invalid-port"))
@@ -759,17 +800,43 @@ impl App {
         let Some(dialog) = &mut self.overlays.form_dialog else {
             return;
         };
-        let (host, port, key) = (
+        let (raw_host, raw_user, port, key, save_config) = (
             dialog.name.text().trim().to_owned(),
             dialog.second.text().trim().to_owned(),
             dialog.third.text().trim().to_owned(),
+            dialog.fourth.text().trim().to_owned(),
+            dialog.checkout,
         );
+        let host = connect::combine_user_host(&raw_user, &raw_host);
         let Some(target) = Target::with_port(&host, port.parse().ok().filter(|_| !port.is_empty()))
         else {
             return;
         };
         dialog.running = Some(CONNECTING);
         dialog.error = None;
+        // 勾选「保存到 ~/.ssh/config」时把新主机写入配置文件并刷新列表。
+        if save_config && let Some(path) = ssh_config() {
+            let (inline_user, bare_host) = connect::split_user_host(&host);
+            let effective_user = (!raw_user.is_empty())
+                .then_some(raw_user.as_str())
+                .or(inline_user);
+            match connect::save_host_to_ssh_config(
+                &path,
+                bare_host,
+                effective_user,
+                (!port.is_empty()).then_some(port.as_str()),
+                (!key.is_empty()).then_some(key.as_str()),
+            ) {
+                Ok(alias) => {
+                    refresh_hosts();
+                    self.flash(t!("workspace-remote-saved-config", host = alias));
+                }
+                Err(error) => self.notify(t!(
+                    "workspace-remote-config-failed",
+                    error = error.to_string()
+                )),
+            }
+        }
         // 密钥文件按主机记下：此后经最近的目录、重新连接和终端登录这台主机时都用它。
         if self.state.remote_key(target.as_str()).unwrap_or_default() != key {
             self.update_state(|state| state.set_remote_key(target.as_str(), &key));
@@ -801,9 +868,9 @@ impl App {
         let dialog =
             (self.overlays.form_dialog.as_mut()).filter(|d| matches!(d.kind, FormKind::Connect));
         if let Some(dialog) = dialog {
-            dialog.third.set_text("");
-            dialog.third.insert(&text);
-            dialog.focus = DialogPart::Third;
+            dialog.fourth.set_text("");
+            dialog.fourth.insert(&text);
+            dialog.focus = DialogPart::Fourth;
             dialog.error = None;
         }
         self.request_redraw();
@@ -1044,6 +1111,11 @@ impl App {
             Ok(reached) if self.remote_enabled() => {
                 let folder = reached.into_folder();
                 self.remote.lost = false;
+                let native = winc_backend::native_lossy(&folder).into_owned();
+                if !native.is_empty() {
+                    let host = target.as_str().to_owned();
+                    self.update_state(|state| state.set_remote_last_dir(&host, &native));
+                }
                 if self.editor.root() == Some(folder.as_path()) {
                     // 重新连接到已打开的目录：按窗口重新获得焦点处理，重读文件树和文档。
                     self.check_disk();
@@ -1232,34 +1304,23 @@ mod tests {
         let parsed = |input| {
             parse_destination(input).map(|(target, folder)| (target.as_str().to_owned(), folder))
         };
-        let host = "me@devbox".to_owned();
-        assert_eq!(
-            parsed("me@devbox:/srv/app"),
-            Some((host.clone(), "/srv/app"))
-        );
-        assert_eq!(parsed("  me@devbox:~/x y  "), Some((host.clone(), "~/x y")));
-        assert_eq!(parsed("me@devbox"), Some((host.clone(), "")));
-        assert_eq!(parsed("me@devbox:"), Some((host, "")));
+        let pair = |h: &str, f: &str| Some((h.to_owned(), f.to_owned()));
+        assert_eq!(parsed("me@devbox:/srv/app"), pair("me@devbox", "/srv/app"));
+        assert_eq!(parsed("  me@devbox:~/x y  "), pair("me@devbox", "~/x y"));
+        assert_eq!(parsed("me@devbox"), pair("me@devbox", ""));
+        assert_eq!(parsed("me@devbox:"), pair("me@devbox", ""));
         // 主机之后的内容原样作为目录，其中的 `:` 不再拆分。
-        assert_eq!(parsed("box:/a:b"), Some(("box".to_owned(), "/a:b")));
+        assert_eq!(parsed("box:/a:b"), pair("box", "/a:b"));
         // 主机之后全是数字的一段是端口，其后才是目录。
+        assert_eq!(parsed("me@box:22022"), pair("me@box:22022", ""));
+        assert_eq!(parsed("me@box:22022:"), pair("me@box:22022", ""));
+        assert_eq!(parsed("me@box:22022:~/app"), pair("me@box:22022", "~/app"));
+        assert_eq!(parsed("box:22:/srv:x"), pair("box:22", "/srv:x"));
+        assert_eq!(parsed("box:~/2024"), pair("box", "~/2024"));
         assert_eq!(
-            parsed("me@box:22022"),
-            Some(("me@box:22022".to_owned(), ""))
+            parsed("ssh shuguang@192.168.1.10 -p 2222"),
+            pair("shuguang@192.168.1.10:2222", "")
         );
-        assert_eq!(
-            parsed("me@box:22022:"),
-            Some(("me@box:22022".to_owned(), ""))
-        );
-        assert_eq!(
-            parsed("me@box:22022:~/app"),
-            Some(("me@box:22022".to_owned(), "~/app"))
-        );
-        assert_eq!(
-            parsed("box:22:/srv:x"),
-            Some(("box:22".to_owned(), "/srv:x"))
-        );
-        assert_eq!(parsed("box:~/2024"), Some(("box".to_owned(), "~/2024")));
         // 不是有效的端口：不当作目录去连接。
         assert_eq!(parsed("box:0"), None);
         assert_eq!(parsed("box:99999"), None);

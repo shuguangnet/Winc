@@ -174,6 +174,19 @@ impl App {
         self.update_state(|state| state.commit_check_todo = !state.commit_check_todo);
     }
 
+    /// 是否有可翻阅的最近提交信息。
+    pub(crate) fn has_recent_messages(&self) -> bool {
+        !self.state.commit_messages.is_empty() || !self.git.own_messages.is_empty()
+    }
+
+    /// 「提交历史」快捷按钮的菜单：直接列出最近的提交信息，点一下填入提交框。
+    pub(in crate::app) fn commit_history_menu(&self) -> Vec<MenuEntry> {
+        let count = self.recent_messages().len().min(MENU_MESSAGES);
+        (0..count)
+            .map(|i| MenuEntry::Item(MenuCommand::CommitMessage(i), true))
+            .collect()
+    }
+
     /// 提交按钮菜单的最后几项：「提交检查」子菜单（格式化代码、检查 TODO 两个开关），以及最近的
     /// 提交信息、共同作者两个子菜单（有内容时）。
     pub(super) fn compose_menu_entries(&self) -> Vec<MenuEntry> {

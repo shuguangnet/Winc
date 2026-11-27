@@ -443,6 +443,8 @@ fn settings_pages_are_listed_on_the_left() {
     paint(&mut app);
 
     // 模块关闭时不列出它的那一页。
+    app.config.terminal_enabled = Some(false);
+    app.config.git_enabled = Some(false);
     let pages: Vec<SettingsPage> = (app.settings_layout().pages.iter())
         .map(|&(page, _)| page)
         .collect();
@@ -1069,6 +1071,8 @@ fn the_git_page_is_listed_only_when_the_module_is_on() {
     let listed = |app: &App| {
         (app.settings_layout().pages.iter()).any(|&(page, _)| page == SettingsPage::Git)
     };
+    assert!(listed(&app));
+    app.settings_toggle(Setting::GitModule);
     assert!(!listed(&app));
     assert_eq!(Setting::GitConfirmPush.page(), SettingsPage::Git);
     assert_eq!(Setting::DiffInline.page(), SettingsPage::Git);
@@ -1205,11 +1209,11 @@ fn the_start_page_shows_only_first_time_setup_until_it_is_finished() {
     app.overlays.context_menu = None;
     paint(&mut app);
 
-    assert!(!app.git_enabled());
-    pick(&mut app, StartAction::Module(Module::Git));
     assert!(app.git_enabled());
     pick(&mut app, StartAction::Module(Module::Git));
     assert!(!app.git_enabled());
+    pick(&mut app, StartAction::Module(Module::Git));
+    assert!(app.git_enabled());
 
     // 快捷键一页：各方案在前，默认选中 VS Code 方案；选 IDEA 后完成，写入配置。「返回」回到
     // 上一页，选择保留。

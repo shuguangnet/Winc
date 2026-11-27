@@ -976,6 +976,14 @@ fn draw_card(
         ui_text_small(frame, app, x, amend, t!("git-commit-amend"), ink, clip);
         hits.push((amend, CommitTarget::Amend));
     }
+    if let Some(history) = parts.history {
+        let open = app.overlays.menu_button == Some(crate::app::MenuButton::CommitHistory);
+        let hovered = app.pointer.hover == Hover::Commit(CommitTarget::History) || open;
+        draw_button(frame, p, history, clip, hovered, open);
+        let ink = if hovered { p.text } else { p.text_muted };
+        icons::history(frame, center(history), ink, history.intersect(clip));
+        hits.push((history, CommitTarget::History));
+    }
 
     // 「提交 ⌄」：强调色的拆分按钮，左边「✓ 提交」，右边一道细竖线隔开下拉箭头。
     // 无法提交（见 `CommitState::blocker`：未勾选文件、未填写说明、仍有冲突标记）时按钮整体
@@ -1052,9 +1060,10 @@ fn draw_card(
                 main,
             ),
         };
-        let right = match parts.amend {
-            Some(_) => menu.right() - 4.0,
-            None => menu.x - 8.0,
+        let right = match (parts.amend, parts.history) {
+            (Some(_), Some(history)) => history.x - 6.0,
+            (Some(_), None) => menu.right() - 4.0,
+            (None, _) => menu.x - 8.0,
         };
         let hint_w = frame.measure(FontKind::Ui, size, &hint);
         if right - left >= hint_w {

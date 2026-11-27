@@ -11,8 +11,7 @@ use super::*;
 
 /// 打开 `dir` 并启用 Git 模块；git 不可用时返回 `None`。
 fn git_app(dir: &Path) -> Option<App> {
-    let mut app = app_with(dir, false);
-    app.settings_toggle(Setting::GitModule);
+    let app = app_with(dir, false);
     (!git_unusable(&app)).then_some(app)
 }
 
@@ -398,7 +397,6 @@ fn a_folder_without_a_repository_offers_to_initialize_one() {
     let dir = search_folder("git-no-repository");
     std::fs::write(dir.join("Cargo.toml"), "[package]\n").unwrap();
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }

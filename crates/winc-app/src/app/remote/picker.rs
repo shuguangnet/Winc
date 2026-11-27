@@ -93,6 +93,8 @@ pub(crate) enum RowIcon {
     Folder,
     /// 打开着的目录：「打开此目录」一行。
     Open,
+    /// 置顶的常用远端目录，或「置顶此目录 / 取消置顶」。
+    Pin,
     /// 「编辑 SSH 配置文件」一行。
     Config,
 }
@@ -100,6 +102,8 @@ pub(crate) enum RowIcon {
 /// 选中一行后执行的操作。
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RowAction {
+    /// 打开置顶的常用远端目录。
+    Pinned(PathBuf),
     /// 打开最近列表中的远端目录。
     Recent(PathBuf),
     /// 打开连接对话框，填写新主机。
@@ -112,6 +116,8 @@ enum RowAction {
     Destination(Target, String),
     /// 打开正在浏览的目录。
     OpenHere,
+    /// 置顶或取消置顶正在浏览的目录。
+    TogglePin,
     /// 进入名为该值的子目录。
     Enter(String),
     /// 回到上级目录。
@@ -204,9 +210,13 @@ impl App {
         self.show_remote_picker(Stage::Hosts);
     }
 
-    /// 打开面板的目录阶段：浏览 `target` 上的目录，从主目录 `home` 开始。
+    /// 打开面板的目录阶段：浏览 `target` 上的目录；若记有上次打开的目录则直达，否则从主目录开始。
     pub(in crate::app) fn open_remote_browser(&mut self, target: Target, home: String) {
-        let dir = home.clone();
+        let dir = self
+            .state
+            .remote_last_dir(target.as_str())
+            .filter(|dir| dir.starts_with('/'))
+            .map_or_else(|| home.clone(), str::to_owned);
         self.browse_remote_folder(target, home, dir);
     }
 
@@ -270,9 +280,15 @@ impl App {
         }
         let rows = match &list.stage {
             Stage::Hosts => self.host_rows(&typed),
-            Stage::Browse { target, home, dir } => {
-                let (target, home, dir) = (target.clone(), home.clone(), dir.clone());
+            Stage::Browse { target, dir, .. } => {
+                let (target, dir) = (target.clone(), dir.clone());
                 self.fetch_remote_listing(&target, &dir);
+                let Some(Stage::Browse { target, home, dir }) =
+                    self.overlays.picker.remote.as_ref().map(|list| &list.stage)
+                else {
+                    return;
+                };
+                let (target, home, dir) = (target.clone(), home.clone(), dir.clone());
                 self.folder_rows(&target, &home, &dir, &typed)
             }
         };
@@ -300,7 +316,8 @@ impl App {
             });
         }
 
-        for folder in &self.state.recent {
+        // 置顶的常用远端目录排在最前（紧跟「新主机…」之后），不与最近列表重复。
+        for folder in self.state.remote_pinned() {
             let Some(location) = winc_backend::locate(folder) else {
                 continue;
             };
@@ -308,11 +325,33 @@ impl App {
             if fits(&full) {
                 rows.push(Row {
                     title: winc_editor::display_name(folder).into_owned(),
-                    detail: full,
-                    icon: RowIcon::Folder,
+                    detail: format!("{} · {full}", t!("workspace-picker-remote-pinned")),
+                    icon: RowIcon::Pin,
                     removable: true,
-                    action: RowAction::Recent(folder.clone()),
+                    action: RowAction::Pinned(folder.clone()),
                 });
+            }
+            let host = location.target.as_str();
+            if !listed.iter().any(|known| known == host) {
+                listed.push(host.to_owned());
+            }
+        }
+
+        for folder in &self.state.recent {
+            let Some(location) = winc_backend::locate(folder) else {
+                continue;
+            };
+            if !self.state.is_remote_pinned(folder) {
+                let full = winc_backend::display(folder).unwrap_or_default();
+                if fits(&full) {
+                    rows.push(Row {
+                        title: winc_editor::display_name(folder).into_owned(),
+                        detail: full,
+                        icon: RowIcon::Folder,
+                        removable: true,
+                        action: RowAction::Recent(folder.clone()),
+                    });
+                }
             }
             let host = location.target.as_str();
             if !listed.iter().any(|known| known == host) {
@@ -359,15 +398,16 @@ impl App {
         if let Some((target, folder)) = parse_destination(typed)
             && (!folder.is_empty() || !known(target.as_str()))
         {
-            let explicit = typed.contains(['@', ':']);
+            let explicit = typed.contains(['@', ':']) || typed.trim_start().starts_with("ssh ");
             let row = Row {
-                title: t!("workspace-picker-remote-connect", host = typed.trim()),
-                detail: String::new(),
+                title: t!("workspace-picker-remote-connect", host = target.as_str()),
+                detail: folder.clone(),
                 icon: RowIcon::Host,
                 removable: false,
-                action: match folder {
-                    "" => RowAction::Host(target),
-                    folder => RowAction::Destination(target, folder.to_owned()),
+                action: if folder.is_empty() {
+                    RowAction::Host(target)
+                } else {
+                    RowAction::Destination(target, folder)
                 },
             };
             if explicit {
@@ -401,6 +441,39 @@ impl App {
                 removable: false,
                 action: RowAction::OpenHere,
             });
+            let current = winc_backend::virtual_path(target, dir.as_bytes());
+            let pinned_here = self.state.is_remote_pinned(&current);
+            rows.push(Row {
+                title: if pinned_here {
+                    t!("workspace-picker-remote-unpin-here")
+                } else {
+                    t!("workspace-picker-remote-pin-here")
+                }
+                .to_owned(),
+                detail: String::new(),
+                icon: RowIcon::Pin,
+                removable: false,
+                action: RowAction::TogglePin,
+            });
+            for folder in self.state.remote_pinned() {
+                let Some(loc) = winc_backend::locate(folder) else {
+                    continue;
+                };
+                if loc.target != *target {
+                    continue;
+                }
+                let native = winc_backend::native_lossy(folder);
+                if native == dir {
+                    continue;
+                }
+                rows.push(Row {
+                    title: winc_editor::display_name(folder).into_owned(),
+                    detail: shorten(&native, home),
+                    icon: RowIcon::Pin,
+                    removable: true,
+                    action: RowAction::Pinned(folder.clone()),
+                });
+            }
             if dir != "/" {
                 rows.push(Row {
                     title: "..".to_owned(),
@@ -483,7 +556,7 @@ impl App {
             Stage::Hosts => None,
         };
         match (action, browsing) {
-            (RowAction::Recent(folder), _) => {
+            (RowAction::Pinned(folder) | RowAction::Recent(folder), _) => {
                 self.close_picker();
                 self.reopen_remote(&folder);
             }
@@ -505,13 +578,25 @@ impl App {
                 self.close_picker();
                 self.remote_open(target, dir, After::Open);
             }
+            (RowAction::TogglePin, Some((target, dir))) => {
+                let path = winc_backend::virtual_path(&target, dir.as_bytes());
+                self.update_state(|state| {
+                    state.toggle_remote_pin(&path);
+                });
+                self.picker_refresh();
+                self.relayout();
+                self.request_redraw();
+            }
             (RowAction::Enter(name), Some((target, dir))) if directly => {
                 self.close_picker();
                 self.remote_open(target, child(&dir, &name), After::Open);
             }
             (RowAction::Enter(name), Some((_, dir))) => self.remote_picker_go(child(&dir, &name)),
             (RowAction::Up, Some((_, dir))) => self.remote_picker_go(parent(&dir)),
-            (RowAction::OpenHere | RowAction::Enter(_) | RowAction::Up, None) => {}
+            (
+                RowAction::OpenHere | RowAction::TogglePin | RowAction::Enter(_) | RowAction::Up,
+                None,
+            ) => {}
         }
     }
 
@@ -532,6 +617,16 @@ impl App {
         let item = (self.overlays.picker.hits.get(row))
             .and_then(|&i| list?.rows.get(i))
             .filter(|item| item.removable);
+        if let Some(RowAction::Pinned(folder)) = item.map(|item| &item.action).cloned() {
+            let selected = self.overlays.picker.selected;
+            self.update_state(|state| state.unpin_remote(&folder));
+            self.picker_refresh();
+            self.overlays.picker.selected =
+                selected.min(self.overlays.picker.hits.len().saturating_sub(1));
+            self.relayout();
+            self.request_redraw();
+            return;
+        }
         let folders: Vec<PathBuf> = match item.map(|item| &item.action) {
             Some(RowAction::Recent(folder)) => vec![folder.clone()],
             Some(RowAction::Host(target)) => (self.state.recent.iter())
@@ -605,8 +700,12 @@ impl App {
         };
         match key {
             Key::Named(NamedKey::Tab) => {
-                match row.map(|row| &row.action) {
-                    Some(RowAction::Enter(name)) => self.remote_picker_go(child(dir, name)),
+                match row.map(|row| &row.action).cloned() {
+                    Some(RowAction::Enter(name)) => self.remote_picker_go(child(dir, &name)),
+                    Some(RowAction::Pinned(folder)) => {
+                        let next = winc_backend::native_lossy(&folder).into_owned();
+                        self.remote_picker_go(next);
+                    }
                     Some(RowAction::Up) => self.remote_picker_go(parent(dir)),
                     _ => {}
                 }
@@ -670,20 +769,31 @@ impl App {
             return;
         };
         let mut shown = false;
+        let mut fallback_home = None;
         for (target, dir, names) in listed {
             if let Stage::Browse {
                 target: at,
+                home,
                 dir: here,
-                ..
             } = &list.stage
+                && *at == target
+                && *here == dir
             {
-                shown |= *at == target && *here == dir;
+                shown = true;
+                // 若上次记住的远端目录已被删除，自动回退到主目录，不卡在错误页。
+                if names.is_err() && dir != *home {
+                    fallback_home = Some(home.clone());
+                }
             }
             let listing = match names {
                 Ok(names) => Listing::Ready(names),
                 Err(error) => Listing::Failed(error),
             };
             list.listings.insert((target, dir), listing);
+        }
+        if let Some(home) = fallback_home {
+            self.remote_picker_go(home);
+            return;
         }
         if shown {
             self.picker_refresh();

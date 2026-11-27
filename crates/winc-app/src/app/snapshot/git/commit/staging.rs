@@ -47,7 +47,6 @@ fn only_the_staged_hunks_are_committed() {
     }
     let mut app = app_with(&dir, false);
     app.git.commit.set_staging(true);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -117,7 +116,6 @@ fn the_staging_view_groups_staged_changes_and_has_plus_and_minus() {
     git_in(&dir, &["add", "src/new.rs"]);
     let mut app = app_with(&dir, false);
     app.git.commit.set_staging(true);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -255,7 +253,6 @@ fn only_the_staged_lines_are_committed() {
     }
     let mut app = app_with(&dir, false);
     app.git.commit.set_staging(true);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -373,7 +370,6 @@ fn identical_changes_are_staged_one_by_one() {
     }
     let mut app = app_with(&dir, false);
     app.git.commit.set_staging(true);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -547,7 +543,6 @@ fn shoot_staging_view() {
         std::fs::write(dir.join("src/main.rs"), later).unwrap();
         let mut app = app_with(&dir, dark);
         app.git.commit.set_staging(true);
-        app.settings_toggle(Setting::GitModule);
         app.run_action(Action::ShowCommit);
         app.edit_field(|f| f.insert("调整配置"));
         paint(&mut app);

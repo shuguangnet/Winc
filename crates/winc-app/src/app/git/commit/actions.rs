@@ -725,7 +725,10 @@ impl App {
                     if self.git.root.as_deref() != Some(root.as_path()) {
                         let name = winc_editor::display_name(&root);
                         match result {
-                            Ok(oid) => self.flash(t!("git-commit-done-in", name = name, oid = oid)),
+                            Ok(oid) => {
+                                self.update_state(|state| state.set_commit_draft(&root, ""));
+                                self.flash(t!("git-commit-done-in", name = name, oid = oid));
+                            }
                             Err(e) => self.notify_with(
                                 t!("git-commit-failed-in", name = name, error = e),
                                 NoticeAction::GitOutput,
@@ -749,6 +752,7 @@ impl App {
                             if self.git.commit.message.text().trim() == message {
                                 self.git.commit.message.remember();
                                 self.git.commit.message.set_text("");
+                                self.update_state(|state| state.set_commit_draft(&root, ""));
                             }
                             let subject = message.lines().next().unwrap_or_default();
                             // 「提交并推送」「提交并同步」已经确认过，推送、同步不再询问。没有上游

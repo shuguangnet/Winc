@@ -310,17 +310,24 @@ impl App {
         let reopen = self.config.restore_folder != Some(false);
         let root = self.editor.root().map(Path::to_path_buf);
         let shared = self.link.shared.clone();
-        self.update_state(|state| match root {
-            Some(root) if reopen => state.last = Some(root),
-            _ if !reopen => state.last = None,
-            _ => {
-                if state
-                    .last
-                    .as_deref()
-                    .is_some_and(|last| shared.window_with(last, None).is_none())
-                {
-                    state.last = None;
+        let repo = self.git.root.clone();
+        let draft = repo.as_ref().map(|_| self.git.commit.draft_text());
+        self.update_state(|state| {
+            match root {
+                Some(root) if reopen => state.last = Some(root),
+                _ if !reopen => state.last = None,
+                _ => {
+                    if state
+                        .last
+                        .as_deref()
+                        .is_some_and(|last| shared.window_with(last, None).is_none())
+                    {
+                        state.last = None;
+                    }
                 }
+            }
+            if let (Some(repo), Some(draft)) = (repo, draft) {
+                state.set_commit_draft(&repo, &draft);
             }
         });
         self.remember_session();

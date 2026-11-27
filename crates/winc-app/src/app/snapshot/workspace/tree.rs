@@ -321,6 +321,7 @@ fn double_clicking_below_the_tree_creates_a_file_in_the_root() {
 fn open_in_terminal_goes_to_the_folder_of_what_is_selected() {
     let dir = search_folder("terminal");
     let mut app = app_with(&dir, false);
+    app.config.terminal_enabled = Some(false);
     let root = app.editor.root().unwrap().to_path_buf();
 
     // 没有打开的文件：使用打开的目录。

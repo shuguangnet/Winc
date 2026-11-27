@@ -522,21 +522,28 @@ pub fn terminal_menu(selected: bool, running: bool, block: Option<(bool, bool)>)
 }
 
 /// 返回差异标签里文字的菜单项：右侧（`right`）是剪切、复制、粘贴，光标在改动上
-/// （`on_hunk`）时还有「回滚这处改动」；左侧只读，只有复制。
-pub fn diff_menu(right: bool, on_hunk: bool) -> Vec<MenuEntry> {
+/// （`on_hunk`）时还有「暂存此处更改 / 取消暂存此处更改」（暂存区视图下）和「回滚这处改动」；
+/// 左侧只读，只有复制。
+pub fn diff_menu(right: bool, on_hunk: bool, staged: Option<bool>) -> Vec<MenuEntry> {
     use MenuCommand::*;
     use MenuEntry::{Item, Separator};
 
     if !right {
         return vec![Item(Copy, true)];
     }
-    vec![
+    let mut items = vec![
         Item(Cut, true),
         Item(Copy, true),
         Item(Paste, true),
         Separator,
-        Item(GitRevertHunk, on_hunk),
-    ]
+    ];
+    match staged {
+        Some(false) => items.push(Item(GitStageHunk, true)),
+        Some(true) => items.push(Item(GitUnstageHunk, true)),
+        None => {}
+    }
+    items.push(Item(GitRevertHunk, on_hunk));
+    items
 }
 
 /// 返回项目名菜单的菜单项：最近的目录（不含当前目录；按住 `⌥` 时是「在新窗口中打开」），之后是

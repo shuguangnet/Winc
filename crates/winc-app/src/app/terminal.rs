@@ -429,7 +429,7 @@ fn theme_colors(p: &Palette) -> Theme {
 impl App {
     /// 终端模块开着没有。
     pub(crate) fn terminal_enabled(&self) -> bool {
-        self.config.terminal_enabled.unwrap_or(false)
+        self.config.terminal_enabled != Some(false)
     }
 
     /// 对比度保护的最低对比度（`terminal.minimumContrast`，0 表示关）。
@@ -507,8 +507,8 @@ impl App {
     /// 终端里已经有标签了不动；面板上次收着时等打开面板再建。
     pub(super) fn restore_terminal(&mut self, session: &TerminalSession) {
         let root = self.editor.root().map(PathBuf::from);
+        let enabled = self.terminal_enabled();
         let t = &mut self.terminal;
-        let enabled = self.config.terminal_enabled.unwrap_or(false);
         if !enabled || !t.tabs.is_empty() || !t.want.is_empty() {
             return;
         }

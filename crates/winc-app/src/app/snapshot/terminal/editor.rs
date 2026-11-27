@@ -890,6 +890,7 @@ fn terminal_tabs_come_back_with_the_folder() {
 
     // 终端模块关着时不恢复。
     let mut app = blank_app(false);
+    app.config.terminal_enabled = Some(false);
     app.restore_terminal(&saved);
     assert!(app.terminal.want.is_empty());
 

@@ -42,15 +42,14 @@ impl App {
         // 窗口字体同步。
         let glyph_language = old.language != new.language
             && crate::set_locale(new.language.unwrap_or_default().resolve());
-        let git = old.git_enabled != new.git_enabled;
+        let git = (old.git_enabled != Some(false)) != (new.git_enabled != Some(false));
         let git_program = old.git_path != new.git_path;
         let forget_credentials = old.git_remember_credentials != Some(false)
             && new.git_remember_credentials == Some(false);
         let title_bar = old.ui_native_title_bar != new.ui_native_title_bar;
         let stop_terminal =
-            old.terminal_enabled != new.terminal_enabled && new.terminal_enabled == Some(false);
-        let stop_remote =
-            old.remote_enabled != new.remote_enabled && new.remote_enabled != Some(true);
+            old.terminal_enabled != Some(false) && new.terminal_enabled == Some(false);
+        let stop_remote = old.remote_enabled != Some(false) && new.remote_enabled == Some(false);
 
         if fonts || glyph_language {
             // 别的窗口已经用上了这些字体，这里也用得上；万一用不上，留着原来的字体。

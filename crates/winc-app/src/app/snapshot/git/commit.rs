@@ -199,7 +199,6 @@ fn shoot_commit_view() {
         std::fs::write(dir.join("src/core/model/user.rs"), "pub struct User;\n").unwrap();
         std::fs::write(dir.join("src/core/model/order.rs"), "pub struct Order;\n").unwrap();
         let mut app = app_with(&dir, dark);
-        app.settings_toggle(Setting::GitModule);
         app.run_action(Action::ShowCommit);
         app.edit_field(|f| f.insert("修复配置读取\n\n启动时配置文件不存在不再错误，改用默认值。"));
         // 选中 `src/main.rs`：列表中高亮，右侧预览该文件的差异。
@@ -338,7 +337,6 @@ fn shoot_commit_empty() {
         git_in(&dir, &["add", "-A"]);
         git_in(&dir, &["commit", "-q", "-m", "all"]);
         let mut app = app_with(&dir, dark);
-        app.settings_toggle(Setting::GitModule);
         app.run_action(Action::ShowCommit);
         shoot(&mut app, name);
         let _ = std::fs::remove_dir_all(&dir);
@@ -504,7 +502,6 @@ fn clicking_a_visible_change_under_the_pinned_rows_does_not_scroll() {
     let mut app = app_with(&dir, false);
     // 默认显示为列表；本测试检查按目录排列的树形视图。
     app.git.commit.set_flat(false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -575,7 +572,6 @@ fn shoot_deep_changes() {
             return;
         };
         let mut app = app_with(&dir, dark);
-        app.settings_toggle(Setting::GitModule);
         app.run_action(Action::ShowCommit);
         paint(&mut app);
         app.git.commit.scroll = 12.0 * COMMIT_ROW;
@@ -610,7 +606,6 @@ fn the_changes_list_scrollbar_can_be_dragged() {
         return;
     };
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -641,7 +636,6 @@ fn change_list_keys_jump_to_the_ends_and_page() {
         return;
     };
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -763,7 +757,6 @@ fn snapshot_partial_lines() {
         return;
     }
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -800,7 +793,6 @@ fn a_shorter_list_is_visible_after_scrolling_far_down() {
         return;
     };
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -1136,7 +1128,6 @@ fn the_commit_message_wraps_between_words() {
     }
     std::fs::write(dir.join("src/config.rs"), "pub struct Config;\n").unwrap();
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     app.run_action(Action::ShowCommit);
     // 返回各显示行的文字。
     let rows = |app: &mut App, text: &str| {

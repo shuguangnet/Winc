@@ -21,7 +21,6 @@ fn command_and_shift_clicks_select_several_changes_for_one_check_and_rollback() 
     let mut app = app_with(&dir, false);
     app.git.commit.set_staging(false);
     app.trash = delete_for_test;
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -164,7 +163,6 @@ fn command_click_on_a_folder_row_selects_every_change_under_it() {
     app.git.commit.set_staging(false);
     // 默认显示为列表；本测试检查按目录排列的树形视图。
     app.git.commit.set_flat(false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }
@@ -223,7 +221,6 @@ fn arrow_keys_fold_the_selected_changes_folders_and_backspace_reverts_it() {
     // 默认显示为列表；本测试检查按目录排列的树形视图。
     app.git.commit.set_flat(false);
     app.trash = delete_for_test;
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }

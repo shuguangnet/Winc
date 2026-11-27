@@ -149,6 +149,9 @@ fn sample() -> State {
         tool_choices: vec![(PathBuf::from("/a/项目"), true)],
         trusted_repos: vec![(PathBuf::from("/a/项目"), u64::MAX - 1)],
         remote_keys: Vec::new(),
+        remote_last_dirs: Vec::new(),
+        remote_pinned: Vec::new(),
+        commit_drafts: Vec::new(),
     };
     state.set_remote_key("me@devbox:2200", "~/.ssh/工作 key");
     state.set_remote_key("build", "/keys/build");
@@ -425,4 +428,29 @@ fn commit_messages_keep_the_newest_without_repeats() {
         state.commit_messages.iter().filter(|m| *m == "m10").count(),
         1
     );
+}
+
+#[test]
+fn commit_drafts_and_remote_folder_preferences_round_trip() {
+    let mut state = State::default();
+    let repo = PathBuf::from("/tmp/repo-a");
+    state.set_commit_draft(&repo, "wip: draft message");
+    state.set_remote_last_dir("shuguang@macmini", "/Users/shuguang/project/Winc");
+    let pinned = PathBuf::from("winc-remote://shuguang@macmini/Users/shuguang/project/Winc");
+    assert!(state.toggle_remote_pin(&pinned));
+    assert!(state.is_remote_pinned(&pinned));
+
+    let reloaded = State::parse(&state.to_json());
+    assert_eq!(reloaded.commit_draft(&repo), Some("wip: draft message"));
+    assert_eq!(
+        reloaded.remote_last_dir("shuguang@macmini"),
+        Some("/Users/shuguang/project/Winc")
+    );
+    assert!(reloaded.is_remote_pinned(&pinned));
+
+    let mut cleared = reloaded;
+    cleared.set_commit_draft(&repo, "   ");
+    assert_eq!(cleared.commit_draft(&repo), None);
+    assert!(!cleared.toggle_remote_pin(&pinned));
+    assert!(!cleared.is_remote_pinned(&pinned));
 }

@@ -13,6 +13,7 @@ fn show_changes_opens_a_side_by_side_diff_and_walks_it() {
     std::fs::write(dir.join("src/new.rs"), "changed\n").unwrap();
     let mut app = app_with(&dir.join("src/main.rs"), false);
     // 模块关闭时该命令不可用。
+    app.settings_toggle(Setting::GitModule);
     assert!(!app.run_action(Action::GitShowChanges));
     app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
@@ -132,7 +133,6 @@ fn diff_right_side_edits_the_file_and_takes_hunks_from_the_left() {
     }
     let file = winc_editor::canonical_path(&dir.join("src/main.rs"));
     let mut app = app_with(&dir, false);
-    app.settings_toggle(Setting::GitModule);
     if git_unusable(&app) {
         return;
     }

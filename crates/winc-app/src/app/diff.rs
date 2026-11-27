@@ -1299,11 +1299,12 @@ impl App {
 /// 中间从左到右依次是「»」、左侧行号栏、连接带、右侧行号栏、勾选框，两侧文字区平分剩余宽度；
 /// 行号栏按两侧最大行号的位数定宽。
 pub(crate) fn diff_parts(editor: Rect, view: &DiffView, cell: f32) -> DiffParts {
-    let header = Rect::new(editor.x, editor.y, editor.w, DIFF_HEADER);
+    let width = editor.w.max(0.0);
+    let header = Rect::new(editor.x, editor.y, width, DIFF_HEADER);
     let body = Rect::new(
         editor.x,
         header.bottom(),
-        editor.w,
+        width,
         (editor.h - DIFF_HEADER).max(0.0),
     );
     let lines = view.old.text.len_lines().max(view.new.text.len_lines());
@@ -1319,7 +1320,7 @@ pub(crate) fn diff_parts(editor: Rect, view: &DiffView, cell: f32) -> DiffParts 
         let sign = (DIFF_SIGN_CELLS * cell).round();
         let lines = column(checks.right(), sign);
         let text = column(lines.right(), (editor.right() - lines.right()).max(0.0));
-        let rect = column(editor.x, editor.w);
+        let rect = column(editor.x, width);
         return DiffParts {
             header,
             body,
@@ -1354,7 +1355,7 @@ pub(crate) fn diff_parts(editor: Rect, view: &DiffView, cell: f32) -> DiffParts 
     let extra = (line_w - DIFF_GUTTER_PAD).max(0.0);
     let gutter_w = gutter_w + extra;
     // 每侧依次为改动色条、行号栏、文字区：两侧行列对齐，行号都在外侧，文字都从行号右边开始。
-    let text_w = ((editor.w - 2.0 * (DIFF_BAR + gutter_w) - DIFF_SEAM) / 2.0)
+    let text_w = ((width - 2.0 * (DIFF_BAR + gutter_w) - DIFF_SEAM) / 2.0)
         .max(0.0)
         .floor();
     let left_bar = column(editor.x, DIFF_BAR);
@@ -1372,13 +1373,13 @@ pub(crate) fn diff_parts(editor: Rect, view: &DiffView, cell: f32) -> DiffParts 
         body,
         panes: [
             DiffPane {
-                rect: column(editor.x, left_text.right() - editor.x),
+                rect: column(editor.x, (left_text.right() - editor.x).max(0.0)),
                 gutter: left_gutter,
                 number_end: left_gutter.right() - DIFF_GUTTER_PAD,
                 text: left_text,
             },
             DiffPane {
-                rect: column(right_bar.x, editor.right() - right_bar.x),
+                rect: column(right_bar.x, (editor.right() - right_bar.x).max(0.0)),
                 gutter: right_gutter,
                 number_end: right_gutter.right() - DIFF_GUTTER_PAD,
                 text: right_text,

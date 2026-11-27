@@ -23,6 +23,9 @@ pub(super) fn draw(
     pos: f64,
     hits: &mut Vec<(Rect, DiffTarget)>,
 ) {
+    if parts.body.w <= 0.0 || parts.body.h <= 0.0 {
+        return;
+    }
     let max = sticky_limit((parts.body.h / app.fonts.line_height) as usize);
     if view.collapses() || app.config.sticky_scroll == Some(false) || max == 0 {
         return;
@@ -57,7 +60,7 @@ pub(super) fn draw(
         draw_side(app, frame, view, parts, scroll.x, *side, rows);
         let pane = parts.panes[*side].rect;
         // 右侧留出滚动条的拖动区域。
-        let width = (body.right() - SCROLLBAR_HIT - pane.x).clamp(0.0, pane.w);
+        let width = (body.right() - SCROLLBAR_HIT - pane.x).clamp(0.0, pane.w.max(0.0));
         pinned.extend(rows.iter().map(|row| {
             let band = Rect::new(pane.x, pane.y + row.y, width, lh).intersect(pane);
             (band, DiffTarget::Sticky(*side, row.line))

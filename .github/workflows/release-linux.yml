@@ -30,8 +30,20 @@ jobs:
           source-sha: ${{ inputs.source-sha }}
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxi-dev libxcursor-dev libxrandr-dev desktop-file-utils squashfs-tools patchelf
+          set -euo pipefail
+          pkgs=(
+            build-essential pkg-config libxkbcommon-dev libwayland-dev
+            libx11-dev libxi-dev libxcursor-dev libxrandr-dev
+            desktop-file-utils squashfs-tools patchelf
+          )
+          for attempt in 1 2 3 4; do
+            if sudo apt-get update && sudo apt-get install -y --fix-missing "${pkgs[@]}"; then
+              exit 0
+            fi
+            echo "apt-get attempt ${attempt}/4 failed; retrying in $((attempt * 10))s..." >&2
+            sleep $((attempt * 10))
+          done
+          exit 1
       - name: Configure build
         env:
           WINC_UPDATE_PRIVATE_KEY: ${{ secrets.WINC_UPDATE_PRIVATE_KEY }}

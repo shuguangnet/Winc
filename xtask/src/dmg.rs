@@ -79,14 +79,24 @@ pub fn app(target: Option<&str>, prebuilt: bool) -> Result<(PathBuf, String), St
     .map_err(io)?;
     std::fs::write(contents.join("PkgInfo"), "APPL????").map_err(io)?;
     write_services_menu(&contents.join("Resources"))?;
-    // 远端的服务进程是 Linux 的程序，不是本应用的可执行代码：放在 Resources 中，由应用的签名
-    // 一并封存。没有构建过（`cargo xtask server`）时不带，这个应用包不能连接远端主机。
+    // 远端的 Linux 服务进程不是本机 Mach-O 可执行代码：放在 Resources 中，由应用的签名一并封存。
+    // macOS 远端服务进程是 Mach-O 可执行文件：放在 MacOS 目录中并单独签名，以便 codesign 校验与
+    // 公证通过；winc 运行时会优先查找 MacOS 目录。没有构建过（`cargo xtask server`）时不带。
     let mut servers = 0;
     for (_, name) in crate::server::PROGRAMS {
         let built = crate::server::dir().join(name);
         if built.is_file() {
             std::fs::copy(&built, contents.join("Resources").join(name)).map_err(io)?;
             servers += 1;
+        }
+    }
+    let mut macos_servers = Vec::new();
+    for (_, name) in crate::server::MACOS_PROGRAMS {
+        let built = crate::server::dir().join(name);
+        if built.is_file() {
+            let dest = contents.join("MacOS").join(name);
+            std::fs::copy(&built, &dest).map_err(io)?;
+            macos_servers.push(dest);
         }
     }
     // 图标必须在签名之前放进去：签名会封存 Resources 里的全部文件。
@@ -98,14 +108,23 @@ pub fn app(target: Option<&str>, prebuilt: bool) -> Result<(PathBuf, String), St
     run(Command::new("codesign")
         .args(["--force", "--sign", "-"])
         .arg(&helper))?;
+    for server in &macos_servers {
+        run(Command::new("codesign")
+            .args(["--force", "--sign", "-"])
+            .arg(server))?;
+    }
     run(Command::new("codesign")
         .args(["--force", "--sign", "-"])
         .arg(&app))?;
     run(Command::new("codesign")
         .args(["--verify", "--strict"])
         .arg(&app))?;
-    if servers < crate::server::PROGRAMS.len() {
-        println!("没有构建远端的服务进程（cargo xtask server）：这个应用包不能连接远端主机");
+    if servers < crate::server::PROGRAMS.len()
+        || macos_servers.len() < crate::server::MACOS_PROGRAMS.len()
+    {
+        println!(
+            "没有构建完整的远端服务进程（cargo xtask server）：这个应用包可能无法连接部分远端主机"
+        );
     }
     if !updates.enabled() {
         println!(

@@ -186,6 +186,10 @@ impl FoldShift {
 /// `index` 超出 `documents` 的范围时 panic。
 pub(super) fn draw_diff(app: &mut App, frame: &mut Frame<'_>, index: usize) {
     app.sync_diff_source(index);
+    if app.layout.editor.w <= 0.0 || app.layout.editor.h <= 0.0 {
+        app.hits.diff.clear();
+        return;
+    }
     // 绘制时需要推进两侧的着色状态，同时读取 `app` 的字体和配色：先从文档中取出差异，绘制后恢复。
     let Some(mut view) = app.editor.documents[index].diff.take() else {
         return;

@@ -1315,3 +1315,45 @@ fn folding_an_unchanged_run_in_a_diff_is_applied_when_its_transition_ends() {
     assert!(app.motion.diff_fold.is_none() && !open(&app, gap));
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn maximizing_terminal_over_sticky_diff_and_narrow_diff_do_not_panic() {
+    use winc_editor::diff_view::{DiffSide, DiffView, RIGHT};
+
+    let dir = sample_folder("diff-sticky-narrow");
+    let mut app = app_with(&dir.join("short.rs"), false);
+    let language = winc_syntax::detect("Example.java");
+    let old = format!(
+        "class Example {{\n    void before() {{\n{}    }}\n}}\n",
+        "        beforeStep();\n".repeat(55),
+    );
+    let new = format!(
+        "class Example {{\n    // new method\n    void after() {{\n{}    }}\n}}\n",
+        "        afterStep();\n".repeat(55),
+    );
+    let view = DiffView::new(
+        DiffSide::new("old", &old, None, language),
+        DiffSide::new("new", &new, None, language),
+    );
+    app.editor.show_diff("Example.java", view);
+    app.editor.active_mut().unwrap().scroll_line = 16.0;
+    paint(&mut app);
+
+    // 窄编辑区：右侧窗格宽度不得为负，粘滞滚动不会触发 clamp panic。
+    app.layout.editor.w = 24.0;
+    let parts = diff_parts(
+        app.layout.editor,
+        app.editor.active().unwrap().diff.as_deref().unwrap(),
+        app.metrics.cell,
+    );
+    assert!(parts.panes[RIGHT].rect.w >= 0.0);
+    paint(&mut app);
+
+    // 最大化终端覆盖编辑区（editor.w == 0）：重排并绘制不会崩溃。
+    app.terminal.open = true;
+    app.terminal.maximized = true;
+    app.relayout();
+    assert_eq!(app.layout.editor.w, 0.0);
+    paint(&mut app);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
